@@ -3,6 +3,7 @@ import hmac
 import time
 import secrets
 import re
+import os
 from typing import Optional, Dict, List
 from datetime import datetime, timedelta
 from fastapi import HTTPException, Request, Depends
@@ -12,7 +13,6 @@ import json
 import logging
 from urllib.parse import urlparse
 import ipaddress
-import os
 from fastapi.responses import JSONResponse
 
 from app.config import settings
@@ -50,8 +50,23 @@ def _init_security_redis():
     if security_redis_initialized:
         return
     
+    # Check if Redis URL indicates Redis is not available
+    redis_url = settings.REDIS_URL
+    if not redis_url or redis_url == "redis://localhost:9999" or "localhost:9999" in redis_url:
+        logger.info("Redis URL indicates Redis is not available - security features disabled")
+        security_redis = None
+        security_redis_initialized = True
+        return
+    
+    # Check if we're in a no-Redis environment
+    if os.getenv('REDIS_DISABLED', 'false').lower() == 'true':
+        logger.info("Redis disabled via environment variable - security features disabled")
+        security_redis = None
+        security_redis_initialized = True
+        return
+    
     try:
-        security_redis = redis.from_url(settings.REDIS_URL, db=1, decode_responses=True)
+        security_redis = redis.from_url(redis_url, db=1, decode_responses=True, socket_connect_timeout=2, socket_timeout=2)
         # Test the connection
         security_redis.ping()
         logger.info("Security Redis connected successfully")

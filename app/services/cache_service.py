@@ -6,6 +6,7 @@ import redis
 from app.config import settings
 from app.models import ProductInfo, ScrapeResponse
 from app.utils import generate_cache_key
+import os
 
 logger = logging.getLogger(__name__)
 
@@ -22,11 +23,28 @@ class CacheService:
         if self.redis_client is not None:
             return
         
+        # Check if Redis URL indicates Redis is not available
+        redis_url = settings.REDIS_URL
+        if not redis_url or redis_url == "redis://localhost:9999" or "localhost:9999" in redis_url:
+            logger.info("Redis URL indicates Redis is not available - caching disabled")
+            self.redis_client = None
+            self._connected = False
+            return
+        
+        # Check if we're in a no-Redis environment
+        if os.getenv('REDIS_DISABLED', 'false').lower() == 'true':
+            logger.info("Redis disabled via environment variable - caching disabled")
+            self.redis_client = None
+            self._connected = False
+            return
+        
         try:
             self.redis_client = redis.from_url(
-                settings.REDIS_URL,
+                redis_url,
                 db=settings.REDIS_DB,
-                decode_responses=True
+                decode_responses=True,
+                socket_connect_timeout=2,  # Very short timeout
+                socket_timeout=2
             )
             # Test connection
             self.redis_client.ping()
