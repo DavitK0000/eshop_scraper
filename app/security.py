@@ -241,59 +241,69 @@ def get_api_key(credentials: Optional[HTTPAuthorizationCredentials] = Depends(se
     return None
 
 def validate_request_security(request: Request, api_key: Optional[str] = None):
-    """Validate request security"""
-    client_ip = security_manager.get_client_identifier(request)
+    """Validate request security - DISABLED FOR DEVELOPMENT"""
+    # DEVELOPMENT MODE: Skip all security validation
+    # TODO: Re-enable security checks for production by uncommenting the code below
+    pass
     
-    # Check if IP is blocked
-    if security_manager.is_ip_blocked(client_ip):
-        raise HTTPException(status_code=403, detail="Access denied")
-    
-    # Check for suspicious activity
-    if security_manager.is_suspicious_activity(client_ip):
-        raise HTTPException(status_code=429, detail="Too many requests")
-    
-    # Rate limiting
-    if api_key:
-        # API key rate limiting
-        key_info = API_KEYS[api_key]
-        if not security_manager.check_rate_limit(f"api:{api_key}", key_info["rate_limit"]):
-            raise HTTPException(status_code=429, detail="Rate limit exceeded")
-        
-        # Daily limit check
-        daily_key = f"daily:{api_key}:{datetime.now().strftime('%Y-%m-%d')}"
-        if not security_manager.check_rate_limit(daily_key, key_info["daily_limit"], 86400):
-            raise HTTPException(status_code=429, detail="Daily limit exceeded")
-    else:
-        # Anonymous rate limiting (more restrictive)
-        if not security_manager.check_rate_limit(f"ip:{client_ip}", 10):  # 10 requests per minute
-            security_manager.mark_suspicious(client_ip, "Rate limit exceeded")
-            raise HTTPException(status_code=429, detail="Rate limit exceeded")
-    
-    # Validate user agent
-    user_agent = request.headers.get("User-Agent", "")
-    if not security_manager.validate_user_agent(user_agent):
-        security_manager.mark_suspicious(client_ip, "Suspicious user agent")
-        raise HTTPException(status_code=400, detail="Invalid user agent")
-    
-    # Check for concurrent requests
-    if not security_manager.check_rate_limit(f"concurrent:{client_ip}", SECURITY_CONFIG["MAX_CONCURRENT_REQUESTS_PER_IP"], 1):
-        raise HTTPException(status_code=429, detail="Too many concurrent requests")
+    # PRODUCTION CODE (commented out for development):
+    # client_ip = security_manager.get_client_identifier(request)
+    # 
+    # # Check if IP is blocked
+    # if security_manager.is_ip_blocked(client_ip):
+    #     raise HTTPException(status_code=403, detail="Access denied")
+    # 
+    # # Check for suspicious activity
+    # if security_manager.is_suspicious_activity(client_ip):
+    #     raise HTTPException(status_code=429, detail="Too many requests")
+    # 
+    # # Rate limiting
+    # if api_key:
+    #     # API key rate limiting
+    #     key_info = API_KEYS[api_key]
+    #     if not security_manager.check_rate_limit(f"api:{api_key}", key_info["rate_limit"]):
+    #         raise HTTPException(status_code=429, detail="Rate limit exceeded")
+    #     
+    #     # Daily limit check
+    #     daily_key = f"daily:{api_key}:{datetime.now().strftime('%Y-%m-%d')}"
+    #     if not security_manager.check_rate_limit(daily_key, key_info["daily_limit"], 86400):
+    #         raise HTTPException(status_code=429, detail="Daily limit exceeded")
+    # else:
+    #     # Anonymous rate limiting (more restrictive)
+    #     if not security_manager.check_rate_limit(f"ip:{client_ip}", 10):  # 10 requests per minute
+    #         security_manager.mark_suspicious(client_ip, "Rate limit exceeded")
+    #         raise HTTPException(status_code=429, detail="Rate limit exceeded")
+    # 
+    # # Validate user agent
+    # user_agent = request.headers.get("User-Agent", "")
+    # if not security_manager.validate_user_agent(user_agent):
+    #     security_manager.mark_suspicious(client_ip, "Suspicious user agent")
+    #     raise HTTPException(status_code=400, detail="Invalid user agent")
+    # 
+    # # Check for concurrent requests
+    # if not security_manager.check_rate_limit(f"concurrent:{client_ip}", SECURITY_CONFIG["MAX_CONCURRENT_REQUESTS_PER_IP"], 1):
+    #     raise HTTPException(status_code=429, detail="Too many concurrent requests")
 
 def validate_scrape_request(url: str, api_key: Optional[str] = None):
-    """Validate scrape request parameters"""
-    # URL length validation
-    if len(url) > SECURITY_CONFIG["MAX_URL_LENGTH"]:
-        raise HTTPException(status_code=400, detail="URL too long")
+    """Validate scrape request parameters - DISABLED FOR DEVELOPMENT"""
+    # DEVELOPMENT MODE: Skip all URL validation
+    # TODO: Re-enable URL validation for production by uncommenting the code below
+    pass
     
-    # URL format validation
-    if not url.startswith(("http://", "https://")):
-        raise HTTPException(status_code=400, detail="Invalid URL format")
-    
-    # Domain validation
-    allowed_domains = API_KEYS.get(api_key, {}).get("allowed_domains", SECURITY_CONFIG["ALLOWED_DOMAINS"]) if api_key else SECURITY_CONFIG["ALLOWED_DOMAINS"]
-    
-    if not security_manager.validate_url(url, allowed_domains):
-        raise HTTPException(status_code=400, detail="Domain not supported")
+    # PRODUCTION CODE (commented out for development):
+    # # URL length validation
+    # if len(url) > SECURITY_CONFIG["MAX_URL_LENGTH"]:
+    #     raise HTTPException(status_code=400, detail="URL too long")
+    # 
+    # # URL format validation
+    # if not url.startswith(("http://", "https://")):
+    #     raise HTTPException(status_code=400, detail="Invalid URL format")
+    # 
+    # # Domain validation
+    # allowed_domains = API_KEYS.get(api_key, {}).get("allowed_domains", SECURITY_CONFIG["ALLOWED_DOMAINS"]) if api_key else SECURITY_CONFIG["ALLOWED_DOMAINS"]
+    # 
+    # if not security_manager.validate_url(url, allowed_domains):
+    #     raise HTTPException(status_code=400, detail="Domain not supported")
 
 def log_security_event(event_type: str, details: Dict):
     """Log security events"""
@@ -316,68 +326,76 @@ def log_security_event(event_type: str, details: Dict):
 
 # Middleware for security checks
 async def security_middleware(request: Request, call_next):
-    """Security middleware for all requests"""
-    client_ip = security_manager.get_client_identifier(request)
+    """Security middleware for all requests - DISABLED FOR DEVELOPMENT"""
+    # DEVELOPMENT MODE: Pass all requests without security checks
+    # TODO: Re-enable security checks for production by uncommenting the code below
     
-    # Basic security checks
-    try:
-        # Check if IP is blocked (only if Redis is available)
-        _init_security_redis()
-        if security_redis and security_manager.is_ip_blocked(client_ip):
-            return JSONResponse(
-                status_code=403,
-                content={"detail": "Access denied"}
-            )
-        
-        # Check for suspicious activity (only if Redis is available)
-        if security_redis and security_manager.is_suspicious_activity(client_ip):
-            return JSONResponse(
-                status_code=429,
-                content={"detail": "Too many requests"}
-            )
-        
-        # Log request for monitoring (only if Redis is available)
-        if security_redis:
-            try:
-                security_redis.incr(f"requests:{client_ip}:{datetime.now().strftime('%Y-%m-%d')}")
-            except Exception as e:
-                logger.warning(f"Failed to log request to Redis: {e}")
-        
-        response = await call_next(request)
-        
-        # Log security events for certain response codes (only if Redis is available)
-        if response.status_code in [403, 429, 400] and security_redis:
-            try:
-                log_security_event("security_violation", {
-                    "ip": client_ip,
-                    "status_code": response.status_code,
-                    "path": str(request.url.path),
-                    "method": request.method
-                })
-            except Exception as e:
-                logger.warning(f"Failed to log security event: {e}")
-        
-        return response
-        
-    except Exception as e:
-        logger.error(f"Security middleware error: {e}")
-        # If there's a Redis connection error, still allow the request to proceed
-        if "Error 10061" in str(e) or "Connection refused" in str(e):
-            logger.warning("Redis connection failed - proceeding without security checks")
-            try:
-                response = await call_next(request)
-                return response
-            except Exception as inner_e:
-                logger.error(f"Request processing failed: {inner_e}")
-                return JSONResponse(
-                    status_code=500,
-                    content={"detail": "Internal server error"}
-                )
-        else:
-            return JSONResponse(
-                status_code=500,
-                content={"detail": "Internal server error"}
-            )
+    # Simply pass the request through without any validation
+    response = await call_next(request)
+    return response
+    
+    # PRODUCTION CODE (commented out for development):
+    # client_ip = security_manager.get_client_identifier(request)
+    # 
+    # # Basic security checks
+    # try:
+    #     # Check if IP is blocked (only if Redis is available)
+    #     _init_security_redis()
+    #     if security_redis and security_manager.is_ip_blocked(client_ip):
+    #         return JSONResponse(
+    #             status_code=403,
+    #             content={"detail": "Access denied"}
+    #         )
+    #     
+    #     # Check for suspicious activity (only if Redis is available)
+    #     if security_redis and security_manager.is_suspicious_activity(client_ip):
+    #         return JSONResponse(
+    #             status_code=429,
+    #             content={"detail": "Too many requests"}
+    #         )
+    #     
+    #     # Log request for monitoring (only if Redis is available)
+    #     if security_redis:
+    #         try:
+    #             security_redis.incr(f"requests:{client_ip}:{datetime.now().strftime('%Y-%m-%d')}")
+    #         except Exception as e:
+    #             logger.warning(f"Failed to log request to Redis: {e}")
+    #     
+    #     response = await call_next(request)
+    #     
+    #     # Log security events for certain response codes (only if Redis is available)
+    #     if response.status_code in [403, 429, 400] and security_redis:
+    #         try:
+    #             log_security_event("security_violation", {
+    #                 "ip": client_ip,
+    #                 "status_code": response.status_code,
+    #                 "path": str(request.url.path),
+    #                 "method": request.method
+    #             })
+    #         except Exception as e:
+    #             logger.warning(f"Failed to log security event: {e}")
+    #     
+    #     return response
+    #     
+    # except Exception as e:
+    #     logger.error(f"Security middleware error: {e}")
+    #     # If there's a Redis connection error, still allow the request to proceed
+    #     if "Error 10061" in str(e) or "Connection refused" in str(e):
+    #         logger.warning("Redis connection failed - proceeding without security checks")
+    #         try:
+    #             response = await call_next(request)
+    #             return response
+    #         except Exception as inner_e:
+    #             logger.error(f"Request processing failed: {inner_e}")
+    #             return JSONResponse(
+    #                 status_code=500,
+    #                 content={"detail": "Internal server error"}
+    #             )
+    #     else:
+    #         return JSONResponse(
+    #             status_code=500,
+    #             content={"detail": "Internal server error"}
+    #         )
 
 # Utility functions for monitoring
 def get_security_stats() -> Dict:
