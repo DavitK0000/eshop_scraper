@@ -95,7 +95,8 @@ class EbayScraper(BaseScraper):
             image_selectors = [
                 '.x-item-image__image',
                 '.ux-image-carousel-item img',
-                '.ux-image-magnify img'
+                '.ux-image-magnify img',
+                '.ux-image-grid-item img'
             ]
             
             for selector in image_selectors:
