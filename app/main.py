@@ -44,7 +44,7 @@ app = FastAPI(
     title=settings.PROJECT_NAME,
     version=settings.VERSION,
     description="A high-performance API for scraping product information from e-commerce websites",
-    docs_url="/docs",
+    docs_url=None,
     redoc_url="/redoc",
     lifespan=lifespan
 )
@@ -129,7 +129,6 @@ async def root():
     return {
         "message": "E-commerce Scraper API",
         "version": settings.VERSION,
-        "docs": "/docs",
         "health": f"{settings.API_V1_STR}/health"
     }
 

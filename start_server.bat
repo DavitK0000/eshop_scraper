@@ -24,7 +24,6 @@ playwright install
 REM Start the server
 echo Starting API server...
 echo API will be available at: http://localhost:8000
-echo Documentation: http://localhost:8000/docs
 echo.
 python -m app.main
 

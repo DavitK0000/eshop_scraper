@@ -80,9 +80,7 @@ class ScraperGUI:
         ttk.Button(buttons_frame, text="Clear Cache", 
                   command=self.clear_cache).pack(side=tk.LEFT, padx=(0, 10))
         
-        # Open Docs Button
-        ttk.Button(buttons_frame, text="Open API Docs", 
-                  command=self.open_docs).pack(side=tk.LEFT)
+
         
         # Progress Bar
         self.progress_var = tk.StringVar(value="Ready")
@@ -265,9 +263,7 @@ class ScraperGUI:
             except Exception as e:
                 messagebox.showerror("Error", f"Failed to clear cache: {str(e)}")
     
-    def open_docs(self):
-        """Open API documentation in browser"""
-        webbrowser.open("http://localhost:8000/docs")
+
 
 
 def main():
