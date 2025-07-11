@@ -91,19 +91,92 @@ class EbayScraper(BaseScraper):
             product_info.seller = self.find_element_text('.x-seller-overview__seller-name')
             product_info.availability = self.find_element_text('.x-item-condition__text')
             
-            # Extract images
+            # Extract images with improved logic
             image_selectors = [
+                'div.ux-image-carousel-item img',
                 '.x-item-image__image',
-                '.ux-image-carousel-item img',
                 '.ux-image-magnify img',
-                '.ux-image-grid-item img'
+                '.ux-image-carousel img'
             ]
             
+            # Use a set to avoid duplicates
+            unique_images = set()
+            
             for selector in image_selectors:
-                images = self.find_elements_attr(selector, 'src')
-                if images:
-                    product_info.images.extend(images)
-                    break
+                # Get both src and data-zoom-src attributes
+                src_images = self.find_elements_attr(selector, 'src')
+                zoom_images = self.find_elements_attr(selector, 'data-zoom-src')
+                
+                # Also get srcset images (high resolution versions)
+                elements = self.soup.select(selector)
+                srcset_images = []
+                for element in elements:
+                    srcset = element.get('srcset', '')
+                    if srcset:
+                        # Parse srcset to get the highest resolution image
+                        srcset_parts = srcset.split(',')
+                        for part in srcset_parts:
+                            part = part.strip()
+                            if part:
+                                # Extract URL from srcset (format: "url width" or just "url")
+                                url_part = part.split()[0] if ' ' in part else part
+                                if url_part and url_part.startswith('http'):
+                                    srcset_images.append(url_part)
+                
+                # Add all images to the set
+                for img_url in src_images + zoom_images + srcset_images:
+                    if img_url and img_url.strip():
+                        # Clean the URL
+                        img_url = img_url.strip()
+                        # Remove any query parameters that might cause issues
+                        if '?' in img_url:
+                            img_url = img_url.split('?')[0]
+                        unique_images.add(img_url)
+            
+            # Convert set back to list and add to product_info
+            product_info.images.extend(list(unique_images))
+            
+            # Fallback: If we didn't find enough images, try alternative selectors
+            if len(unique_images) < 2:
+                logger.info("Few images found, trying alternative selectors...")
+                
+                # Try more generic selectors
+                fallback_selectors = [
+                    'img[src*="ebayimg.com"]',
+                    'img[data-zoom-src*="ebayimg.com"]',
+                    '.ux-image img',
+                    '.image-treatment img',
+                    '[class*="image"] img',
+                    '[class*="carousel"] img'
+                ]
+                
+                for selector in fallback_selectors:
+                    fallback_images = self.find_elements_attr(selector, 'src')
+                    fallback_zoom_images = self.find_elements_attr(selector, 'data-zoom-src')
+                    
+                    for img_url in fallback_images + fallback_zoom_images:
+                        if img_url and img_url.strip():
+                            img_url = img_url.strip()
+                            if '?' in img_url:
+                                img_url = img_url.split('?')[0]
+                            unique_images.add(img_url)
+                
+                logger.info(f"After fallback selectors: {len(unique_images)} total unique images")
+            
+            # Log the number of images found for debugging
+            logger.info(f"Found {len(unique_images)} unique images for eBay product")
+            
+            # Debug: Log the actual HTML structure around image carousel
+            carousel_elements = self.soup.select('div.ux-image-carousel-item')
+            logger.info(f"Found {len(carousel_elements)} carousel item elements")
+            
+            for i, carousel_item in enumerate(carousel_elements[:3]):  # Log first 3 items
+                img_elements = carousel_item.select('img')
+                logger.info(f"Carousel item {i}: {len(img_elements)} img elements")
+                for j, img in enumerate(img_elements):
+                    src = img.get('src', '')
+                    zoom_src = img.get('data-zoom-src', '')
+                    logger.info(f"  Image {j}: src='{src[:50]}...', zoom_src='{zoom_src[:50]}...'")
             
             # Extract specifications from dl.ux-labels-values
             specs = {}

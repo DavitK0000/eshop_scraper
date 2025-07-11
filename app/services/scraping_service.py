@@ -95,7 +95,7 @@ class ScrapingService:
             
         except Exception as e:
             error_msg = f"Scraping failed: {str(e)}"
-            logger.error(f"Error scraping {url}: {e}")
+            logger.error(f"Error scraping {url}: {e}", exc_info=True)
             
             # Update response with error
             response.status = TaskStatus.FAILED
@@ -136,7 +136,10 @@ class ScrapingService:
                     await asyncio.sleep(wait_time)
         
         # All retries failed
-        raise last_exception or Exception("Scraping failed after all retries")
+        if last_exception:
+            raise last_exception
+        else:
+            raise Exception("Scraping failed after all retries")
     
     def _update_task_status(self, task_id: str, status: TaskStatus, message: str = None):
         """Update task status"""

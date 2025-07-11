@@ -147,7 +147,7 @@ class BaseScraper(ABC):
                 "*.ebayimg.com",
                 "*.ebaystatic.com",
                 "*.ebaycdn.com",
-                # "i.ebayimg.com",
+                "i.ebayimg.com",
                 # "thumbs.ebaystatic.com",
                 # "pics.ebaystatic.com",
                 # # Add other common e-commerce image domains

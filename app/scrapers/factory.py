@@ -81,7 +81,6 @@ class ScraperFactory:
         """
         domain = cls._extract_domain(url)
         scraper_class = cls._scrapers.get(domain)
-        print(scraper_class)
         
         if scraper_class:
             return scraper_class(url, proxy, user_agent, block_images)

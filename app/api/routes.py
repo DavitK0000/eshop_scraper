@@ -69,8 +69,8 @@ async def scrape_product(
         return response
         
     except Exception as e:
-        logger.error(f"Error in scrape endpoint: {e}")
-        raise HTTPException(status_code=500, detail=str(e))
+        logger.error(f"Error in scrape endpoint: {e}", exc_info=True)
+        raise HTTPException(status_code=500, detail=f"Scraping failed: {str(e)}")
 
 
 @router.get("/scrape", response_model=ScrapeResponse)
@@ -122,8 +122,8 @@ async def scrape_product_get(
         return response
         
     except Exception as e:
-        logger.error(f"Error in scrape GET endpoint: {e}")
-        raise HTTPException(status_code=500, detail=str(e))
+        logger.error(f"Error in scrape GET endpoint: {e}", exc_info=True)
+        raise HTTPException(status_code=500, detail=f"Scraping failed: {str(e)}")
 
 
 @router.get("/tasks/{task_id}", response_model=TaskStatusResponse)
