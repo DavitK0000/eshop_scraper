@@ -341,21 +341,28 @@ def get_security_stats() -> Dict:
 def cleanup_security_data():
     """Clean up old security data"""
     if not security_redis:
+        logger.info("Redis not available - skipping security data cleanup")
         return
     
-    # Clean up old rate limit keys (older than 1 hour)
-    old_keys = security_redis.keys("rate_limit:*")
-    for key in old_keys:
-        if security_redis.ttl(key) == -1:  # No expiration set
-            security_redis.delete(key)
-    
-    # Clean up old request counters (older than 7 days)
-    old_request_keys = security_redis.keys("requests:*")
-    for key in old_request_keys:
-        date_str = key.split(":")[-1]
-        try:
-            key_date = datetime.strptime(date_str, '%Y-%m-%d')
-            if (datetime.now() - key_date).days > 7:
+    try:
+        # Clean up old rate limit keys (older than 1 hour)
+        old_keys = security_redis.keys("rate_limit:*")
+        for key in old_keys:
+            if security_redis.ttl(key) == -1:  # No expiration set
                 security_redis.delete(key)
-        except ValueError:
-            continue 
+        
+        # Clean up old request counters (older than 7 days)
+        old_request_keys = security_redis.keys("requests:*")
+        for key in old_request_keys:
+            date_str = key.split(":")[-1]
+            try:
+                key_date = datetime.strptime(date_str, '%Y-%m-%d')
+                if (datetime.now() - key_date).days > 7:
+                    security_redis.delete(key)
+            except ValueError:
+                continue
+        
+        logger.info("Security data cleanup completed successfully")
+    except Exception as e:
+        logger.warning(f"Security data cleanup failed: {e}")
+        # Don't raise the exception - allow the application to start 
