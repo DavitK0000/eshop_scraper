@@ -123,27 +123,27 @@ class BaseScraper(ABC):
                 "*.imgix.net",
                 "*.cloudinary.com",
                 "*.res.cloudinary.com",
-                # Add CDiscount specific domains
-                "*.cdiscount.com",
+                # # Add CDiscount specific domains
+                # "*.cdiscount.com",
                 "image.cdiscount.com",
                 "*.cdiscount-static.com",
                 "*.cdiscount-cdn.com",
-                # Add eBay specific domains
-                "*.ebay.com",
+                # # Add eBay specific domains
+                # "*.ebay.com",
                 "*.ebayimg.com",
                 "*.ebaystatic.com",
                 "*.ebaycdn.com",
-                "i.ebayimg.com",
-                "thumbs.ebaystatic.com",
-                "pics.ebaystatic.com",
-                # Add other common e-commerce image domains
-                "*.bol.com",
-                "*.otto.de",
-                "*.amazon.com",
-                "*.amazonaws.com",
-                "*.jd.com",
-                "*.alibaba.com",
-                "*.aliexpress.com"
+                # "i.ebayimg.com",
+                # "thumbs.ebaystatic.com",
+                # "pics.ebaystatic.com",
+                # # Add other common e-commerce image domains
+                # "*.bol.com",
+                # "*.otto.de",
+                # "*.amazon.com",
+                # "*.amazonaws.com",
+                # "*.jd.com",
+                # "*.alibaba.com",
+                # "*.aliexpress.com"
             ]
             
             for domain in image_domains:
