@@ -26,22 +26,28 @@ class ScraperGUI:
         self.root.columnconfigure(0, weight=1)
         self.root.rowconfigure(0, weight=1)
         main_frame.columnconfigure(1, weight=1)
-        main_frame.rowconfigure(3, weight=1)
+        main_frame.rowconfigure(6, weight=1)
         
         # Title
         title_label = ttk.Label(main_frame, text="E-commerce Scraper API Tester", 
                                font=("Arial", 16, "bold"))
         title_label.grid(row=0, column=0, columnspan=3, pady=(0, 20))
         
+        # API Endpoint Input
+        ttk.Label(main_frame, text="API Endpoint:").grid(row=1, column=0, sticky=tk.W, pady=5)
+        self.endpoint_var = tk.StringVar(value="http://localhost:8000/api/v1")
+        self.endpoint_entry = ttk.Entry(main_frame, textvariable=self.endpoint_var, width=60)
+        self.endpoint_entry.grid(row=1, column=1, sticky=(tk.W, tk.E), padx=(10, 0), pady=5)
+        
         # URL Input
-        ttk.Label(main_frame, text="Product URL:").grid(row=1, column=0, sticky=tk.W, pady=5)
+        ttk.Label(main_frame, text="Product URL:").grid(row=2, column=0, sticky=tk.W, pady=5)
         self.url_var = tk.StringVar()
         self.url_entry = ttk.Entry(main_frame, textvariable=self.url_var, width=60)
-        self.url_entry.grid(row=1, column=1, sticky=(tk.W, tk.E), padx=(10, 0), pady=5)
+        self.url_entry.grid(row=2, column=1, sticky=(tk.W, tk.E), padx=(10, 0), pady=5)
         
         # Options Frame
         options_frame = ttk.LabelFrame(main_frame, text="Options", padding="10")
-        options_frame.grid(row=2, column=0, columnspan=3, sticky=(tk.W, tk.E), pady=10)
+        options_frame.grid(row=3, column=0, columnspan=3, sticky=(tk.W, tk.E), pady=10)
         options_frame.columnconfigure(1, weight=1)
         
         # Force Refresh Checkbox
@@ -61,7 +67,7 @@ class ScraperGUI:
         
         # Buttons Frame
         buttons_frame = ttk.Frame(main_frame)
-        buttons_frame.grid(row=3, column=0, columnspan=3, pady=10)
+        buttons_frame.grid(row=4, column=0, columnspan=3, pady=10)
         
         # Scrape Button
         self.scrape_button = ttk.Button(buttons_frame, text="Scrape Product", 
@@ -84,11 +90,11 @@ class ScraperGUI:
         
         # Progress Bar
         self.progress_var = tk.StringVar(value="Ready")
-        ttk.Label(main_frame, textvariable=self.progress_var).grid(row=4, column=0, columnspan=3, pady=5)
+        ttk.Label(main_frame, textvariable=self.progress_var).grid(row=5, column=0, columnspan=3, pady=5)
         
         # Results Frame
         results_frame = ttk.LabelFrame(main_frame, text="Results", padding="10")
-        results_frame.grid(row=5, column=0, columnspan=3, sticky=(tk.W, tk.E, tk.N, tk.S), pady=10)
+        results_frame.grid(row=6, column=0, columnspan=3, sticky=(tk.W, tk.E, tk.N, tk.S), pady=10)
         results_frame.columnconfigure(0, weight=1)
         results_frame.rowconfigure(0, weight=1)
         
@@ -99,7 +105,7 @@ class ScraperGUI:
         # Status Bar
         self.status_var = tk.StringVar(value="Ready")
         status_bar = ttk.Label(main_frame, textvariable=self.status_var, relief=tk.SUNKEN)
-        status_bar.grid(row=6, column=0, columnspan=3, sticky=(tk.W, tk.E), pady=(10, 0))
+        status_bar.grid(row=7, column=0, columnspan=3, sticky=(tk.W, tk.E), pady=(10, 0))
         
         # Add some sample URLs
         self.add_sample_urls()
@@ -114,7 +120,7 @@ class ScraperGUI:
         
         # Create a dropdown for sample URLs
         sample_frame = ttk.Frame(self.root)
-        sample_frame.grid(row=1, column=1, sticky=tk.E, padx=(0, 10))
+        sample_frame.grid(row=2, column=1, sticky=tk.E, padx=(0, 10))
         
         ttk.Label(sample_frame, text="Sample URLs:").pack(side=tk.LEFT)
         sample_combo = ttk.Combobox(sample_frame, values=sample_urls, width=40)
@@ -154,7 +160,10 @@ class ScraperGUI:
                 params['user_agent'] = self.user_agent_var.get().strip()
             
             # Make API request
-            response = requests.get(f"{self.api_base_url}/scrape", params=params, timeout=60)
+            api_base_url = self.endpoint_var.get().strip()
+            if not api_base_url:
+                api_base_url = "http://localhost:8000/api/v1"
+            response = requests.get(f"{api_base_url}/scrape", params=params, timeout=60)
             
             # Update UI in main thread
             self.root.after(0, self._handle_scrape_response, response)
@@ -226,7 +235,10 @@ class ScraperGUI:
     def health_check(self):
         """Check API health"""
         try:
-            response = requests.get(f"{self.api_base_url}/health", timeout=10)
+            api_base_url = self.endpoint_var.get().strip()
+            if not api_base_url:
+                api_base_url = "http://localhost:8000/api/v1"
+            response = requests.get(f"{api_base_url}/health", timeout=10)
             if response.status_code == 200:
                 data = response.json()
                 self.display_results(data)
@@ -239,7 +251,10 @@ class ScraperGUI:
     def cache_stats(self):
         """Get cache statistics"""
         try:
-            response = requests.get(f"{self.api_base_url}/cache/stats", timeout=10)
+            api_base_url = self.endpoint_var.get().strip()
+            if not api_base_url:
+                api_base_url = "http://localhost:8000/api/v1"
+            response = requests.get(f"{api_base_url}/cache/stats", timeout=10)
             if response.status_code == 200:
                 data = response.json()
                 self.display_results(data)
@@ -253,7 +268,10 @@ class ScraperGUI:
         """Clear all cache"""
         if messagebox.askyesno("Confirm", "Are you sure you want to clear all cache?"):
             try:
-                response = requests.delete(f"{self.api_base_url}/cache", timeout=10)
+                api_base_url = self.endpoint_var.get().strip()
+                if not api_base_url:
+                    api_base_url = "http://localhost:8000/api/v1"
+                response = requests.delete(f"{api_base_url}/cache", timeout=10)
                 if response.status_code == 200:
                     data = response.json()
                     self.display_results(data)

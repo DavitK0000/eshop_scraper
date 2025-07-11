@@ -7,7 +7,7 @@ PORT=8000
 REDIS_URL=redis://localhost:6379
 REDIS_DB=0
 
-# Celery Settings (for future async task processing)
+# Celery Settings
 CELERY_BROKER_URL=redis://localhost:6379/1
 CELERY_RESULT_BACKEND=redis://localhost:6379/2
 
@@ -17,15 +17,15 @@ MAX_RETRIES=3
 CACHE_TTL=3600
 
 # Proxy Settings
-PROXY_LIST=http://proxy1:8080,http://proxy2:8080
+PROXY_LIST=
 ROTATE_PROXIES=True
 
-# Decodo Proxy Settings (recommended for better reliability)
-DECODO_ENABLED=True
-DECODO_USERNAME=your_decodo_username
-DECODO_PASSWORD=your_decodo_password
-DECODO_ENDPOINT=proxy.decodo.com:8080
+# Decodo Proxy Settings
+DECODO_USERNAME=
+DECODO_PASSWORD=
+DECODO_ENDPOINT=
 DECODO_PROXY_TYPE=http
+DECODO_ENABLED=False
 
 # User Agent Settings
 ROTATE_USER_AGENTS=True
@@ -40,4 +40,28 @@ PLAYWRIGHT_VIEWPORT_HEIGHT=1080
 RATE_LIMIT_PER_MINUTE=60
 
 # Logging
-LOG_LEVEL=INFO 
+LOG_LEVEL=INFO
+
+# Security Settings - API Keys
+# You can configure up to 10 API keys
+# Format: API_KEY_1=your_api_key_here
+# API_KEY_1_NAME=User Name (optional)
+# API_KEY_1_RATE_LIMIT=100 (requests per minute, optional)
+# API_KEY_1_DAILY_LIMIT=1000 (requests per day, optional)
+
+# Example API keys (replace with your actual keys):
+API_KEY_1=your_secure_api_key_here
+API_KEY_1_NAME=Premium User
+API_KEY_1_RATE_LIMIT=200
+API_KEY_1_DAILY_LIMIT=5000
+
+API_KEY_2=another_secure_api_key_here
+API_KEY_2_NAME=Standard User
+API_KEY_2_RATE_LIMIT=100
+API_KEY_2_DAILY_LIMIT=1000
+
+# Add more API keys as needed (up to API_KEY_10)
+# API_KEY_3=third_api_key_here
+# API_KEY_3_NAME=Basic User
+# API_KEY_3_RATE_LIMIT=50
+# API_KEY_3_DAILY_LIMIT=500 

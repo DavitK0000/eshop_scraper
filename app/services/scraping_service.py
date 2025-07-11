@@ -74,6 +74,15 @@ class ScrapingService:
             # Perform scraping with retry logic
             product_info = await self._scrape_with_retry(scraper)
             
+            # Get image blocking statistics
+            image_stats = scraper.get_image_blocking_stats()
+            logger.info(f"Image blocking statistics: {image_stats}")
+            
+            # Add image blocking stats to product info raw data
+            if not hasattr(product_info, 'raw_data'):
+                product_info.raw_data = {}
+            product_info.raw_data['image_blocking_stats'] = image_stats
+            
             # Update response
             response.status = TaskStatus.COMPLETED
             response.product_info = product_info

@@ -14,6 +14,7 @@ A high-performance Python-based backend service that exposes an API endpoint to 
 - **Error Handling**: Comprehensive error handling and logging
 - **Task Management**: Track scraping task status and progress
 - **GUI Testing Tool**: Built-in GUI application for testing the API
+- **Security Features**: API key authentication, rate limiting, IP blocking, and abuse prevention
 
 ## Supported Platforms
 
@@ -66,6 +67,15 @@ A high-performance Python-based backend service that exposes an API endpoint to 
    notepad .env
    ```
 
+7. **Configure API Keys (Optional)**
+   ```bash
+   # Add your API keys to .env file
+   API_KEY_1=your_secure_api_key_here
+   API_KEY_1_NAME=Premium User
+   API_KEY_1_RATE_LIMIT=200
+   API_KEY_1_DAILY_LIMIT=5000
+   ```
+
 ## Configuration
 
 The application can be configured using environment variables. See `env_example.txt` for all available options:
@@ -108,12 +118,43 @@ The GUI provides:
 - Real-time scraping results
 - Health check and cache management
 
+### Testing Security Features
+
+```bash
+python test_security.py
+```
+
+The security test script provides:
+- Rate limiting tests
+- API key authentication tests
+- Domain validation tests
+- User agent validation tests
+- Security endpoint tests
+
+## Security
+
+The API includes comprehensive security features to prevent abuse while remaining publicly accessible:
+
+- **API Key Authentication**: Optional Bearer token authentication for enhanced access
+- **Rate Limiting**: IP-based and API key-based rate limiting
+- **IP Blocking**: Automatic blocking of suspicious IPs
+- **Domain Validation**: Only allowed e-commerce domains can be scraped
+- **User Agent Validation**: Blocks requests with suspicious user agents
+- **Security Monitoring**: Real-time monitoring and statistics
+
+For detailed security documentation, see [SECURITY.md](SECURITY.md).
+
 ## API Endpoints
 
 ### Core Endpoints
 
 #### `POST /api/v1/scrape`
 Scrape product information from a URL.
+
+**Authentication**: Optional API key via Bearer token
+**Rate Limits**: 
+- With API key: Based on key configuration
+- Without API key: 10 requests per minute
 
 **Request Body:**
 ```json
@@ -125,14 +166,31 @@ Scrape product information from a URL.
 }
 ```
 
+**With API Key:**
+```bash
+curl -X POST "http://localhost:8000/api/v1/scrape" \
+  -H "Authorization: Bearer your_api_key_here" \
+  -H "Content-Type: application/json" \
+  -d '{"url": "https://www.amazon.com/dp/B08N5WRWNW"}'
+```
+
 #### `GET /api/v1/scrape`
 Convenience endpoint for simple GET requests.
+
+**Authentication**: Optional API key via Bearer token
+**Rate Limits**: Same as POST endpoint
 
 **Query Parameters:**
 - `url` (required): Product URL
 - `force_refresh` (optional): Bypass cache
 - `proxy` (optional): Custom proxy
 - `user_agent` (optional): Custom user agent
+
+**With API Key:**
+```bash
+curl -X GET "http://localhost:8000/api/v1/scrape?url=https://www.amazon.com/dp/B08N5WRWNW" \
+  -H "Authorization: Bearer your_api_key_here"
+```
 
 ### Management Endpoints
 
@@ -159,6 +217,14 @@ Invalidate cache for specific URL.
 
 #### `POST /api/v1/tasks/cleanup`
 Clean up old completed tasks.
+
+### Security Endpoints
+
+#### `GET /api/v1/security/stats`
+Get security statistics and monitoring data.
+
+#### `GET /api/v1/security/status`
+Get current security status and configuration.
 
 ## Response Format
 

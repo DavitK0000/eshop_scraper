@@ -122,13 +122,63 @@ class BaseScraper(ABC):
                 "*.fastly.net",
                 "*.imgix.net",
                 "*.cloudinary.com",
-                "*.res.cloudinary.com"
+                "*.res.cloudinary.com",
+                # Add CDiscount specific domains
+                "*.cdiscount.com",
+                "image.cdiscount.com",
+                "*.cdiscount-static.com",
+                "*.cdiscount-cdn.com",
+                # Add eBay specific domains
+                "*.ebay.com",
+                "*.ebayimg.com",
+                "*.ebaystatic.com",
+                "*.ebaycdn.com",
+                "i.ebayimg.com",
+                "thumbs.ebaystatic.com",
+                "pics.ebaystatic.com",
+                # Add other common e-commerce image domains
+                "*.bol.com",
+                "*.otto.de",
+                "*.amazon.com",
+                "*.amazonaws.com",
+                "*.jd.com",
+                "*.alibaba.com",
+                "*.aliexpress.com"
             ]
             
             for domain in image_domains:
                 await self.page.route(f"**/{domain}/**", self._block_image_request)
             
-            logger.info("Image blocking enabled to save bandwidth")
+            # Block any URL containing image-related keywords
+            image_keywords = [
+                "**/image/**",
+                "**/img/**", 
+                "**/photo/**",
+                "**/picture/**",
+                "**/thumbnail/**",
+                "**/thumb/**",
+                "**/gallery/**",
+                "**/media/**",
+                "**/uploads/**",
+                "**/product-images/**",
+                "**/product-images/**",
+                "**/product_img/**",
+                "**/productimg/**"
+            ]
+            
+            for keyword in image_keywords:
+                await self.page.route(keyword, self._block_image_request)
+            
+            # Block any URL with image file extensions in path
+            await self.page.route("**/*.png/**", self._block_image_request)
+            await self.page.route("**/*.jpg/**", self._block_image_request)
+            await self.page.route("**/*.jpeg/**", self._block_image_request)
+            await self.page.route("**/*.gif/**", self._block_image_request)
+            await self.page.route("**/*.webp/**", self._block_image_request)
+            await self.page.route("**/*.svg/**", self._block_image_request)
+            await self.page.route("**/*.ico/**", self._block_image_request)
+            
+            logger.info("Comprehensive image blocking enabled to save bandwidth")
             
         except Exception as e:
             logger.warning(f"Failed to setup image blocking: {e}")
@@ -136,12 +186,25 @@ class BaseScraper(ABC):
 
     
     async def _block_image_request(self, route):
-        """Block image requests"""
+        """Block image requests with detailed logging"""
         try:
+            request_url = route.request.url
+            logger.debug(f"Blocking image request: {request_url}")
+            
+            # Log blocked image statistics
+            if not hasattr(self, '_blocked_images_count'):
+                self._blocked_images_count = 0
+            self._blocked_images_count += 1
+            
             # Abort the request to prevent image download
             await route.abort()
+            
+            # Log every 10th blocked image to avoid spam
+            if self._blocked_images_count % 10 == 0:
+                logger.info(f"Blocked {self._blocked_images_count} image requests so far")
+                
         except Exception as e:
-            logger.warning(f"Failed to block image request: {e}")
+            logger.warning(f"Failed to block image request {route.request.url}: {e}")
             # If abort fails, continue the request
             await route.continue_()
     
@@ -330,6 +393,10 @@ class BaseScraper(ABC):
     async def cleanup(self):
         """Cleanup browser resources"""
         try:
+            # Log image blocking statistics before cleanup
+            if hasattr(self, '_blocked_images_count') and self._blocked_images_count > 0:
+                logger.info(f"Final image blocking statistics: {self._blocked_images_count} images blocked")
+            
             if self.page:
                 await self.page.close()
             if self.browser:
@@ -338,6 +405,14 @@ class BaseScraper(ABC):
                 await self.playwright.stop()
         except Exception as e:
             logger.error(f"Error during cleanup: {e}")
+    
+    def get_image_blocking_stats(self) -> dict:
+        """Get image blocking statistics"""
+        stats = {
+            'block_images_enabled': self.block_images,
+            'blocked_images_count': getattr(self, '_blocked_images_count', 0)
+        }
+        return stats
     
     @abstractmethod
     async def extract_product_info(self) -> ProductInfo:

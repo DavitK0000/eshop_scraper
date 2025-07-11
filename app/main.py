@@ -11,6 +11,7 @@ from app.config import settings
 from app.api.routes import router
 from app.services.cache_service import cache_service
 from app.services.scraping_service import scraping_service
+from app.security import security_middleware, cleanup_security_data
 
 # Configure logging
 logging.basicConfig(
@@ -32,6 +33,9 @@ async def lifespan(app: FastAPI):
         logger.info("Cache service connected successfully")
     else:
         logger.warning("Cache service not available - caching will be disabled")
+    
+    # Clean up old security data on startup
+    cleanup_security_data()
     
     yield
     
@@ -67,7 +71,10 @@ async def json_unicode_middleware(request: Request, call_next):
     
     return response
 
-# Add middleware
+# Add security middleware first
+app.middleware("http")(security_middleware)
+
+# Add CORS middleware
 app.add_middleware(
     CORSMiddleware,
     allow_origins=["*"],  # Configure this properly for production
