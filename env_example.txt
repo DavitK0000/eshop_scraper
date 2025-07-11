@@ -1,0 +1,43 @@
+# API Settings
+DEBUG=False
+HOST=0.0.0.0
+PORT=8000
+
+# Redis Settings
+REDIS_URL=redis://localhost:6379
+REDIS_DB=0
+
+# Celery Settings (for future async task processing)
+CELERY_BROKER_URL=redis://localhost:6379/1
+CELERY_RESULT_BACKEND=redis://localhost:6379/2
+
+# Scraping Settings
+DEFAULT_TIMEOUT=30
+MAX_RETRIES=3
+CACHE_TTL=3600
+
+# Proxy Settings
+PROXY_LIST=http://proxy1:8080,http://proxy2:8080
+ROTATE_PROXIES=True
+
+# Decodo Proxy Settings (recommended for better reliability)
+DECODO_ENABLED=True
+DECODO_USERNAME=your_decodo_username
+DECODO_PASSWORD=your_decodo_password
+DECODO_ENDPOINT=proxy.decodo.com:8080
+DECODO_PROXY_TYPE=http
+
+# User Agent Settings
+ROTATE_USER_AGENTS=True
+
+# Playwright Settings
+PLAYWRIGHT_HEADLESS=True
+PLAYWRIGHT_TIMEOUT=30000
+PLAYWRIGHT_VIEWPORT_WIDTH=1920
+PLAYWRIGHT_VIEWPORT_HEIGHT=1080
+
+# Rate Limiting
+RATE_LIMIT_PER_MINUTE=60
+
+# Logging
+LOG_LEVEL=INFO 
