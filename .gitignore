@@ -10,3 +10,4 @@
 .env.local
 .env.development.local
 .cursor
+__pycache__
