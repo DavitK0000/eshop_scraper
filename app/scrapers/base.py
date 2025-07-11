@@ -32,6 +32,20 @@ class BaseScraper(ABC):
         self.max_proxy_rotation_attempts = 3
 
     
+    def _is_browser_closed(self) -> bool:
+        """Check if the browser or page has been closed"""
+        try:
+            if not self.browser or not self.page:
+                return True
+            
+            # Try to access a simple property to check if browser is still alive
+            # This will raise an exception if the browser is closed
+            _ = self.browser.is_connected()
+            _ = self.page.url
+            return False
+        except Exception:
+            return True
+    
     def _is_ip_blocked(self) -> bool:
         """Check if the page contains IP blocking indicators"""
         if not self.html_content:
@@ -235,6 +249,15 @@ class BaseScraper(ABC):
                 '--disable-translate',
                 '--disable-features=VizDisplayCompositor',
                 '--disable-ipc-flooding-protection',
+                # Network stability flags
+                '--disable-web-security',
+                '--disable-background-networking',
+                '--hide-scrollbars',
+                '--mute-audio',
+                '--safebrowsing-disable-auto-update',
+                '--ignore-certificate-errors',
+                '--ignore-ssl-errors',
+                '--ignore-certificate-errors-spki-list',
             ]
             
             # Configure proxy using Playwright's built-in proxy support
@@ -282,11 +305,23 @@ class BaseScraper(ABC):
     async def get_page_content(self) -> str:
         """Get HTML content from the page"""
         try:
-            if not self.page:
+            # Check if browser/page is still valid, if not, setup new browser
+            if not self.page or not self.browser or self._is_browser_closed():
                 await self.setup_browser()
             
             # Navigate to the page with optimized waiting
-            await self.page.goto(self.url, wait_until='domcontentloaded', timeout=300000)
+            try:
+                await self.page.goto(self.url, wait_until='domcontentloaded', timeout=300000)
+            except Exception as nav_error:
+                logger.error(f"Navigation failed: {nav_error}")
+                # Check if it's a network error and try to recover
+                if "net::ERR_FAILED" in str(nav_error) or "net::ERR_CONNECTION_FAILED" in str(nav_error):
+                    logger.info("Network error detected, attempting to refresh browser setup...")
+                    await self.cleanup()
+                    await self.setup_browser()
+                    await self.page.goto(self.url, wait_until='domcontentloaded', timeout=300000)
+                else:
+                    raise
                         
             # Check for redirects and update final URL
             current_url = self.page.url
@@ -425,8 +460,10 @@ class BaseScraper(ABC):
             await self.get_page_content()
             product_info = await self.extract_product_info()
             return product_info
-        finally:
+        except Exception as e:
+            # Clean up on error to free resources
             await self.cleanup()
+            raise
     
     def find_element_text(self, selector: str, default: str = "") -> str:
         """Find element text by CSS selector"""

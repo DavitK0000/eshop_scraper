@@ -114,11 +114,20 @@ class ScrapingService:
         for attempt in range(settings.MAX_RETRIES):
             try:
                 logger.info(f"Scraping attempt {attempt + 1}/{settings.MAX_RETRIES}")
-                return await scraper.scrape()
+                result = await scraper.scrape()
+                # Clean up after successful scraping
+                await scraper.cleanup()
+                return result
                 
             except Exception as e:
                 last_exception = e
                 logger.warning(f"Scraping attempt {attempt + 1} failed: {e}")
+                
+                # Clean up on failure
+                try:
+                    await scraper.cleanup()
+                except Exception as cleanup_error:
+                    logger.warning(f"Cleanup failed after scraping error: {cleanup_error}")
                 
                 if attempt < settings.MAX_RETRIES - 1:
                     # Wait before retry (exponential backoff)
