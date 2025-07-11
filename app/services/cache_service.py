@@ -29,7 +29,7 @@ class CacheService:
             self.redis_client.ping()
             logger.info("Successfully connected to Redis")
         except Exception as e:
-            logger.error(f"Failed to connect to Redis: {e}")
+            logger.info(f"Redis not available - caching will be disabled: {e}")
             self.redis_client = None
     
     def is_connected(self) -> bool:
@@ -39,7 +39,8 @@ class CacheService:
         try:
             self.redis_client.ping()
             return True
-        except Exception:
+        except Exception as e:
+            logger.debug(f"Redis ping failed: {e}")
             return False
     
     def get_cached_result(self, url: str) -> Optional[ScrapeResponse]:

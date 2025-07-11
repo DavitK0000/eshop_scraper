@@ -258,15 +258,18 @@ def log_security_event(event_type: str, details: Dict):
     logger.warning(f"Security event - {event_type}: {json.dumps(details)}")
     
     if security_redis:
-        security_redis.lpush(
-            "security_events",
-            json.dumps({
-                "type": event_type,
-                "timestamp": datetime.now().isoformat(),
-                "details": details
-            })
-        )
-        security_redis.ltrim("security_events", 0, 999)  # Keep last 1000 events
+        try:
+            security_redis.lpush(
+                "security_events",
+                json.dumps({
+                    "type": event_type,
+                    "timestamp": datetime.now().isoformat(),
+                    "details": details
+                })
+            )
+            security_redis.ltrim("security_events", 0, 999)  # Keep last 1000 events
+        except Exception as e:
+            logger.warning(f"Failed to log security event to Redis: {e}")
 
 # Middleware for security checks
 async def security_middleware(request: Request, call_next):
@@ -275,43 +278,62 @@ async def security_middleware(request: Request, call_next):
     
     # Basic security checks
     try:
-        # Check if IP is blocked
-        if security_manager.is_ip_blocked(client_ip):
+        # Check if IP is blocked (only if Redis is available)
+        if security_redis and security_manager.is_ip_blocked(client_ip):
             return JSONResponse(
                 status_code=403,
                 content={"detail": "Access denied"}
             )
         
-        # Check for suspicious activity
-        if security_manager.is_suspicious_activity(client_ip):
+        # Check for suspicious activity (only if Redis is available)
+        if security_redis and security_manager.is_suspicious_activity(client_ip):
             return JSONResponse(
                 status_code=429,
                 content={"detail": "Too many requests"}
             )
         
-        # Log request for monitoring
+        # Log request for monitoring (only if Redis is available)
         if security_redis:
-            security_redis.incr(f"requests:{client_ip}:{datetime.now().strftime('%Y-%m-%d')}")
+            try:
+                security_redis.incr(f"requests:{client_ip}:{datetime.now().strftime('%Y-%m-%d')}")
+            except Exception as e:
+                logger.warning(f"Failed to log request to Redis: {e}")
         
         response = await call_next(request)
         
-        # Log security events for certain response codes
-        if response.status_code in [403, 429, 400]:
-            log_security_event("security_violation", {
-                "ip": client_ip,
-                "status_code": response.status_code,
-                "path": str(request.url.path),
-                "method": request.method
-            })
+        # Log security events for certain response codes (only if Redis is available)
+        if response.status_code in [403, 429, 400] and security_redis:
+            try:
+                log_security_event("security_violation", {
+                    "ip": client_ip,
+                    "status_code": response.status_code,
+                    "path": str(request.url.path),
+                    "method": request.method
+                })
+            except Exception as e:
+                logger.warning(f"Failed to log security event: {e}")
         
         return response
         
     except Exception as e:
         logger.error(f"Security middleware error: {e}")
-        return JSONResponse(
-            status_code=500,
-            content={"detail": "Internal server error"}
-        )
+        # If there's a Redis connection error, still allow the request to proceed
+        if "Error 10061" in str(e) or "Connection refused" in str(e):
+            logger.warning("Redis connection failed - proceeding without security checks")
+            try:
+                response = await call_next(request)
+                return response
+            except Exception as inner_e:
+                logger.error(f"Request processing failed: {inner_e}")
+                return JSONResponse(
+                    status_code=500,
+                    content={"detail": "Internal server error"}
+                )
+        else:
+            return JSONResponse(
+                status_code=500,
+                content={"detail": "Internal server error"}
+            )
 
 # Utility functions for monitoring
 def get_security_stats() -> Dict:

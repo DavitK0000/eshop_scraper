@@ -169,9 +169,18 @@ async def health_check() -> HealthResponse:
     """
     Health check endpoint
     """
+    # Check cache service status without causing connection errors
+    cache_status = "healthy"
+    try:
+        if not cache_service.is_connected():
+            cache_status = "unavailable"
+    except Exception as e:
+        logger.debug(f"Cache service check failed: {e}")
+        cache_status = "unavailable"
+    
     services = {
         "api": "healthy",
-        "cache": "healthy" if cache_service.is_connected() else "unhealthy"
+        "cache": cache_status
     }
     
     return HealthResponse(
@@ -244,6 +253,29 @@ async def get_security_statistics() -> dict:
     This endpoint provides insights into API usage, blocked IPs, and security events.
     """
     return get_security_stats()
+
+
+@router.get("/redis/status")
+async def get_redis_status() -> dict:
+    """
+    Check Redis connection status
+    """
+    try:
+        if cache_service.is_connected():
+            return {
+                "status": "connected",
+                "message": "Redis is available and responding"
+            }
+        else:
+            return {
+                "status": "disconnected",
+                "message": "Redis is not available - caching and rate limiting disabled"
+            }
+    except Exception as e:
+        return {
+            "status": "error",
+            "message": f"Redis connection check failed: {str(e)}"
+        }
 
 
 @router.get("/security/status")
