@@ -39,12 +39,27 @@ SECURITY_CONFIG = {
     "RATE_LIMIT_WINDOW": 60,  # seconds
 }
 
-# Initialize Redis for security features
-try:
-    security_redis = redis.from_url(settings.REDIS_URL, db=1, decode_responses=True)
-except Exception as e:
-    logger.warning(f"Security Redis connection failed: {e}")
-    security_redis = None
+# Initialize Redis for security features (lazy loading)
+security_redis = None
+security_redis_initialized = False
+
+def _init_security_redis():
+    """Initialize security Redis connection (lazy loading)"""
+    global security_redis, security_redis_initialized
+    
+    if security_redis_initialized:
+        return
+    
+    try:
+        security_redis = redis.from_url(settings.REDIS_URL, db=1, decode_responses=True)
+        # Test the connection
+        security_redis.ping()
+        logger.info("Security Redis connected successfully")
+    except Exception as e:
+        logger.info(f"Security Redis not available - security features will be disabled: {e}")
+        security_redis = None
+    
+    security_redis_initialized = True
 
 # API Key management
 API_KEYS = {
@@ -83,24 +98,33 @@ class SecurityManager:
     """Manages security features for the API"""
     
     def __init__(self):
-        self.redis = security_redis
+        self.redis = None
         self.blocked_ips = set()
         self.suspicious_ips = set()
     
+    def _get_redis(self):
+        """Get Redis connection (lazy loading)"""
+        if self.redis is None:
+            _init_security_redis()
+            self.redis = security_redis
+        return self.redis
+    
     def is_ip_blocked(self, ip: str) -> bool:
         """Check if IP is blocked"""
-        if not self.redis:
+        redis_client = self._get_redis()
+        if not redis_client:
             return ip in self.blocked_ips
         
-        return self.redis.exists(f"blocked_ip:{ip}")
+        return redis_client.exists(f"blocked_ip:{ip}")
     
     def block_ip(self, ip: str, reason: str = "Abuse detected"):
         """Block an IP address"""
-        if not self.redis:
+        redis_client = self._get_redis()
+        if not redis_client:
             self.blocked_ips.add(ip)
             return
         
-        self.redis.setex(
+        redis_client.setex(
             f"blocked_ip:{ip}",
             SECURITY_CONFIG["BLOCKED_IPS_TTL"],
             json.dumps({"reason": reason, "blocked_at": datetime.now().isoformat()})
@@ -109,18 +133,20 @@ class SecurityManager:
     
     def is_suspicious_activity(self, ip: str) -> bool:
         """Check for suspicious activity patterns"""
-        if not self.redis:
+        redis_client = self._get_redis()
+        if not redis_client:
             return ip in self.suspicious_ips
         
-        return self.redis.exists(f"suspicious:{ip}")
+        return redis_client.exists(f"suspicious:{ip}")
     
     def mark_suspicious(self, ip: str, reason: str):
         """Mark IP as suspicious"""
-        if not self.redis:
+        redis_client = self._get_redis()
+        if not redis_client:
             self.suspicious_ips.add(ip)
             return
         
-        self.redis.setex(
+        redis_client.setex(
             f"suspicious:{ip}",
             SECURITY_CONFIG["SUSPICIOUS_ACTIVITY_TTL"],
             json.dumps({"reason": reason, "marked_at": datetime.now().isoformat()})
@@ -128,14 +154,15 @@ class SecurityManager:
     
     def check_rate_limit(self, identifier: str, limit: int, window: int = 60) -> bool:
         """Check rate limit for an identifier (IP or API key)"""
-        if not self.redis:
+        redis_client = self._get_redis()
+        if not redis_client:
             return True  # Skip rate limiting if Redis is not available
         
         key = f"rate_limit:{identifier}:{int(time.time() // window)}"
-        current = self.redis.incr(key)
+        current = redis_client.incr(key)
         
         if current == 1:
-            self.redis.expire(key, window)
+            redis_client.expire(key, window)
         
         return current <= limit
     
@@ -257,6 +284,7 @@ def log_security_event(event_type: str, details: Dict):
     """Log security events"""
     logger.warning(f"Security event - {event_type}: {json.dumps(details)}")
     
+    _init_security_redis()
     if security_redis:
         try:
             security_redis.lpush(
@@ -279,6 +307,7 @@ async def security_middleware(request: Request, call_next):
     # Basic security checks
     try:
         # Check if IP is blocked (only if Redis is available)
+        _init_security_redis()
         if security_redis and security_manager.is_ip_blocked(client_ip):
             return JSONResponse(
                 status_code=403,
@@ -338,6 +367,7 @@ async def security_middleware(request: Request, call_next):
 # Utility functions for monitoring
 def get_security_stats() -> Dict:
     """Get security statistics"""
+    _init_security_redis()
     if not security_redis:
         return {"error": "Redis not available"}
     
@@ -362,6 +392,7 @@ def get_security_stats() -> Dict:
 
 def cleanup_security_data():
     """Clean up old security data"""
+    _init_security_redis()
     if not security_redis:
         logger.info("Redis not available - skipping security data cleanup")
         return

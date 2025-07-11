@@ -15,10 +15,13 @@ class CacheService:
     
     def __init__(self):
         self.redis_client = None
-        self._connect()
+        self._connected = False
     
     def _connect(self):
-        """Connect to Redis"""
+        """Connect to Redis (lazy loading)"""
+        if self.redis_client is not None:
+            return
+        
         try:
             self.redis_client = redis.from_url(
                 settings.REDIS_URL,
@@ -27,20 +30,27 @@ class CacheService:
             )
             # Test connection
             self.redis_client.ping()
+            self._connected = True
             logger.info("Successfully connected to Redis")
         except Exception as e:
             logger.info(f"Redis not available - caching will be disabled: {e}")
             self.redis_client = None
+            self._connected = False
     
     def is_connected(self) -> bool:
         """Check if Redis is connected"""
+        if self.redis_client is None:
+            self._connect()
+        
         if not self.redis_client:
             return False
+        
         try:
             self.redis_client.ping()
             return True
         except Exception as e:
             logger.debug(f"Redis ping failed: {e}")
+            self._connected = False
             return False
     
     def get_cached_result(self, url: str) -> Optional[ScrapeResponse]:
