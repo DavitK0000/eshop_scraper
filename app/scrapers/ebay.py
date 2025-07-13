@@ -17,6 +17,7 @@ class EbayScraper(BaseScraper):
         try:
             # Placeholder selectors - these will need to be updated based on actual eBay page structure
             product_info.title = self.find_element_text('h1.x-item-title__mainTitle')
+            print(product_info.title)
             
             # Extract price and currency together
             price_text = self.find_element_text('.x-price-primary')
