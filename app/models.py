@@ -60,4 +60,20 @@ class HealthResponse(BaseModel):
     status: str
     version: str
     timestamp: datetime
-    services: Dict[str, str] 
+    services: Dict[str, str]
+
+
+class VideoProcessRequest(BaseModel):
+    video_urls: List[str] = Field(..., description="List of video URLs to merge in order")
+    audio_data: str = Field(..., description="Base64 encoded audio data")
+    subtitle_text: Optional[str] = Field(None, description="Subtitle text to embed in the video (optional)")
+    output_resolution: str = Field("1920x1080", description="Output video resolution")
+
+
+class VideoProcessResponse(BaseModel):
+    task_id: str
+    status: TaskStatus
+    video_data: Optional[str] = Field(None, description="Base64 encoded final video data")
+    error: Optional[str] = None
+    created_at: datetime
+    completed_at: Optional[datetime] = None 

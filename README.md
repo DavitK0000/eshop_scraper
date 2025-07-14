@@ -13,6 +13,7 @@ A high-performance Python-based backend service that exposes an API endpoint to 
 - **Retry Logic**: Configurable retry mechanism with exponential backoff
 - **Error Handling**: Comprehensive error handling and logging
 - **Task Management**: Track scraping task status and progress
+- **Video Processing**: Merge videos, add audio, and embed subtitles using FFmpeg
 - **GUI Testing Tool**: Built-in GUI application for testing the API
 - **Security Features**: API key authentication, rate limiting, IP blocking, and abuse prevention
 
@@ -27,6 +28,7 @@ A high-performance Python-based backend service that exposes an API endpoint to 
 
 - Python 3.8+
 - Redis server
+- FFmpeg (for video processing features)
 - Windows Server (as specified)
 
 ## Installation
@@ -58,7 +60,16 @@ A high-performance Python-based backend service that exposes an API endpoint to 
    - Start Redis service
    - Default configuration: `localhost:6379`
 
-6. **Environment Configuration**
+6. **Install FFmpeg (for video processing)**
+   ```bash
+   # Check if FFmpeg is installed
+   python install_ffmpeg.py
+   
+   # If not installed, follow the instructions provided by the script
+   # or visit https://ffmpeg.org/download.html
+   ```
+
+7. **Environment Configuration**
    ```bash
    # Copy the example environment file
    copy env_example.txt .env
@@ -217,6 +228,48 @@ Invalidate cache for specific URL.
 
 #### `POST /api/v1/tasks/cleanup`
 Clean up old completed tasks.
+
+### Video Processing Endpoints
+
+#### `POST /api/v1/video/process`
+Process video by merging multiple videos, adding audio, and embedding subtitles.
+
+**Authentication**: Optional API key via Bearer token
+
+**Request Body:**
+```json
+{
+  "video_urls": [
+    "https://example.com/video1.mp4",
+    "https://example.com/video2.mp4"
+  ],
+  "audio_data": "base64_encoded_audio_data",
+  "subtitle_text": "Your subtitle text here",
+  "output_resolution": "1920x1080"
+}
+```
+
+**Note:** `subtitle_text` is optional. If not provided or set to `null`, the video will be processed without subtitles.
+
+**Response:**
+```json
+{
+  "task_id": "uuid-string",
+  "status": "pending",
+  "video_data": null,
+  "error": null,
+  "created_at": "2024-01-01T12:00:00",
+  "completed_at": null
+}
+```
+
+#### `GET /api/v1/video/tasks/{task_id}`
+Get status of a video processing task.
+
+#### `GET /api/v1/video/tasks`
+Get all video processing tasks.
+
+**Prerequisites**: FFmpeg must be installed on the system. Run `python install_ffmpeg.py` to check installation.
 
 ### Security Endpoints
 

@@ -6,10 +6,11 @@ from datetime import datetime
 
 from app.models import (
     ScrapeRequest, ScrapeResponse, TaskStatusResponse, HealthResponse,
-    TaskStatus
+    TaskStatus, VideoProcessRequest, VideoProcessResponse
 )
 from app.services.scraping_service import scraping_service
 from app.services.cache_service import cache_service
+from app.services.video_service import video_service
 from app.scrapers.factory import ScraperFactory
 from app.config import settings
 from app.security import (
@@ -295,3 +296,82 @@ async def get_security_status() -> dict:
         "api_keys_configured": len([k for k in API_KEYS.keys() if k != "demo_key_12345"]),
         "demo_mode": "demo_key_12345" in API_KEYS
     } 
+
+
+@router.post("/video/process", response_model=VideoProcessResponse)
+async def process_video(
+    request: VideoProcessRequest,
+    http_request: Request = None,
+    api_key: Optional[str] = Depends(get_api_key)
+) -> VideoProcessResponse:
+    """
+    Process video by merging multiple videos, adding audio, and embedding subtitles
+    
+    This endpoint accepts:
+    - List of video URLs to merge in order
+    - Base64 encoded audio data
+    - Subtitle text to embed
+    - Output resolution (default: 1920x1080)
+    
+    The processing is performed asynchronously and returns a task ID for status tracking.
+    
+    Authentication: Optional API key via Bearer token
+    """
+    try:
+        # Security validation - DISABLED FOR DEVELOPMENT
+        # TODO: Re-enable security checks for production by uncommenting the lines below
+        # validate_request_security(http_request, api_key)
+        
+        # Process video
+        response = await video_service.process_video(
+            video_urls=request.video_urls,
+            audio_data=request.audio_data,
+            subtitle_text=request.subtitle_text,
+            output_resolution=request.output_resolution
+        )
+        
+        return response
+        
+    except Exception as e:
+        logger.error(f"Error in video process endpoint: {e}", exc_info=True)
+        raise HTTPException(status_code=500, detail=f"Video processing failed: {str(e)}")
+
+
+@router.get("/video/tasks/{task_id}", response_model=VideoProcessResponse)
+async def get_video_task_status(task_id: str) -> VideoProcessResponse:
+    """
+    Get the status of a video processing task
+    """
+    task_info = video_service.get_task_status(task_id)
+    
+    if not task_info:
+        raise HTTPException(status_code=404, detail="Video processing task not found")
+    
+    return VideoProcessResponse(
+        task_id=task_id,
+        status=task_info['status'],
+        video_data=task_info.get('video_data'),
+        error=task_info.get('error'),
+        created_at=task_info['created_at'],
+        completed_at=task_info.get('completed_at')
+    )
+
+
+@router.get("/video/tasks", response_model=List[VideoProcessResponse])
+async def get_all_video_tasks() -> List[VideoProcessResponse]:
+    """
+    Get all active video processing tasks
+    """
+    tasks = video_service.get_all_tasks()
+    
+    return [
+        VideoProcessResponse(
+            task_id=task_id,
+            status=task_info['status'],
+            video_data=task_info.get('video_data'),
+            error=task_info.get('error'),
+            created_at=task_info['created_at'],
+            completed_at=task_info.get('completed_at')
+        )
+        for task_id, task_info in tasks.items()
+    ] 
