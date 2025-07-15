@@ -2,6 +2,7 @@ from typing import Optional
 from app.scrapers.base import BaseScraper
 from app.models import ProductInfo
 from bs4 import BeautifulSoup
+from app.utils import sanitize_text, extract_price_value, parse_url_domain
 
 
 class EbayScraper(BaseScraper):
@@ -331,7 +332,7 @@ class EbayScraper(BaseScraper):
                     value_elem = dd_elements[i]
                     
                     if key_elem and value_elem:
-                        from app.utils import sanitize_text
+                        from app.utils import sanitize_text, extract_price_value, parse_url_domain
                         key = sanitize_text(key_elem.get_text())
                         value = sanitize_text(value_elem.get_text())
                         if key and value:
@@ -402,8 +403,14 @@ class EbayScraper(BaseScraper):
                 price_part = price_text[len(symbol):].strip()
                 # Clean up the price (remove any non-numeric characters except decimal point)
                 price = re.sub(r'[^\d.,]', '', price_part)
-                # Replace comma with dot for decimal
-                price = price.replace(',', '.')
+                # Use regional format-aware parsing
+                domain = parse_url_domain(self.url) if self.url else None
+                price_value = extract_price_value(price, domain)
+                if price_value is not None:
+                    price = f"{price_value:.2f}"
+                else:
+                    # Fallback to simple comma replacement
+                    price = price.replace(',', '.')
                 logger.info(f"Found currency symbol '{symbol}', extracted price: '{price}', currency: '{currency_code}'")
                 return price, currency_code
         
@@ -418,14 +425,27 @@ class EbayScraper(BaseScraper):
             price_part = re.sub(currency_pattern, '', price_text, flags=re.IGNORECASE).strip()
             # Clean up the price (remove any non-numeric characters except decimal point and comma)
             price = re.sub(r'[^\d.,]', '', price_part)
-            # Replace comma with dot for decimal (European format)
-            price = price.replace(',', '.')
+            # Use regional format-aware parsing
+            domain = parse_url_domain(self.url) if self.url else None
+            price_value = extract_price_value(price, domain)
+            if price_value is not None:
+                price = f"{price_value:.2f}"
+            else:
+                # Fallback to simple comma replacement
+                price = price.replace(',', '.')
             logger.info(f"Found currency code '{currency_code}', extracted price: '{price}' from '{price_text}'")
             return price, currency_code
         
         # If still no currency found, default based on domain
         price = re.sub(r'[^\d.,]', '', price_text)
-        price = price.replace(',', '.')
+        # Use regional format-aware parsing
+        domain = parse_url_domain(self.url) if self.url else None
+        price_value = extract_price_value(price, domain)
+        if price_value is not None:
+            price = f"{price_value:.2f}"
+        else:
+            # Fallback to simple comma replacement
+            price = price.replace(',', '.')
         
         # Default currency based on eBay domain
         if 'ebay.com' in self.url:

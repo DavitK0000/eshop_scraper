@@ -1,6 +1,7 @@
 from typing import Optional
 from app.scrapers.base import BaseScraper
 from app.models import ProductInfo
+from app.utils import sanitize_text, extract_price_value, parse_url_domain
 import logging
 
 logger = logging.getLogger(__name__)
@@ -352,8 +353,16 @@ class BolScraper(BaseScraper):
                 # Look for pattern like "Gemiddeld 4.0 van de 5 sterren"
                 match = re.search(r'(\d+[.,]\d+)\s+van\s+de\s+(\d+)', aria_label)
                 if match:
-                    rating = float(match.group(1).replace(',', '.'))
+                    rating_str = match.group(1)
                     max_rating = float(match.group(2))
+                    # Use regional format-aware parsing
+                    domain = parse_url_domain(self.url) if self.url else None
+                    rating_value = extract_price_value(rating_str, domain)
+                    if rating_value is not None:
+                        rating = rating_value
+                    else:
+                        # Fallback to simple comma replacement
+                        rating = float(rating_str.replace(',', '.'))
                     return (rating / max_rating) * 5.0
             
             # Try to get rating from visible text like "4,0/5"
@@ -363,14 +372,30 @@ class BolScraper(BaseScraper):
                 # Look for pattern like "4,0/5" or "4.0/5"
                 match = re.search(r'(\d+[.,]\d+)\s*/\s*(\d+)', rating_text)
                 if match:
-                    rating = float(match.group(1).replace(',', '.'))
+                    rating_str = match.group(1)
                     max_rating = float(match.group(2))
+                    # Use regional format-aware parsing
+                    domain = parse_url_domain(self.url) if self.url else None
+                    rating_value = extract_price_value(rating_str, domain)
+                    if rating_value is not None:
+                        rating = rating_value
+                    else:
+                        # Fallback to simple comma replacement
+                        rating = float(rating_str.replace(',', '.'))
                     return (rating / max_rating) * 5.0
                 
                 # Look for just a number like "4,0" or "4.0"
                 match = re.search(r'(\d+[.,]\d+)', rating_text)
                 if match:
-                    rating = float(match.group(1).replace(',', '.'))
+                    rating_str = match.group(1)
+                    # Use regional format-aware parsing
+                    domain = parse_url_domain(self.url) if self.url else None
+                    rating_value = extract_price_value(rating_str, domain)
+                    if rating_value is not None:
+                        rating = rating_value
+                    else:
+                        # Fallback to simple comma replacement
+                        rating = float(rating_str.replace(',', '.'))
                     return min(rating, 5.0)  # Cap at 5.0
             
             # Fallback to the original extract_rating method

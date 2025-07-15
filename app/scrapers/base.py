@@ -8,7 +8,7 @@ import re
 from datetime import datetime
 from urllib.parse import urlparse
 from app.models import ProductInfo
-from app.utils import sanitize_text, extract_price_from_text, extract_rating_from_text, proxy_manager
+from app.utils import sanitize_text, extract_price_from_text, extract_price_value, extract_rating_from_text, proxy_manager, parse_url_domain
 from app.config import settings
 
 logger = logging.getLogger(__name__)
@@ -499,6 +499,12 @@ class BaseScraper(ABC):
         """Extract price from element"""
         price_text = self.find_element_text(price_selector)
         return extract_price_from_text(price_text)
+    
+    def extract_price_value(self, price_selector: str) -> Optional[float]:
+        """Extract numeric price value from element, handling regional formats"""
+        price_text = self.find_element_text(price_selector)
+        domain = parse_url_domain(self.url) if self.url else None
+        return extract_price_value(price_text, domain)
     
     def extract_rating(self, rating_selector: str) -> Optional[float]:
         """Extract rating from element"""

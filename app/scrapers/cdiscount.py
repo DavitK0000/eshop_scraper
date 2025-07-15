@@ -1,7 +1,7 @@
 from typing import Optional
 from app.scrapers.base import BaseScraper
 from app.models import ProductInfo
-from app.utils import sanitize_text, extract_price_from_text
+from app.utils import sanitize_text, extract_price_from_text, extract_price_value, parse_url_domain
 import logging
 import re
 
@@ -342,9 +342,17 @@ class CDiscountScraper(BaseScraper):
             for pattern in rating_patterns:
                 match = re.search(pattern, rating_text, re.IGNORECASE)
                 if match:
-                    rating_str = match.group(1).replace(',', '.')
+                    rating_str = match.group(1)
+                    # Use regional format-aware parsing
+                    domain = parse_url_domain(self.url) if self.url else None
+                    rating_value = extract_price_value(rating_str, domain)
+                    if rating_value is not None:
+                        rating = rating_value
+                    else:
+                        # Fallback to simple comma replacement
+                        rating = float(rating_str.replace(',', '.'))
+                    
                     try:
-                        rating = float(rating_str)
                         if 0 <= rating <= 5:
                             return rating
                     except ValueError:
@@ -445,14 +453,21 @@ class CDiscountScraper(BaseScraper):
             # First, try to get the price from the content attribute (most reliable)
             content_price = price_element.get('content')
             if content_price:
-                # Convert comma to dot and ensure proper format
-                price_str = content_price.replace(',', '.')
-                try:
-                    price_float = float(price_str)
-                    result['price'] = f"{price_float:.2f}"
+                # Use regional format-aware parsing
+                domain = parse_url_domain(self.url) if self.url else None
+                price_value = extract_price_value(content_price, domain)
+                if price_value is not None:
+                    result['price'] = f"{price_value:.2f}"
                     return result
-                except ValueError:
-                    pass
+                else:
+                    # Fallback to simple comma replacement
+                    try:
+                        price_str = content_price.replace(',', '.')
+                        price_float = float(price_str)
+                        result['price'] = f"{price_float:.2f}"
+                        return result
+                    except ValueError:
+                        pass
             
             # Try to extract from the new CDiscount price structure with separate main price and cents
             if 'c-price' in price_selector:
@@ -479,34 +494,34 @@ class CDiscountScraper(BaseScraper):
             if not price_text:
                 return result
             
-            # Extract price using the utility function
-            price = extract_price_from_text(price_text)
-            if price:
-                result['price'] = price
+            # Extract price using the utility function with regional format support
+            domain = parse_url_domain(self.url) if self.url else None
+            price_value = extract_price_value(price_text, domain)
+            if price_value is not None:
+                result['price'] = f"{price_value:.2f}"
                 return result
             
-            # CDiscount specific price patterns (updated for new structure)
+            # CDiscount specific price patterns with regional format support
             price_patterns = [
-                r'(\d+[.,]\d{2})\s*€',  # 123,45 €
+                r'(\d+[.,]\d{2})\s*€',  # 123,45 € or 123.45 €
                 r'(\d+)\s*€',  # 123 €
-                r'€\s*(\d+[.,]\d{2})',  # € 123,45
+                r'€\s*(\d+[.,]\d{2})',  # € 123,45 or € 123.45
                 r'€\s*(\d+)',  # € 123
-                r'(\d+[.,]\d{2})',  # 123,45
+                r'(\d+[.,]\d{2})',  # 123,45 or 123.45
                 r'(\d+)',  # 123
-                r'€(\d+[.,]\d{2})',  # €123,45 (no space)
+                r'€(\d+[.,]\d{2})',  # €123,45 or €123.45 (no space)
                 r'€(\d+)',  # €123 (no space)
             ]
             
             for pattern in price_patterns:
                 match = re.search(pattern, price_text)
                 if match:
-                    price_str = match.group(1).replace(',', '.')
-                    try:
-                        price_float = float(price_str)
-                        result['price'] = f"{price_float:.2f}"
+                    price_str = match.group(1)
+                    # Use the regional format parser instead of simple comma replacement
+                    price_value = extract_price_value(price_str, domain)
+                    if price_value is not None:
+                        result['price'] = f"{price_value:.2f}"
                         return result
-                    except ValueError:
-                        continue
             
             return result
             
