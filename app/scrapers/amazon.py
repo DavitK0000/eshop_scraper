@@ -115,6 +115,24 @@ class AmazonScraper(BaseScraper):
                 
                 product_info.specifications = specs
             
+            # Third specification extraction method
+            if not specs:
+                tech_spec_table = self.soup.select_one('table#productDetails_techSpec_section_1')
+                if tech_spec_table:
+                    spec_rows = tech_spec_table.select('tbody tr')
+                    for row in spec_rows:
+                        key_elem = row.select_one('th')
+                        value_elem = row.select_one('td')
+                        
+                        if key_elem and value_elem:
+                            from app.utils import sanitize_text
+                            key = sanitize_text(key_elem.get_text())
+                            value = sanitize_text(value_elem.get_text())
+                            if key and value:
+                                specs[key] = value
+                
+                product_info.specifications = specs
+            
             # Store raw data for debugging
             product_info.raw_data = {
                 'url': self.url,
