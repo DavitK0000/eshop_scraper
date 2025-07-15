@@ -55,7 +55,8 @@ class BaseScraper(ABC):
             "has been temporarily blocked",
             "access temporarily unavailable",
             "rate limit exceeded",
-            "too many requests"
+            "too many requests",
+            "Access denied"
         ]
         
         content_lower = self.html_content.lower()

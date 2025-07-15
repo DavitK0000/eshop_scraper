@@ -51,6 +51,8 @@ class ScraperFactory:
         'www.ebay.es': EbayScraper,
         'ebay.ca': EbayScraper,
         'www.ebay.ca': EbayScraper,
+        'ebay.nl': EbayScraper,
+        'www.ebay.nl': EbayScraper,
         'ebay.com.au': EbayScraper,
         'www.ebay.com.au': EbayScraper,
         'jd.com': JDScraper,

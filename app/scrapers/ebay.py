@@ -7,6 +7,54 @@ from bs4 import BeautifulSoup
 class EbayScraper(BaseScraper):
     """eBay product scraper"""
     
+    def _extract_description_from_html(self, html_content: str) -> tuple[str, str]:
+        """
+        Extract description text and HTML from HTML content
+        
+        Args:
+            html_content: HTML content to parse
+            
+        Returns:
+            tuple: (description_text, description_html)
+        """
+        if not html_content:
+            return "", ""
+        
+        try:
+            soup = BeautifulSoup(html_content, 'html.parser')
+            
+            # Try multiple selectors for description content
+            description_selectors = [
+                'h2#subtitle',
+            ]
+            
+            description_text = ""
+            description_html = ""
+            
+            for selector in description_selectors:
+                description_element = soup.select_one(selector)
+                if description_element:
+                    description_html = str(description_element)
+                    description_text = description_element.get_text(separator=' ', strip=True)
+                    if description_text.strip():
+                        import logging
+                        logger = logging.getLogger(__name__)
+                        logger.info(f"Found description using selector: {selector}")
+                        break
+            
+            # If still no description, try to get all text content
+            if not description_text:
+                description_text = soup.get_text(separator=' ', strip=True)
+                description_html = str(soup.find('body')) if soup.find('body') else str(soup)
+            
+            return description_text, description_html
+            
+        except Exception as e:
+            import logging
+            logger = logging.getLogger(__name__)
+            logger.warning(f"Failed to extract description from HTML: {e}")
+            return "", ""
+    
     async def extract_product_info(self) -> ProductInfo:
         """
         Extract product information from eBay product page
@@ -20,6 +68,7 @@ class EbayScraper(BaseScraper):
             
             # Extract price and currency together
             price_text = self.find_element_text('.x-price-primary')
+            print(price_text)
             if price_text:
                 price, currency = self._extract_price_and_currency(price_text)
                 product_info.price = price
@@ -30,40 +79,146 @@ class EbayScraper(BaseScraper):
             description_html = ""
             
             try:
-                # Try to get description from iframe
+                # Method 1: Try to fetch iframe content using requests (simple crawl)
                 iframe = self.soup.select_one('iframe#desc_ifr')
-                if iframe:
-                    # Get iframe src URL
+                if iframe and iframe.get('src'):
                     iframe_src = iframe.get('src')
-                    if iframe_src:
-                        # Make iframe src absolute if it's relative
-                        if iframe_src.startswith('//'):
-                            iframe_src = 'https:' + iframe_src
-                        elif iframe_src.startswith('/'):
-                            iframe_src = 'https://www.ebay.com' + iframe_src
+                    
+                    # Make sure the URL is absolute
+                    if iframe_src.startswith('//'):
+                        iframe_src = 'https:' + iframe_src
+                    elif iframe_src.startswith('/'):
+                        # Extract domain from current URL
+                        from urllib.parse import urlparse
+                        parsed_url = urlparse(self.url)
+                        iframe_src = f"{parsed_url.scheme}://{parsed_url.netloc}{iframe_src}"
+                    
+                    try:
+                        import requests
+                        import logging
+                        logger = logging.getLogger(__name__)
                         
-                        # Navigate to iframe content
-                        await self.page.goto(iframe_src, wait_until='domcontentloaded', timeout=30000)
-                        iframe_content = await self.page.content()
-                        iframe_soup = BeautifulSoup(iframe_content, 'html.parser')
+                        # Create headers similar to a real browser
+                        headers = {
+                            'User-Agent': 'Mozilla/5.0 (Windows NT 10.0; Win64; x64) AppleWebKit/537.36 (KHTML, like Gecko) Chrome/91.0.4472.124 Safari/537.36',
+                            'Referer': self.url,
+                            'Accept': 'text/html,application/xhtml+xml,application/xml;q=0.9,image/webp,*/*;q=0.8',
+                            'Accept-Language': 'en-US,en;q=0.5',
+                            'Accept-Encoding': 'gzip, deflate',
+                            'Connection': 'keep-alive',
+                            'Upgrade-Insecure-Requests': '1',
+                        }
                         
-                        # Extract description from iframe
-                        description_element = iframe_soup.select_one('div.x-item-description-child')
-                        if description_element:
-                            description_html = str(description_element)
-                            description_text = description_element.get_text(separator=' ', strip=True)
+                        # Get cookies from the current page if available
+                        cookies = {}
+                        if hasattr(self, 'page') and hasattr(self.page, 'context'):
+                            try:
+                                # Get cookies from Playwright context
+                                playwright_cookies = await self.page.context.cookies()
+                                cookies = {cookie['name']: cookie['value'] for cookie in playwright_cookies}
+                            except Exception as cookie_error:
+                                logger.warning(f"Failed to get cookies from Playwright: {cookie_error}")
                         
-                        # Navigate back to main page
-                        await self.page.goto(self.url, wait_until='domcontentloaded', timeout=30000)
-                        self.html_content = await self.page.content()
-                        self.soup = BeautifulSoup(self.html_content, 'html.parser')
+                        # Fetch iframe content using requests
+                        response = requests.get(
+                            iframe_src, 
+                            headers=headers, 
+                            cookies=cookies, 
+                            timeout=30,
+                            allow_redirects=True
+                        )
+                        
+                        if response.status_code == 200:
+                            iframe_content = response.text
+                            print(f"Iframe content length: {len(iframe_content)}")
+                            print(f"Iframe content preview: {iframe_content[:200]}...")
+                            
+                            # Use the dedicated function to extract description
+                            description_text, description_html = self._extract_description_from_html(iframe_content)
+                            if description_text:
+                                logger.info("Found description using requests method")
+                        
+                        else:
+                            logger.warning(f"Failed to fetch iframe content: HTTP {response.status_code}")
+                            print(f"Response headers: {dict(response.headers)}")
+                    
+                    except Exception as request_error:
+                        import logging
+                        logger = logging.getLogger(__name__)
+                        logger.warning(f"Failed to fetch iframe content with requests: {request_error}")
+                        print(f"Request error: {request_error}")
                 
-                # If iframe method failed, try direct extraction from main page
-                if not description_text:
-                    description_element = self.soup.select_one('div.x-item-description-child')
-                    if description_element:
-                        description_html = str(description_element)
-                        description_text = description_element.get_text(separator=' ', strip=True)
+                # Method 2: Try JavaScript method as fallback
+                if not description_text and hasattr(self, 'page') and self.page:
+                    try:
+                        # Use JavaScript to extract iframe content
+                        iframe_content = await self.page.evaluate("""
+                            () => {
+                                const iframe = document.querySelector('iframe#desc_ifr');
+                                if (iframe && iframe.contentDocument) {
+                                    return iframe.contentDocument.body.innerHTML;
+                                }
+                                return null;
+                            }
+                        """)
+                        
+                        if iframe_content:
+                            # Use the dedicated function to extract description
+                            description_text, description_html = self._extract_description_from_html(iframe_content)
+                            if description_text:
+                                import logging
+                                logger = logging.getLogger(__name__)
+                                logger.info("Found description using JavaScript method")
+                    
+                    except Exception as js_error:
+                        import logging
+                        logger = logging.getLogger(__name__)
+                        logger.warning(f"JavaScript iframe access failed: {js_error}")
+                
+                # Method 3: Try httpx as another alternative
+                if not description_text and iframe and iframe.get('src'):
+                    try:
+                        import httpx
+                        import logging
+                        logger = logging.getLogger(__name__)
+                        
+                        # Create headers similar to a real browser
+                        headers = {
+                            'User-Agent': 'Mozilla/5.0 (Windows NT 10.0; Win64; x64) AppleWebKit/537.36 (KHTML, like Gecko) Chrome/91.0.4472.124 Safari/537.36',
+                            'Referer': self.url,
+                            'Accept': 'text/html,application/xhtml+xml,application/xml;q=0.9,image/webp,*/*;q=0.8',
+                            'Accept-Language': 'en-US,en;q=0.5',
+                        }
+                        
+                        # Get cookies from the current page if available
+                        cookies = {}
+                        if hasattr(self, 'page') and hasattr(self.page, 'context'):
+                            try:
+                                # Get cookies from Playwright context
+                                playwright_cookies = await self.page.context.cookies()
+                                cookies = {cookie['name']: cookie['value'] for cookie in playwright_cookies}
+                            except Exception as cookie_error:
+                                logger.warning(f"Failed to get cookies from Playwright: {cookie_error}")
+                        
+                        # Fetch iframe content using httpx
+                        async with httpx.AsyncClient(cookies=cookies, timeout=30.0) as client:
+                            response = await client.get(iframe_src, headers=headers)
+                            if response.status_code == 200:
+                                iframe_content = response.text
+                                print(f"HTTPX iframe content length: {len(iframe_content)}")
+                                
+                                # Use the dedicated function to extract description
+                                description_text, description_html = self._extract_description_from_html(iframe_content)
+                                if description_text:
+                                    logger.info("Found description using httpx method")
+                            
+                            else:
+                                logger.warning(f"Failed to fetch iframe content with httpx: HTTP {response.status_code}")
+                    
+                    except Exception as httpx_error:
+                        import logging
+                        logger = logging.getLogger(__name__)
+                        logger.warning(f"Failed to fetch iframe content with httpx: {httpx_error}")
                 
                 # Store description
                 if description_text:
@@ -86,6 +241,7 @@ class EbayScraper(BaseScraper):
                     if not hasattr(product_info, 'raw_data'):
                         product_info.raw_data = {}
                     product_info.raw_data['description_html'] = description_html
+                    
             product_info.rating = self.extract_rating('div.ux-summary span.ux-summary__start--rating span.ux-textspans')
             product_info.review_count = self._extract_review_count('div.ux-summary span.ux-summary__count span.ux-textspans')
             product_info.seller = self.find_element_text('.x-seller-overview__seller-name')
@@ -93,10 +249,7 @@ class EbayScraper(BaseScraper):
             
             # Extract images with improved logic
             image_selectors = [
-                'div.ux-image-carousel-item img',
-                '.x-item-image__image',
-                '.ux-image-magnify img',
-                '.ux-image-carousel img'
+                'div.ux-image-carousel-item.image img',
             ]
             
             # Use a set to avoid duplicates
@@ -106,25 +259,11 @@ class EbayScraper(BaseScraper):
                 # Get both src and data-zoom-src attributes
                 src_images = self.find_elements_attr(selector, 'src')
                 zoom_images = self.find_elements_attr(selector, 'data-zoom-src')
+                srcset_images = self.find_elements_attr(selector, 'srcset')
                 
-                # Also get srcset images (high resolution versions)
-                elements = self.soup.select(selector)
-                srcset_images = []
-                for element in elements:
-                    srcset = element.get('srcset', '')
-                    if srcset:
-                        # Parse srcset to get the highest resolution image
-                        srcset_parts = srcset.split(',')
-                        for part in srcset_parts:
-                            part = part.strip()
-                            if part:
-                                # Extract URL from srcset (format: "url width" or just "url")
-                                url_part = part.split()[0] if ' ' in part else part
-                                if url_part and url_part.startswith('http'):
-                                    srcset_images.append(url_part)
                 
                 # Add all images to the set
-                for img_url in src_images + zoom_images + srcset_images:
+                for img_url in zoom_images:
                     if img_url and img_url.strip():
                         # Clean the URL
                         img_url = img_url.strip()
@@ -216,10 +355,13 @@ class EbayScraper(BaseScraper):
     
     def _extract_price_and_currency(self, price_text: str) -> tuple[str, str]:
         """
-        Extract price and currency from text like '$309.99' or '€299.99'
+        Extract price and currency from text like '$309.99', '€299.99', or 'GBP 37,95'
         Returns tuple of (price, currency)
         """
         import re
+        import logging
+        
+        logger = logging.getLogger(__name__)
         
         if not price_text:
             return None, None
@@ -251,6 +393,7 @@ class EbayScraper(BaseScraper):
         
         # Remove any extra whitespace
         price_text = price_text.strip()
+        logger.info(f"Processing price text: '{price_text}'")
         
         # Try to match currency symbol at the beginning
         for symbol, currency_code in currency_map.items():
@@ -261,6 +404,7 @@ class EbayScraper(BaseScraper):
                 price = re.sub(r'[^\d.,]', '', price_part)
                 # Replace comma with dot for decimal
                 price = price.replace(',', '.')
+                logger.info(f"Found currency symbol '{symbol}', extracted price: '{price}', currency: '{currency_code}'")
                 return price, currency_code
         
         # If no currency symbol found, try to extract from text patterns
@@ -272,8 +416,11 @@ class EbayScraper(BaseScraper):
             currency_code = currency_match.group(1)
             # Remove the currency code from the text and extract price
             price_part = re.sub(currency_pattern, '', price_text, flags=re.IGNORECASE).strip()
+            # Clean up the price (remove any non-numeric characters except decimal point and comma)
             price = re.sub(r'[^\d.,]', '', price_part)
+            # Replace comma with dot for decimal (European format)
             price = price.replace(',', '.')
+            logger.info(f"Found currency code '{currency_code}', extracted price: '{price}' from '{price_text}'")
             return price, currency_code
         
         # If still no currency found, default based on domain
@@ -287,9 +434,12 @@ class EbayScraper(BaseScraper):
             default_currency = "GBP"
         elif 'ebay.de' in self.url or 'ebay.fr' in self.url or 'ebay.it' in self.url or 'ebay.es' in self.url:
             default_currency = "EUR"
+        elif 'ebay.nl' in self.url:
+            default_currency = "EUR"  # Netherlands uses EUR
         else:
             default_currency = "USD"
         
+        logger.info(f"No currency found, using default '{default_currency}' for price: '{price}' from '{price_text}'")
         return price, default_currency
     
     def _extract_review_count(self, selector: str) -> Optional[int]:

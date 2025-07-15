@@ -29,7 +29,7 @@ SECURITY_CONFIG = {
     "MAX_URL_LENGTH": 2048,
     "ALLOWED_DOMAINS": [
         "amazon.com", "amazon.co.uk", "amazon.de", "amazon.fr", "amazon.it", "amazon.es",
-        "ebay.com", "ebay.co.uk", "ebay.de", "ebay.fr", "ebay.it", "ebay.es",
+        "ebay.com", "ebay.co.uk", "ebay.de", "ebay.fr", "ebay.it", "ebay.es", "ebay.nl",
         "bol.com", "cdiscount.com", "otto.de", "jd.com"
     ],
     "BLOCKED_USER_AGENTS": [
