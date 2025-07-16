@@ -8,8 +8,9 @@ import re
 from datetime import datetime
 from urllib.parse import urlparse
 from app.models import ProductInfo
-from app.utils import sanitize_text, extract_price_from_text, extract_price_value, extract_rating_from_text, proxy_manager, parse_url_domain
+from app.utils import sanitize_text, extract_price_from_text, extract_price_value, extract_rating_from_text, proxy_manager, parse_url_domain, user_agent_manager
 from app.config import settings
+from app.stealth_browser import StealthBrowser
 
 logger = logging.getLogger(__name__)
 
@@ -30,6 +31,7 @@ class BaseScraper(ABC):
         self.soup: Optional[BeautifulSoup] = None
         self.proxy_rotation_attempts = 0
         self.max_proxy_rotation_attempts = 3
+        self.domain = parse_url_domain(url)
 
     
     def _is_browser_closed(self) -> bool:
@@ -130,7 +132,13 @@ class BaseScraper(ABC):
             
             # Block specific image domains commonly used by e-commerce sites
             image_domains = [
-                "*.amazonaws.com",
+                "*.media-amazon.com",
+                "*.ebayimg.com",
+                "*.ebaystatic.com",
+                "*.ebaycdn.com",
+                "i.ebayimg.com",
+                "media.s.bol.com",
+                "i.otto.de",
                 "*.cloudfront.net",
                 "*.akamaized.net",
                 "*.cdn77.org",
@@ -145,10 +153,6 @@ class BaseScraper(ABC):
                 "*.cdiscount-cdn.com",
                 # # Add eBay specific domains
                 # "*.ebay.com",
-                "*.ebayimg.com",
-                "*.ebaystatic.com",
-                "*.ebaycdn.com",
-                "i.ebayimg.com",
                 # "thumbs.ebaystatic.com",
                 # "pics.ebaystatic.com",
                 # # Add other common e-commerce image domains
@@ -226,46 +230,16 @@ class BaseScraper(ABC):
 
     
     async def setup_browser(self):
-        """Setup Playwright browser with proxy and user agent"""
+        """Setup Playwright browser with advanced stealth features"""
         try:
             self.playwright = await async_playwright().start()
             
-            browser_args = [
-                '--no-sandbox',
-                '--disable-setuid-sandbox',
-                '--disable-dev-shm-usage',
-                '--disable-accelerated-2d-canvas',
-                '--no-first-run',
-                '--no-zygote',
-                '--disable-gpu',
-                '--disable-background-timer-throttling',
-                '--disable-backgrounding-occluded-windows',
-                '--disable-renderer-backgrounding',
-                # Additional bandwidth optimization flags
-                '--disable-images',
-                '--disable-plugins',
-                '--disable-extensions',
-                # '--disable-default-apps',
-                # '--disable-sync',
-                '--disable-translate',
-                '--disable-features=VizDisplayCompositor',
-                '--disable-ipc-flooding-protection',
-                # Network stability flags
-                # '--disable-web-security',
-                '--disable-background-networking',
-                '--hide-scrollbars',
-                '--mute-audio',
-                '--safebrowsing-disable-auto-update',
-                # '--ignore-certificate-errors',
-                # '--ignore-ssl-errors',
-                # '--ignore-certificate-errors-spki-list',
-            ]
+            # Use stealth browser arguments
+            browser_args = StealthBrowser.get_stealth_browser_args()
             
             # Configure proxy using Playwright's built-in proxy support
             proxy_config = None
             if self.proxy:
-                # The proxy should already be in the correct format from env
-                # Format expected: http://host:port or https://host:port
                 proxy_config = {
                     'server': self.proxy,
                     'username': settings.DECODO_USERNAME if hasattr(settings, 'DECODO_USERNAME') else None,
@@ -273,23 +247,26 @@ class BaseScraper(ABC):
                 }
                 logger.info(f"Using proxy: {self.proxy}")
             
+            # Launch browser with stealth configuration
             self.browser = await self.playwright.chromium.launch(
                 headless=settings.PLAYWRIGHT_HEADLESS,
                 args=browser_args,
                 proxy=proxy_config
             )
             
-            self.page = await self.browser.new_page()
+            # Get appropriate user agent for the domain
+            if not self.user_agent:
+                self.user_agent = user_agent_manager.get_user_agent_for_domain(self.domain)
             
-            # Set user agent
-            if self.user_agent:
-                await self.page.set_extra_http_headers({'User-Agent': self.user_agent})
+            # Create context with stealth options
+            context_options = StealthBrowser.get_stealth_context_options()
+            context_options['user_agent'] = self.user_agent
             
-            # Set viewport
-            await self.page.set_viewport_size({
-                'width': settings.PLAYWRIGHT_VIEWPORT_WIDTH,
-                'height': settings.PLAYWRIGHT_VIEWPORT_HEIGHT
-            })
+            self.context = await self.browser.new_context(**context_options)
+            self.page = await self.context.new_page()
+            
+            # Setup stealth features
+            await StealthBrowser.setup_stealth_page(self.page, self.user_agent, self.domain)
             
             # Set timeout
             self.page.set_default_timeout(settings.PLAYWRIGHT_TIMEOUT)
@@ -297,14 +274,14 @@ class BaseScraper(ABC):
             # Setup image blocking to save bandwidth
             await self._setup_image_blocking()
             
-            logger.info(f"Browser setup completed for {self.url}")
+            logger.info(f"Stealth browser setup completed for {self.url}")
             
         except Exception as e:
             logger.error(f"Failed to setup browser: {e}")
             raise
     
     async def get_page_content(self) -> str:
-        """Get HTML content from the page"""
+        """Get HTML content from the page with human-like behavior"""
         try:
             # Check if browser/page is still valid, if not, setup new browser
             if not self.page or not self.browser or self._is_browser_closed():
@@ -323,6 +300,9 @@ class BaseScraper(ABC):
                     await self.page.goto(self.url, wait_until='domcontentloaded', timeout=300000)
                 else:
                     raise
+            
+            # Simulate human-like behavior before getting content
+            await StealthBrowser.simulate_human_behavior(self.page)
                         
             # Check for redirects and update final URL
             current_url = self.page.url
@@ -352,7 +332,7 @@ class BaseScraper(ABC):
             logger.info(f"HTML content length: {len(self.html_content)}")
             
             # Debug: Check if we have meaningful content
-            if len(self.html_content) < 1000:
+            if len(self.html_content) < 5000:
                 logger.warning(f"HTML content seems too short: {len(self.html_content)} characters")
             
             # Debug: Check page title
@@ -373,47 +353,13 @@ class BaseScraper(ABC):
         try:
             # Wait for network to be idle (API calls completed)
             await self.page.wait_for_load_state('networkidle', timeout=10000)
-            
-            # # Call site-specific wait method if implemented
-            # await self._wait_for_site_specific_content()
-            
-            # # Wait for common product data selectors to appear
-            # selectors_to_wait = [
-            #     '[data-testid*="product"]',
-            #     '[class*="product"]',
-            #     '[id*="product"]',
-            #     '.price',
-            #     '.product-title',
-            #     '.product-name',
-            #     'h1',
-            #     '[data-price]',
-            #     '[data-product]',
-            #     '[data-testid*="title"]',
-            #     '[data-testid*="price"]',
-            #     '.product-info',
-            #     '.product-details'
-            # ]
-            
-            # Try to wait for at least one product-related element
-            # found_element = False
-            # for selector in selectors_to_wait:
-            #     try:
-            #         await self.page.wait_for_selector(selector, timeout=2000)
-            #         logger.info(f"Found product element: {selector}")
-            #         found_element = True
-            #         break
-            #     except:
-            #         continue
-            
-            # If no product elements found, try a more generic approach
-            if True:
-            # if not found_element:
-                logger.info("No specific product elements found, using generic wait")
-                # Wait for any content to be present
-                await self.page.wait_for_function(
-                    'document.body && document.body.innerHTML.length > 1000',
-                    timeout=5000
-                )
+        
+            logger.info("No specific product elements found, using generic wait")
+            # Wait for any content to be present
+            await self.page.wait_for_function(
+                'document.body && document.body.innerHTML.length > 1000',
+                timeout=5000
+            )
             
             # Additional wait for any remaining dynamic content
             await self.page.wait_for_timeout(1000)
@@ -435,6 +381,8 @@ class BaseScraper(ABC):
             
             if self.page:
                 await self.page.close()
+            if hasattr(self, 'context'):
+                await self.context.close()
             if self.browser:
                 await self.browser.close()
             if hasattr(self, 'playwright'):

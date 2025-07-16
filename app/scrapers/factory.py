@@ -165,7 +165,7 @@ class GenericScraper(BaseScraper):
             
             # Extract price
             for selector in common_selectors['price']:
-                price = self.extract_price(selector)
+                price = self.extract_price_value(selector)
                 if price:
                     product_info.price = price
                     break

@@ -29,7 +29,7 @@ class DecodoProxyManager:
         self.session_id = None
         self.current_proxy = None
         self.proxy_rotation_attempts = 0
-        self.max_rotation_attempts = 5
+        self.max_rotation_attempts = 15
         
     def _format_proxy_url(self) -> str:
         """Format proxy URL with authentication"""
@@ -173,25 +173,103 @@ class ProxyManager:
 
 class UserAgentManager:
     def __init__(self):
+        # Modern desktop browsers with realistic versions
         self.user_agents = [
+            # Chrome (most common)
             "Mozilla/5.0 (Windows NT 10.0; Win64; x64) AppleWebKit/537.36 (KHTML, like Gecko) Chrome/120.0.0.0 Safari/537.36",
             "Mozilla/5.0 (Windows NT 10.0; Win64; x64) AppleWebKit/537.36 (KHTML, like Gecko) Chrome/119.0.0.0 Safari/537.36",
+            "Mozilla/5.0 (Windows NT 10.0; Win64; x64) AppleWebKit/537.36 (KHTML, like Gecko) Chrome/118.0.0.0 Safari/537.36",
+            "Mozilla/5.0 (Windows NT 10.0; Win64; x64) AppleWebKit/537.36 (KHTML, like Gecko) Chrome/117.0.0.0 Safari/537.36",
+            
+            # Firefox
+            "Mozilla/5.0 (Windows NT 10.0; Win64; x64; rv:120.0) Gecko/20100101 Firefox/120.0",
+            "Mozilla/5.0 (Windows NT 10.0; Win64; x64; rv:119.0) Gecko/20100101 Firefox/119.0",
+            "Mozilla/5.0 (Windows NT 10.0; Win64; x64; rv:118.0) Gecko/20100101 Firefox/118.0",
+            
+            # Safari
+            "Mozilla/5.0 (Macintosh; Intel Mac OS X 10_15_7) AppleWebKit/605.1.15 (KHTML, like Gecko) Version/17.1 Safari/605.1.15",
+            "Mozilla/5.0 (Macintosh; Intel Mac OS X 10_15_7) AppleWebKit/605.1.15 (KHTML, like Gecko) Version/17.0 Safari/605.1.15",
+            "Mozilla/5.0 (Macintosh; Intel Mac OS X 10_15_7) AppleWebKit/605.1.15 (KHTML, like Gecko) Version/16.6 Safari/605.1.15",
+            
+            # Edge
+            "Mozilla/5.0 (Windows NT 10.0; Win64; x64) AppleWebKit/537.36 (KHTML, like Gecko) Chrome/120.0.0.0 Safari/537.36 Edg/120.0.0.0",
+            "Mozilla/5.0 (Windows NT 10.0; Win64; x64) AppleWebKit/537.36 (KHTML, like Gecko) Chrome/119.0.0.0 Safari/537.36 Edg/119.0.0.0",
+            
+            # Mobile Chrome (Android)
+            "Mozilla/5.0 (Linux; Android 14; SM-G991B) AppleWebKit/537.36 (KHTML, like Gecko) Chrome/120.0.0.0 Mobile Safari/537.36",
+            "Mozilla/5.0 (Linux; Android 13; SM-G998B) AppleWebKit/537.36 (KHTML, like Gecko) Chrome/119.0.0.0 Mobile Safari/537.36",
+            "Mozilla/5.0 (Linux; Android 13; Pixel 7) AppleWebKit/537.36 (KHTML, like Gecko) Chrome/120.0.0.0 Mobile Safari/537.36",
+            
+            # Mobile Safari (iOS)
+            "Mozilla/5.0 (iPhone; CPU iPhone OS 17_1 like Mac OS X) AppleWebKit/605.1.15 (KHTML, like Gecko) Version/17.1 Mobile/15E148 Safari/604.1",
+            "Mozilla/5.0 (iPhone; CPU iPhone OS 17_0 like Mac OS X) AppleWebKit/605.1.15 (KHTML, like Gecko) Version/17.0 Mobile/15E148 Safari/604.1",
+            "Mozilla/5.0 (iPad; CPU OS 17_1 like Mac OS X) AppleWebKit/605.1.15 (KHTML, like Gecko) Version/17.1 Mobile/15E148 Safari/604.1",
+            
+            # Tablet Chrome (Android)
+            "Mozilla/5.0 (Linux; Android 13; SM-X700) AppleWebKit/537.36 (KHTML, like Gecko) Chrome/120.0.0.0 Safari/537.36",
+            "Mozilla/5.0 (Linux; Android 13; SM-X900) AppleWebKit/537.36 (KHTML, like Gecko) Chrome/119.0.0.0 Safari/537.36",
+            
+            # European-specific browsers (for bol.com)
+            "Mozilla/5.0 (Windows NT 10.0; Win64; x64) AppleWebKit/537.36 (KHTML, like Gecko) Chrome/120.0.0.0 Safari/537.36",
+            "Mozilla/5.0 (Windows NT 10.0; Win64; x64; rv:120.0) Gecko/20100101 Firefox/120.0",
+            "Mozilla/5.0 (Macintosh; Intel Mac OS X 10.15; rv:120.0) Gecko/20100101 Firefox/120.0",
+            
+            # Older but still common versions
+            "Mozilla/5.0 (Windows NT 10.0; Win64; x64) AppleWebKit/537.36 (KHTML, like Gecko) Chrome/116.0.0.0 Safari/537.36",
+            "Mozilla/5.0 (Windows NT 10.0; Win64; x64; rv:115.0) Gecko/20100101 Firefox/115.0",
+        ]
+        
+        # Stealth-focused user agents (less likely to be detected)
+        self.stealth_user_agents = [
+            # Most common real user agents
+            "Mozilla/5.0 (Windows NT 10.0; Win64; x64) AppleWebKit/537.36 (KHTML, like Gecko) Chrome/120.0.0.0 Safari/537.36",
             "Mozilla/5.0 (Windows NT 10.0; Win64; x64; rv:120.0) Gecko/20100101 Firefox/120.0",
             "Mozilla/5.0 (Macintosh; Intel Mac OS X 10_15_7) AppleWebKit/537.36 (KHTML, like Gecko) Chrome/120.0.0.0 Safari/537.36",
             "Mozilla/5.0 (Macintosh; Intel Mac OS X 10_15_7) AppleWebKit/605.1.15 (KHTML, like Gecko) Version/17.1 Safari/605.1.15",
+            "Mozilla/5.0 (Linux; Android 14; SM-G991B) AppleWebKit/537.36 (KHTML, like Gecko) Chrome/120.0.0.0 Mobile Safari/537.36",
         ]
     
-    def get_user_agent(self) -> str:
+    def get_user_agent(self, stealth_mode: bool = False) -> str:
         """Get a random user agent"""
         if settings.ROTATE_USER_AGENTS:
-            if ua:
+            if ua and not stealth_mode:
                 try:
                     return ua.random
                 except Exception:
                     pass
-            return random.choice(self.user_agents)
+            
+            if stealth_mode:
+                return random.choice(self.stealth_user_agents)
+            else:
+                return random.choice(self.user_agents)
         else:
-            return self.user_agents[0]
+            return self.stealth_user_agents[0] if stealth_mode else self.user_agents[0]
+    
+    def get_user_agent_for_domain(self, domain: str) -> str:
+        """Get appropriate user agent for specific domain"""
+        domain = domain.lower()
+        
+        # For European sites like bol.com, prefer European user agents
+        if any(eu_domain in domain for eu_domain in ['bol.com', 'amazon.de', 'amazon.fr', 'amazon.it', 'amazon.es', 'amazon.nl', 'ebay.de', 'ebay.fr', 'ebay.it', 'ebay.es', 'ebay.nl', 'cdiscount.com', 'otto.de']):
+            european_agents = [
+                "Mozilla/5.0 (Windows NT 10.0; Win64; x64) AppleWebKit/537.36 (KHTML, like Gecko) Chrome/120.0.0.0 Safari/537.36",
+                "Mozilla/5.0 (Windows NT 10.0; Win64; x64; rv:120.0) Gecko/20100101 Firefox/120.0",
+                "Mozilla/5.0 (Macintosh; Intel Mac OS X 10_15_7) AppleWebKit/537.36 (KHTML, like Gecko) Chrome/120.0.0.0 Safari/537.36",
+                "Mozilla/5.0 (Linux; Android 14; SM-G991B) AppleWebKit/537.36 (KHTML, like Gecko) Chrome/120.0.0.0 Mobile Safari/537.36",
+            ]
+            return random.choice(european_agents)
+        
+        # For mobile-first sites, prefer mobile user agents
+        if any(mobile_domain in domain for mobile_domain in ['m.', 'mobile.', 'touch.']):
+            mobile_agents = [
+                "Mozilla/5.0 (Linux; Android 14; SM-G991B) AppleWebKit/537.36 (KHTML, like Gecko) Chrome/120.0.0.0 Mobile Safari/537.36",
+                "Mozilla/5.0 (iPhone; CPU iPhone OS 17_1 like Mac OS X) AppleWebKit/605.1.15 (KHTML, like Gecko) Version/17.1 Mobile/15E148 Safari/604.1",
+                "Mozilla/5.0 (Linux; Android 13; Pixel 7) AppleWebKit/537.36 (KHTML, like Gecko) Chrome/120.0.0.0 Mobile Safari/537.36",
+            ]
+            return random.choice(mobile_agents)
+        
+        # Default to stealth mode for unknown domains
+        return self.get_user_agent(stealth_mode=True)
 
 
 def generate_task_id(url: str) -> str:
@@ -387,7 +465,7 @@ def map_currency_symbol_to_code(currency_symbol: str, domain: str = None) -> str
     Map currency symbol to 3-character ISO currency code
     
     Args:
-        currency_symbol: Currency symbol (e.g., '$', '€', '£')
+        currency_symbol: Currency symbol (e.g., '$', '€', '£') or text containing currency
         domain: Optional domain for fallback currency detection
     
     Returns:
@@ -424,7 +502,19 @@ def map_currency_symbol_to_code(currency_symbol: str, domain: str = None) -> str
         '₿': 'BTC'
     }
     
-    # Direct symbol mapping
+    # First, try to extract currency symbol from the text
+    import re
+    
+    # Look for currency symbols in the text
+    currency_symbol_pattern = r'[\$€£¥₹₽₩₪₨₦₡₫₱₲₴₵₸₺₼₾₿]'
+    symbol_match = re.search(currency_symbol_pattern, currency_symbol)
+    
+    if symbol_match:
+        found_symbol = symbol_match.group(0)
+        if found_symbol in currency_map:
+            return currency_map[found_symbol]
+    
+    # Direct symbol mapping (for when the input is already just a symbol)
     if currency_symbol in currency_map:
         return currency_map[currency_symbol]
     
@@ -433,7 +523,6 @@ def map_currency_symbol_to_code(currency_symbol: str, domain: str = None) -> str
         return currency_symbol
     
     # Try to match currency codes in text
-    import re
     currency_pattern = r'\b(USD|EUR|GBP|JPY|INR|RUB|KRW|ILS|PKR|NGN|CRC|VND|PHP|PYG|UAH|GHS|KZT|TRY|AZN|GEL|BTC)\b'
     currency_match = re.search(currency_pattern, currency_symbol.upper())
     
@@ -479,6 +568,14 @@ def _get_default_currency_by_domain(domain: str) -> str:
     elif 'ebay.de' in domain or 'ebay.fr' in domain or 'ebay.it' in domain or 'ebay.es' in domain:
         return "EUR"
     elif 'ebay.nl' in domain:
+        return "EUR"
+    
+    # European e-commerce sites
+    elif 'otto.de' in domain:
+        return "EUR"
+    elif 'bol.com' in domain:
+        return "EUR"
+    elif 'cdiscount.com' in domain:
         return "EUR"
     
     # Default to USD

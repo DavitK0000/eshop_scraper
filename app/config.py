@@ -49,6 +49,14 @@ class Settings:
     PLAYWRIGHT_VIEWPORT_WIDTH: int = int(os.getenv("PLAYWRIGHT_VIEWPORT_WIDTH", "1920"))
     PLAYWRIGHT_VIEWPORT_HEIGHT: int = int(os.getenv("PLAYWRIGHT_VIEWPORT_HEIGHT", "1080"))
     
+    # Stealth Settings
+    ENABLE_STEALTH_MODE: bool = os.getenv("ENABLE_STEALTH_MODE", "True").lower() == "true"
+    ENABLE_HUMAN_BEHAVIOR: bool = os.getenv("ENABLE_HUMAN_BEHAVIOR", "True").lower() == "true"
+    ENABLE_FINGERPRINT_EVASION: bool = os.getenv("ENABLE_FINGERPRINT_EVASION", "True").lower() == "true"
+    ENABLE_COOKIE_MANAGEMENT: bool = os.getenv("ENABLE_COOKIE_MANAGEMENT", "True").lower() == "true"
+    STEALTH_DELAY_MIN: int = int(os.getenv("STEALTH_DELAY_MIN", "1000"))
+    STEALTH_DELAY_MAX: int = int(os.getenv("STEALTH_DELAY_MAX", "3000"))
+    
     # Rate Limiting
     RATE_LIMIT_PER_MINUTE: int = int(os.getenv("RATE_LIMIT_PER_MINUTE", "60"))
     

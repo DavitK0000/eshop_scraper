@@ -21,7 +21,7 @@ class ScrapeRequest(BaseModel):
 
 class ProductInfo(BaseModel):
     title: Optional[str] = None
-    price: Optional[str] = None
+    price: Optional[float] = None
     currency: Optional[str] = None
     description: Optional[str] = None
     images: List[str] = []

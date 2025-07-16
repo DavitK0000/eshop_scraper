@@ -407,10 +407,10 @@ class EbayScraper(BaseScraper):
                 domain = parse_url_domain(self.url) if self.url else None
                 price_value = extract_price_value(price, domain)
                 if price_value is not None:
-                    price = f"{price_value:.2f}"
+                    price = price_value
                 else:
                     # Fallback to simple comma replacement
-                    price = price.replace(',', '.')
+                    price = float(price.replace(',', '.'))
                 logger.info(f"Found currency symbol '{symbol}', extracted price: '{price}', currency: '{currency_code}'")
                 return price, currency_code
         
@@ -429,10 +429,10 @@ class EbayScraper(BaseScraper):
             domain = parse_url_domain(self.url) if self.url else None
             price_value = extract_price_value(price, domain)
             if price_value is not None:
-                price = f"{price_value:.2f}"
+                price = price_value
             else:
                 # Fallback to simple comma replacement
-                price = price.replace(',', '.')
+                price = float(price.replace(',', '.'))
             logger.info(f"Found currency code '{currency_code}', extracted price: '{price}' from '{price_text}'")
             return price, currency_code
         
@@ -442,10 +442,10 @@ class EbayScraper(BaseScraper):
         domain = parse_url_domain(self.url) if self.url else None
         price_value = extract_price_value(price, domain)
         if price_value is not None:
-            price = f"{price_value:.2f}"
+            price = price_value
         else:
             # Fallback to simple comma replacement
-            price = price.replace(',', '.')
+            price = float(price.replace(',', '.'))
         
         # Default currency based on eBay domain
         if 'ebay.com' in self.url:

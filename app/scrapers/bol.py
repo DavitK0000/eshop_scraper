@@ -3,16 +3,24 @@ from app.scrapers.base import BaseScraper
 from app.models import ProductInfo
 from app.utils import sanitize_text, extract_price_value, parse_url_domain
 import logging
+import random
+import time
 
 logger = logging.getLogger(__name__)
 
 
 class BolScraper(BaseScraper):
-    """Bol.com product scraper"""
+    """Bol.com product scraper with enhanced stealth features"""
     
     async def _wait_for_site_specific_content(self):
-        """Wait for bol.com specific content to load"""
+        """Wait for bol.com specific content to load with enhanced stealth"""
         try:
+            # First, simulate human-like behavior
+            await self._simulate_bol_user_behavior()
+            
+            # Check if we got a proper page (not a bot detection page)
+            await self._check_bol_page_validity()
+            
             # Wait for bol.com specific elements
             selectors_to_wait = [
                 '[data-testid="product-title"]',
@@ -22,12 +30,15 @@ class BolScraper(BaseScraper):
                 '.price',
                 '.product-price',
                 '.product-image',
-                '[data-testid="product-image"]'
+                '[data-testid="product-image"]',
+                '.pdp-header',
+                '.product-details',
+                '.product-info'
             ]
             
             for selector in selectors_to_wait:
                 try:
-                    await self.page.wait_for_selector(selector, timeout=3000)
+                    await self.page.wait_for_selector(selector, timeout=5000)
                     logger.info(f"Found bol.com element: {selector}")
                     break
                 except:
@@ -36,12 +47,305 @@ class BolScraper(BaseScraper):
         except Exception as e:
             logger.warning(f"Bol.com specific wait failed: {e}")
     
+    async def _check_bol_page_validity(self):
+        """Check if the bol.com page is valid and not a bot detection page"""
+        try:
+            # Get current page content
+            content = await self.page.content()
+            
+            # Check for very short content (bot detection or error page)
+            if len(content) < 5000:
+                logger.warning(f"Bol.com returned very short content ({len(content)} characters)")
+                
+                # Check for common bot detection indicators
+                bot_indicators = [
+                    'captcha',
+                    'robot',
+                    'bot',
+                    'automation',
+                    'blocked',
+                    'access denied',
+                    'temporarily unavailable',
+                    'rate limit',
+                    'too many requests',
+                    'security check',
+                    'verification',
+                    'challenge'
+                ]
+                
+                content_lower = content.lower()
+                detected_indicators = [indicator for indicator in bot_indicators if indicator in content_lower]
+                
+                if detected_indicators:
+                    logger.error(f"Bot detection indicators found: {detected_indicators}")
+                    raise Exception(f"Bol.com bot detection triggered: {detected_indicators}")
+                
+                # Check for empty or minimal content
+                if len(content) < 1000:
+                    logger.error("Bol.com returned minimal content - likely blocked")
+                    raise Exception("Bol.com returned minimal content")
+                
+                # Check page title for error indicators
+                try:
+                    title = await self.page.title()
+                    if any(error_word in title.lower() for error_word in ['error', 'blocked', 'unavailable', 'denied']):
+                        logger.error(f"Bol.com error page detected: {title}")
+                        raise Exception(f"Bol.com error page: {title}")
+                except:
+                    pass
+            
+            # Check for bol.com specific error pages
+            error_selectors = [
+                '.error-page',
+                '.error-message',
+                '.blocked-page',
+                '.captcha-container',
+                '.security-check',
+                '.verification-required'
+            ]
+            
+            for selector in error_selectors:
+                try:
+                    element = await self.page.query_selector(selector)
+                    if element:
+                        error_text = await element.text_content()
+                        logger.error(f"Bol.com error page detected with selector {selector}: {error_text}")
+                        raise Exception(f"Bol.com error page: {error_text}")
+                except:
+                    continue
+            
+            logger.info("Bol.com page validity check passed")
+            
+        except Exception as e:
+            logger.error(f"Bol.com page validity check failed: {e}")
+            raise
+    
+    async def get_page_content(self) -> str:
+        """Override to add bol.com specific content validation and retry logic"""
+        try:
+            # Get content using parent method
+            content = await super().get_page_content()
+            
+            # Check for short content and handle it
+            if len(content) < 5000:
+                logger.warning(f"Bol.com returned short content ({len(content)} characters), attempting recovery")
+                
+                # Try to handle short content
+                if await self._handle_bol_short_content():
+                    content = await self.page.content()
+                    logger.info("Successfully recovered bol.com content")
+                else:
+                    logger.error("Failed to recover bol.com content")
+                    raise Exception("Bol.com content recovery failed")
+            
+            # Additional bol.com specific validation
+            if len(content) < 5000:
+                logger.warning(f"Bol.com returned short content ({len(content)} characters)")
+                
+                # Check if it's a valid product page
+                if not any(indicator in content.lower() for indicator in ['product', 'bol.com', 'price', 'title']):
+                    logger.error("Bol.com content doesn't appear to be a valid product page")
+                    raise Exception("Invalid bol.com product page content")
+            
+            return content
+            
+        except Exception as e:
+            logger.error(f"Bol.com content retrieval failed: {e}")
+            raise
+    
+    async def _simulate_bol_user_behavior(self):
+        """Simulate realistic user behavior for bol.com"""
+        try:
+            # Random delay before interaction
+            await self.page.wait_for_timeout(random.randint(1000, 3000))
+            
+            # Sometimes scroll down to see more content
+            if random.random() < 0.7:
+                await self.page.evaluate("window.scrollBy(0, Math.random() * 300 + 200)")
+                await self.page.wait_for_timeout(random.randint(500, 1500))
+            
+            # Sometimes scroll back up
+            if random.random() < 0.3:
+                await self.page.evaluate("window.scrollBy(0, -Math.random() * 150 - 100)")
+                await self.page.wait_for_timeout(random.randint(300, 800))
+            
+            # Random mouse movements
+            viewport = self.page.viewport_size
+            if viewport:
+                for _ in range(random.randint(2, 5)):
+                    x = random.randint(100, viewport['width'] - 100)
+                    y = random.randint(100, viewport['height'] - 100)
+                    await self.page.mouse.move(x, y)
+                    await self.page.wait_for_timeout(random.randint(100, 300))
+            
+            # Sometimes hover over product images
+            try:
+                image_selectors = [
+                    '[data-testid="product-image"] img',
+                    '.product-image img',
+                    '.gallery img',
+                    '.main-image img'
+                ]
+                
+                for selector in image_selectors:
+                    try:
+                        image = await self.page.query_selector(selector)
+                        if image and random.random() < 0.4:
+                            await image.hover()
+                            await self.page.wait_for_timeout(random.randint(200, 600))
+                            break
+                    except:
+                        continue
+            except Exception as e:
+                logger.debug(f"Image hover simulation failed: {e}")
+                
+        except Exception as e:
+            logger.warning(f"Bol.com user behavior simulation failed: {e}")
+    
+    async def _setup_bol_cookies(self):
+        """Setup realistic cookies for bol.com"""
+        try:
+            # Common cookies that real users have
+            cookies = [
+                {
+                    'name': 'bol_cookie_consent',
+                    'value': 'accepted',
+                    'domain': '.bol.com',
+                    'path': '/'
+                },
+                {
+                    'name': 'bol_language',
+                    'value': 'nl',
+                    'domain': '.bol.com',
+                    'path': '/'
+                },
+                {
+                    'name': 'bol_currency',
+                    'value': 'EUR',
+                    'domain': '.bol.com',
+                    'path': '/'
+                }
+            ]
+            
+            await self.page.context.add_cookies(cookies)
+            logger.info("Bol.com cookies set successfully")
+            
+        except Exception as e:
+            logger.warning(f"Failed to set Bol.com cookies: {e}")
+    
+    async def _handle_bol_short_content(self) -> bool:
+        """Handle bol.com short content issues with retry logic"""
+        try:
+            # Wait a bit longer for content to load
+            await self.page.wait_for_timeout(random.randint(2000, 5000))
+            
+            # Try to scroll to trigger more content loading
+            await self.page.evaluate("window.scrollTo(0, document.body.scrollHeight)")
+            await self.page.wait_for_timeout(1000)
+            await self.page.evaluate("window.scrollTo(0, 0)")
+            await self.page.wait_for_timeout(1000)
+            
+            # Wait for network to be idle
+            await self.page.wait_for_load_state('networkidle', timeout=10000)
+            
+            # Check content again
+            content = await self.page.content()
+            if len(content) > 5000:
+                logger.info("Bol.com content loaded successfully after retry")
+                return True
+            
+            # If still short, try refreshing the page
+            logger.info("Bol.com content still short, attempting page refresh")
+            await self.page.reload(wait_until='domcontentloaded')
+            await self.page.wait_for_timeout(random.randint(3000, 6000))
+            
+            content = await self.page.content()
+            if len(content) > 5000:
+                logger.info("Bol.com content loaded successfully after refresh")
+                return True
+            
+            return False
+            
+        except Exception as e:
+            logger.error(f"Failed to handle bol.com short content: {e}")
+            return False
+    
+    async def _enhanced_bol_stealth(self):
+        """Enhanced stealth features specifically for bol.com"""
+        try:
+            # Set more realistic headers for bol.com
+            await self.page.set_extra_http_headers({
+                'Accept': 'text/html,application/xhtml+xml,application/xml;q=0.9,image/webp,image/apng,*/*;q=0.8,application/signed-exchange;v=b3;q=0.7',
+                'Accept-Language': 'nl-NL,nl;q=0.9,en;q=0.8',
+                'Accept-Encoding': 'gzip, deflate, br',
+                'DNT': '1',
+                'Connection': 'keep-alive',
+                'Upgrade-Insecure-Requests': '1',
+                'Sec-Fetch-Dest': 'document',
+                'Sec-Fetch-Mode': 'navigate',
+                'Sec-Fetch-Site': 'none',
+                'Sec-Fetch-User': '?1',
+                'Cache-Control': 'max-age=0',
+                'Referer': 'https://www.bol.com/',
+                'Sec-Ch-Ua': '"Not_A Brand";v="8", "Chromium";v="120", "Google Chrome";v="120"',
+                'Sec-Ch-Ua-Mobile': '?0',
+                'Sec-Ch-Ua-Platform': '"Windows"',
+            })
+            
+            # Inject bol.com specific stealth scripts
+            await self.page.add_init_script("""
+                // Bol.com specific stealth
+                Object.defineProperty(navigator, 'webdriver', {
+                    get: () => undefined,
+                });
+                
+                // Override performance timing
+                const originalGetEntries = Performance.prototype.getEntries;
+                Performance.prototype.getEntries = function() {
+                    const entries = originalGetEntries.call(this);
+                    return entries.filter(entry => !entry.name.includes('automation'));
+                };
+                
+                // Override user agent
+                Object.defineProperty(navigator, 'userAgent', {
+                    get: () => 'Mozilla/5.0 (Windows NT 10.0; Win64; x64) AppleWebKit/537.36 (KHTML, like Gecko) Chrome/120.0.0.0 Safari/537.36',
+                });
+            """)
+            
+            logger.info("Enhanced bol.com stealth features applied")
+            
+        except Exception as e:
+            logger.warning(f"Failed to apply enhanced bol.com stealth: {e}")
+    
+    async def setup_browser(self):
+        """Setup browser with Bol.com specific stealth features"""
+        await super().setup_browser()
+        
+        # Setup Bol.com specific features
+        await self._setup_bol_cookies()
+        await self._enhanced_bol_stealth()
+        
+        # Set Bol.com specific headers
+        await self.page.set_extra_http_headers({
+            'Accept': 'text/html,application/xhtml+xml,application/xml;q=0.9,image/webp,image/apng,*/*;q=0.8,application/signed-exchange;v=b3;q=0.7',
+            'Accept-Language': 'nl-NL,nl;q=0.9,en;q=0.8',
+            'Accept-Encoding': 'gzip, deflate, br',
+            'DNT': '1',
+            'Connection': 'keep-alive',
+            'Upgrade-Insecure-Requests': '1',
+            'Sec-Fetch-Dest': 'document',
+            'Sec-Fetch-Mode': 'navigate',
+            'Sec-Fetch-Site': 'none',
+            'Sec-Fetch-User': '?1',
+            'Cache-Control': 'max-age=0',
+            'Referer': 'https://www.bol.com/',
+        })
+    
     async def extract_product_info(self) -> ProductInfo:
         """
         Extract product information from Bol.com product page
         """
         product_info = ProductInfo()
-        print('here')
         
         try:
             # Extract title - Bol.com uses various selectors for product titles
@@ -450,7 +754,7 @@ class BolScraper(BaseScraper):
             logger.error(f"Error extracting Bol.com review count: {e}")
             return None
     
-    def extract_bol_price(self, price_selector: str) -> Optional[str]:
+    def extract_bol_price(self, price_selector: str) -> Optional[float]:
         """
         Extract price from Bol.com specific price structure
         Handles split prices like: <span class="promo-price" data-test="price">14<sup class="promo-price__fraction" data-test="price-fraction">44</sup></span>
@@ -489,20 +793,28 @@ class BolScraper(BaseScraper):
                 combined_price = main_price_text
             else:
                 # Fallback to the original extract_price method
-                return self.extract_price(price_selector)
+                price_text = self.find_element_text(price_selector)
+                if price_text:
+                    domain = parse_url_domain(self.url) if self.url else None
+                    return extract_price_value(price_text, domain)
+                return None
             
-            # Clean up the price
+            # Clean up the price and convert to float
             import re
             # Remove any non-numeric characters except decimal point
             cleaned_price = re.sub(r'[^\d.]', '', combined_price)
             
-            # Ensure we have a valid price format
+            # Ensure we have a valid price format and convert to float
             if re.match(r'^\d+(\.\d{1,2})?$', cleaned_price):
-                return cleaned_price
+                return float(cleaned_price)
             
             return None
             
         except Exception as e:
             logger.error(f"Error extracting Bol.com price: {e}")
             # Fallback to the original method
-            return self.extract_price(price_selector) 
+            price_text = self.find_element_text(price_selector)
+            if price_text:
+                domain = parse_url_domain(self.url) if self.url else None
+                return extract_price_value(price_text, domain)
+            return None 

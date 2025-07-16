@@ -1,6 +1,7 @@
 from typing import Optional
 from app.scrapers.base import BaseScraper
 from app.models import ProductInfo
+from app.utils import map_currency_symbol_to_code, parse_url_domain
 import re
 
 
@@ -59,20 +60,27 @@ class OttoScraper(BaseScraper):
             ]
             
             for selector in price_selectors:
-                price = self.extract_price(selector)
+                price = self.extract_price_value(selector)
                 if price:
                     product_info.price = price
                     break
             
-            # Extract currency (usually EUR for Otto.de)
+            # Extract currency from price element
             currency_selectors = [
                 '.pdp_price__price-parts',
             ]
             
             for selector in currency_selectors:
-                currency = self.find_element_text(selector)
-                if currency:
-                    product_info.currency = currency.strip()
+                currency_text = self.find_element_text(selector)
+                if currency_text:
+                    
+                    print(currency_text)
+                    # Handle Unicode escape sequences
+                    if r'\u20ac' in currency_text:
+                        currency_text = currency_text.replace(r'\u20ac', '€')
+                    
+                    # Use the existing utility function to map currency symbol to code
+                    product_info.currency = map_currency_symbol_to_code(currency_text, parse_url_domain(self.url))
                     break
             
             # If no currency found, default to EUR for Otto.de

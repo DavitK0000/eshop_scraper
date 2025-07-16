@@ -16,7 +16,7 @@ class JDScraper(BaseScraper):
         try:
             # Placeholder selectors - these will need to be updated based on actual JD.com page structure
             product_info.title = self.find_element_text('.sku-name')
-            product_info.price = self.extract_price('.p-price .price')
+            product_info.price = self.extract_price_value('.p-price .price')
             product_info.description = self.find_element_text('.news')
             product_info.rating = self.extract_rating('.comment-item .comment-star')
             product_info.review_count = self.find_element_text('.comment-count')

@@ -438,17 +438,13 @@ class CDiscountScraper(BaseScraper):
             if currency_elem:
                 currency = currency_elem.get_text(strip=True)
                 if currency:
-                    # Convert Unicode escape sequences to actual characters
-                    if currency == r'\u20ac' or currency == '€':
-                        currency = '€'
-                    elif currency.startswith(r'\u'):
-                        # Handle other Unicode escape sequences
-                        try:
-                            currency = currency.encode('utf-8').decode('unicode_escape')
-                        except:
-                            # If that fails, try direct replacement
-                            currency = currency.replace(r'\u20ac', '€')
-                    result['currency'] = currency
+                    # Handle Unicode escape sequences
+                    if r'\u20ac' in currency:
+                        currency = currency.replace(r'\u20ac', '€')
+                    
+                    # Use the existing utility function to map currency symbol to code
+                    from app.utils import map_currency_symbol_to_code
+                    result['currency'] = map_currency_symbol_to_code(currency, parse_url_domain(self.url))
             
             # First, try to get the price from the content attribute (most reliable)
             content_price = price_element.get('content')
@@ -457,14 +453,14 @@ class CDiscountScraper(BaseScraper):
                 domain = parse_url_domain(self.url) if self.url else None
                 price_value = extract_price_value(content_price, domain)
                 if price_value is not None:
-                    result['price'] = f"{price_value:.2f}"
+                    result['price'] = price_value
                     return result
                 else:
                     # Fallback to simple comma replacement
                     try:
                         price_str = content_price.replace(',', '.')
                         price_float = float(price_str)
-                        result['price'] = f"{price_float:.2f}"
+                        result['price'] = price_float
                         return result
                     except ValueError:
                         pass
@@ -484,7 +480,7 @@ class CDiscountScraper(BaseScraper):
                             # Combine main price and cents
                             full_price = f"{main_price.strip()}.{cents.strip()}"
                             price_float = float(full_price)
-                            result['price'] = f"{price_float:.2f}"
+                            result['price'] = price_float
                             return result
                         except ValueError:
                             pass
@@ -498,7 +494,7 @@ class CDiscountScraper(BaseScraper):
             domain = parse_url_domain(self.url) if self.url else None
             price_value = extract_price_value(price_text, domain)
             if price_value is not None:
-                result['price'] = f"{price_value:.2f}"
+                result['price'] = price_value
                 return result
             
             # CDiscount specific price patterns with regional format support
@@ -520,7 +516,7 @@ class CDiscountScraper(BaseScraper):
                     # Use the regional format parser instead of simple comma replacement
                     price_value = extract_price_value(price_str, domain)
                     if price_value is not None:
-                        result['price'] = f"{price_value:.2f}"
+                        result['price'] = price_value
                         return result
             
             return result

@@ -17,8 +17,11 @@ class AmazonScraper(BaseScraper):
         try:
             # Placeholder selectors - these will need to be updated based on actual Amazon page structure
             product_info.title = self.find_element_text('#productTitle')
-            product_info.price = self.find_element_text('.a-price-whole')+self.find_element_text('.a-price-fraction')
-            product_info.price = product_info.price.replace(',', '.')
+            price_whole = self.find_element_text('.a-price-whole')
+            price_fraction = self.find_element_text('.a-price-fraction')
+            if price_whole:
+                price_str = price_whole + (price_fraction or '0')
+                product_info.price = float(price_str.replace(',', '.'))
             
             # Extract currency symbol and convert to 3-character code
             currency_symbol = self.find_element_text('.a-price-symbol')
