@@ -41,6 +41,7 @@ class BolScraper(BaseScraper):
         Extract product information from Bol.com product page
         """
         product_info = ProductInfo()
+        print('here')
         
         try:
             # Extract title - Bol.com uses various selectors for product titles

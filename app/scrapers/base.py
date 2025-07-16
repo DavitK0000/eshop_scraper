@@ -245,20 +245,20 @@ class BaseScraper(ABC):
                 '--disable-images',
                 '--disable-plugins',
                 '--disable-extensions',
-                '--disable-default-apps',
-                '--disable-sync',
+                # '--disable-default-apps',
+                # '--disable-sync',
                 '--disable-translate',
                 '--disable-features=VizDisplayCompositor',
                 '--disable-ipc-flooding-protection',
                 # Network stability flags
-                '--disable-web-security',
+                # '--disable-web-security',
                 '--disable-background-networking',
                 '--hide-scrollbars',
                 '--mute-audio',
                 '--safebrowsing-disable-auto-update',
-                '--ignore-certificate-errors',
-                '--ignore-ssl-errors',
-                '--ignore-certificate-errors-spki-list',
+                # '--ignore-certificate-errors',
+                # '--ignore-ssl-errors',
+                # '--ignore-certificate-errors-spki-list',
             ]
             
             # Configure proxy using Playwright's built-in proxy support
