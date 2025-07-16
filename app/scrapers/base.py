@@ -138,7 +138,7 @@ class BaseScraper(ABC):
                 "*.ebaycdn.com",
                 "i.ebayimg.com",
                 "media.s.bol.com",
-                "i.otto.de",
+                # "i.otto.de",
                 "*.cloudfront.net",
                 "*.akamaized.net",
                 "*.cdn77.org",

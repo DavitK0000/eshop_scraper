@@ -2,7 +2,7 @@ from typing import Optional
 from app.scrapers.base import BaseScraper
 from app.models import ProductInfo
 from bs4 import BeautifulSoup
-from app.utils import sanitize_text, extract_price_value, parse_url_domain
+from app.utils import sanitize_text, extract_price_value, parse_url_domain, map_currency_symbol_to_code
 
 
 class EbayScraper(BaseScraper):
@@ -69,7 +69,6 @@ class EbayScraper(BaseScraper):
             
             # Extract price and currency together
             price_text = self.find_element_text('.x-price-primary')
-            print(price_text)
             if price_text:
                 price, currency = self._extract_price_and_currency(price_text)
                 product_info.price = price
@@ -131,8 +130,6 @@ class EbayScraper(BaseScraper):
                         
                         if response.status_code == 200:
                             iframe_content = response.text
-                            print(f"Iframe content length: {len(iframe_content)}")
-                            print(f"Iframe content preview: {iframe_content[:200]}...")
                             
                             # Use the dedicated function to extract description
                             description_text, description_html = self._extract_description_from_html(iframe_content)
@@ -141,13 +138,11 @@ class EbayScraper(BaseScraper):
                         
                         else:
                             logger.warning(f"Failed to fetch iframe content: HTTP {response.status_code}")
-                            print(f"Response headers: {dict(response.headers)}")
                     
                     except Exception as request_error:
                         import logging
                         logger = logging.getLogger(__name__)
                         logger.warning(f"Failed to fetch iframe content with requests: {request_error}")
-                        print(f"Request error: {request_error}")
                 
                 # Method 2: Try JavaScript method as fallback
                 if not description_text and hasattr(self, 'page') and self.page:
@@ -206,7 +201,6 @@ class EbayScraper(BaseScraper):
                             response = await client.get(iframe_src, headers=headers)
                             if response.status_code == 200:
                                 iframe_content = response.text
-                                print(f"HTTPX iframe content length: {len(iframe_content)}")
                                 
                                 # Use the dedicated function to extract description
                                 description_text, description_html = self._extract_description_from_html(iframe_content)
@@ -356,10 +350,9 @@ class EbayScraper(BaseScraper):
     
     def _extract_price_and_currency(self, price_text: str) -> tuple[str, str]:
         """
-        Extract price and currency from text like '$309.99', '€299.99', or 'GBP 37,95'
+        Extract price and currency from text using utility functions
         Returns tuple of (price, currency)
         """
-        import re
         import logging
         
         logger = logging.getLogger(__name__)
@@ -367,100 +360,24 @@ class EbayScraper(BaseScraper):
         if not price_text:
             return None, None
         
-        # Common currency symbols and their codes
-        currency_map = {
-            '$': 'USD',
-            '€': 'EUR',
-            '£': 'GBP',
-            '¥': 'JPY',
-            '₹': 'INR',
-            '₽': 'RUB',
-            '₩': 'KRW',
-            '₪': 'ILS',
-            '₨': 'PKR',
-            '₦': 'NGN',
-            '₡': 'CRC',
-            '₫': 'VND',
-            '₱': 'PHP',
-            '₲': 'PYG',
-            '₴': 'UAH',
-            '₵': 'GHS',
-            '₸': 'KZT',
-            '₺': 'TRY',
-            '₼': 'AZN',
-            '₾': 'GEL',
-            '₿': 'BTC'
-        }
-        
         # Remove any extra whitespace
         price_text = price_text.strip()
         logger.info(f"Processing price text: '{price_text}'")
         
-        # Try to match currency symbol at the beginning
-        for symbol, currency_code in currency_map.items():
-            if price_text.startswith(symbol):
-                # Extract the price part (everything after the symbol)
-                price_part = price_text[len(symbol):].strip()
-                # Clean up the price (remove any non-numeric characters except decimal point)
-                price = re.sub(r'[^\d.,]', '', price_part)
-                # Use regional format-aware parsing
-                domain = parse_url_domain(self.url) if self.url else None
-                price_value = extract_price_value(price, domain)
-                if price_value is not None:
-                    price = price_value
-                else:
-                    # Fallback to simple comma replacement
-                    price = float(price.replace(',', '.'))
-                logger.info(f"Found currency symbol '{symbol}', extracted price: '{price}', currency: '{currency_code}'")
-                return price, currency_code
+        # Use utility functions for currency and price extraction
         
-        # If no currency symbol found, try to extract from text patterns
-        # Look for currency codes like USD, EUR, GBP, etc.
-        currency_pattern = r'\b(USD|EUR|GBP|JPY|INR|RUB|KRW|ILS|PKR|NGN|CRC|VND|PHP|PYG|UAH|GHS|KZT|TRY|AZN|GEL|BTC)\b'
-        currency_match = re.search(currency_pattern, price_text.upper())
+        # Extract currency using utility function
+        currency = map_currency_symbol_to_code(price_text, parse_url_domain(self.url) if self.url else None)
         
-        if currency_match:
-            currency_code = currency_match.group(1)
-            # Remove the currency code from the text and extract price
-            price_part = re.sub(currency_pattern, '', price_text, flags=re.IGNORECASE).strip()
-            # Clean up the price (remove any non-numeric characters except decimal point and comma)
-            price = re.sub(r'[^\d.,]', '', price_part)
-            # Use regional format-aware parsing
-            domain = parse_url_domain(self.url) if self.url else None
-            price_value = extract_price_value(price, domain)
-            if price_value is not None:
-                price = price_value
-            else:
-                # Fallback to simple comma replacement
-                price = float(price.replace(',', '.'))
-            logger.info(f"Found currency code '{currency_code}', extracted price: '{price}' from '{price_text}'")
-            return price, currency_code
+        # Extract price value using utility function
+        price = extract_price_value(price_text, parse_url_domain(self.url) if self.url else None)
         
-        # If still no currency found, default based on domain
-        price = re.sub(r'[^\d.,]', '', price_text)
-        # Use regional format-aware parsing
-        domain = parse_url_domain(self.url) if self.url else None
-        price_value = extract_price_value(price, domain)
-        if price_value is not None:
-            price = price_value
+        if price is not None:
+            logger.info(f"Extracted price: '{price}', currency: '{currency}' from '{price_text}'")
+            return price, currency
         else:
-            # Fallback to simple comma replacement
-            price = float(price.replace(',', '.'))
-        
-        # Default currency based on eBay domain
-        if 'ebay.com' in self.url:
-            default_currency = "USD"
-        elif 'ebay.co.uk' in self.url:
-            default_currency = "GBP"
-        elif 'ebay.de' in self.url or 'ebay.fr' in self.url or 'ebay.it' in self.url or 'ebay.es' in self.url:
-            default_currency = "EUR"
-        elif 'ebay.nl' in self.url:
-            default_currency = "EUR"  # Netherlands uses EUR
-        else:
-            default_currency = "USD"
-        
-        logger.info(f"No currency found, using default '{default_currency}' for price: '{price}' from '{price_text}'")
-        return price, default_currency
+            logger.warning(f"Failed to extract price from text: '{price_text}'")
+            return None, currency
     
     def _extract_review_count(self, selector: str) -> Optional[int]:
         """

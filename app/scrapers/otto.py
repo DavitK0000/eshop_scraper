@@ -73,8 +73,6 @@ class OttoScraper(BaseScraper):
             for selector in currency_selectors:
                 currency_text = self.find_element_text(selector)
                 if currency_text:
-                    
-                    print(currency_text)
                     # Handle Unicode escape sequences
                     if r'\u20ac' in currency_text:
                         currency_text = currency_text.replace(r'\u20ac', '€')
@@ -207,31 +205,47 @@ class OttoScraper(BaseScraper):
             
             # Extract images - Otto.de image selectors
             image_selectors = [
-                '.js_pdp_alternate-images__thumbnail-list img',
-                '.pdp_alternate-images__thumbnail-list img',
+                # 'ui.js_pdp_alternate-images__thumbnail-list li',
+                # 'ul.pdp_alternate-images__thumbnail-list li',
+                'div.js_pdp_main-image__slide'
+                # js_pdp_main-image__slide js_pdp_main-image__slide--zoomable pdp_main-image__slide pdp_main-image__slide--zoomable
             ]
             
             for selector in image_selectors:
-                images = self.find_elements_attr(selector, 'src')
-                if images:
-                    # Filter out small images and duplicates
-                    filtered_images = []
-                    for img in images:
-                        if img and len(img) > 10 and img not in filtered_images:
-                            # Convert relative URLs to absolute
-                            if img.startswith('//'):
-                                img = 'https:' + img
-                            elif img.startswith('/'):
-                                img = 'https://www.otto.de' + img
-                            
-                            # Remove query parameters from image URLs
-                            if '?' in img:
-                                img = img.split('?')[0]
-                            
-                            filtered_images.append(img)
+                # Use soup to find image elements
+                image_elements = self.soup.select(selector)
+                
+                for element in image_elements:
+                    # Try to get image from data-image-id attribute first
+                    image_id = element.get('data-image-id')
+                    if image_id:
+                        image_src = f"https://i.otto.de/i/otto/{image_id}"
+                        if image_src not in product_info.images:
+                            product_info.images.append(image_src)
+                        continue
                     
-                    product_info.images.extend(filtered_images)
-                    break
+                    # Try to get image from src attribute
+                    image_src = element.get('src')
+                    if image_src:
+                        # Handle relative URLs
+                        if image_src.startswith('//'):
+                            image_src = 'https:' + image_src
+                        elif image_src.startswith('/'):
+                            image_src = 'https://www.otto.de' + image_src
+                        
+                        if image_src not in product_info.images:
+                            product_info.images.append(image_src)
+                    
+                    # Try to get image from data-src attribute (lazy loading)
+                    data_src = element.get('data-src')
+                    if data_src:
+                        if data_src.startswith('//'):
+                            data_src = 'https:' + data_src
+                        elif data_src.startswith('/'):
+                            data_src = 'https://www.otto.de' + data_src
+                        
+                        if data_src not in product_info.images:
+                            product_info.images.append(data_src)
             
             # Extract specifications from all tables
             specs = {}
