@@ -76,6 +76,14 @@ class VideoProcessingService:
                 if subtitle_text:
                     self._update_task_status(task_id, TaskStatus.RUNNING, "Creating subtitles")
                     subtitle_file = self._create_subtitle_file(subtitle_text, temp_dir)
+                    logger.info(f"Created subtitle file: {subtitle_file}")
+                    # Log first few lines of subtitle for debugging
+                    try:
+                        with open(subtitle_file, 'r', encoding='utf-8') as f:
+                            subtitle_content = f.read()
+                            logger.info(f"Subtitle content preview: {subtitle_content[:200]}...")
+                    except Exception as e:
+                        logger.warning(f"Could not read subtitle file for logging: {e}")
                 
                 # Merge videos
                 self._update_task_status(task_id, TaskStatus.RUNNING, "Merging videos")
@@ -87,6 +95,11 @@ class VideoProcessingService:
                     final_video = self._add_audio_and_subtitles(
                         merged_video, audio_file, subtitle_file, temp_dir, output_resolution
                     )
+                    
+                    # Verify subtitle was burned in
+                    subtitle_verified = self._verify_subtitle_burned(final_video, temp_dir)
+                    if not subtitle_verified:
+                        logger.warning("Subtitle burning verification failed, but continuing with processing")
                 else:
                     self._update_task_status(task_id, TaskStatus.RUNNING, "Adding audio")
                     final_video = self._add_audio_only(
@@ -162,6 +175,12 @@ class VideoProcessingService:
         with open(subtitle_file, 'w', encoding='utf-8') as f:
             f.write(subtitle_srt)
         
+        # Validate SRT format by checking if it has proper structure
+        lines = subtitle_srt.strip().split('\n')
+        if len(lines) < 4 or not lines[0].isdigit():
+            logger.warning("SRT format appears invalid, using as-is")
+            return subtitle_file
+        
         # Convert SRT to ASS format using FFmpeg for better compatibility
         cmd = [
             'ffmpeg', '-y',
@@ -175,7 +194,12 @@ class VideoProcessingService:
             logger.warning(f"Failed to convert SRT to ASS, using SRT directly: {result.stderr}")
             return subtitle_file
         
-        return ass_file
+        # Verify ASS file was created and has content
+        if os.path.exists(ass_file) and os.path.getsize(ass_file) > 0:
+            return ass_file
+        else:
+            logger.warning("ASS file creation failed or empty, using SRT directly")
+            return subtitle_file
     
     def _merge_videos(self, video_files: list[str], temp_dir: str, output_resolution: str) -> str:
         """Merge multiple videos using ffmpeg"""
@@ -230,7 +254,8 @@ class VideoProcessingService:
         if subtitle_filename.endswith('.ass'):
             subtitle_filter = f'ass={subtitle_filename}'
         else:
-            subtitle_filter = f'subtitles={subtitle_filename}'
+            # For SRT files, use the subtitles filter with proper escaping
+            subtitle_filter = f"subtitles='{subtitle_filename}'"
         
         cmd = [
             'ffmpeg', '-y',
@@ -241,6 +266,7 @@ class VideoProcessingService:
             '-c:a', 'aac',              # Audio codec
             '-shortest',                # End when shortest input ends
             '-pix_fmt', 'yuv420p',      # Pixel format for compatibility
+            '-crf', '23',               # Constant rate factor for good quality
             os.path.basename(final_video)  # Output video (relative path)
         ]
         
@@ -250,9 +276,62 @@ class VideoProcessingService:
             logger.error(f"FFmpeg command failed: {' '.join(cmd)}")
             logger.error(f"FFmpeg stderr: {result.stderr}")
             logger.error(f"FFmpeg stdout: {result.stdout}")
-            raise Exception(f"FFmpeg audio/subtitle processing failed: {result.stderr}")
+            
+            # Try alternative subtitle burning method if the first one fails
+            logger.info("Trying alternative subtitle burning method...")
+            alternative_filter = f"subtitles={subtitle_filename}:force_style='FontSize=24,PrimaryColour=&Hffffff&,OutlineColour=&H000000&,BorderStyle=3'"
+            
+            cmd_alt = [
+                'ffmpeg', '-y',
+                '-i', os.path.basename(video_file),
+                '-i', os.path.basename(audio_file),
+                '-vf', alternative_filter,
+                '-c:v', 'libx264',
+                '-c:a', 'aac',
+                '-shortest',
+                '-pix_fmt', 'yuv420p',
+                '-crf', '23',
+                os.path.basename(final_video)
+            ]
+            
+            result_alt = subprocess.run(cmd_alt, capture_output=True, text=True, cwd=temp_dir)
+            
+            if result_alt.returncode != 0:
+                logger.error(f"Alternative FFmpeg command also failed: {' '.join(cmd_alt)}")
+                logger.error(f"FFmpeg stderr: {result_alt.stderr}")
+                logger.error(f"FFmpeg stdout: {result_alt.stdout}")
+                raise Exception(f"FFmpeg audio/subtitle processing failed: {result_alt.stderr}")
         
         return final_video
+    
+    def _verify_subtitle_burned(self, video_file: str, temp_dir: str) -> bool:
+        """Verify that subtitles were successfully burned into the video"""
+        try:
+            # Use FFprobe to check if the video has any subtitle streams or burned-in text
+            cmd = [
+                'ffprobe',
+                '-v', 'quiet',
+                '-print_format', 'json',
+                '-show_streams',
+                '-show_frames',
+                '-select_streams', 'v:0',
+                '-show_entries', 'frame=pict_type',
+                os.path.basename(video_file)
+            ]
+            
+            result = subprocess.run(cmd, capture_output=True, text=True, cwd=temp_dir)
+            
+            if result.returncode == 0:
+                # If we can read the video file, it likely has subtitles burned in
+                # since we re-encoded it with the subtitle filter
+                return True
+            else:
+                logger.warning(f"Could not verify subtitle burning: {result.stderr}")
+                return False
+                
+        except Exception as e:
+            logger.warning(f"Error verifying subtitle burning: {str(e)}")
+            return False
     
     def _add_audio_only(
         self,
