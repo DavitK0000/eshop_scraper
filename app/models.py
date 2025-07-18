@@ -74,6 +74,7 @@ class VideoProcessResponse(BaseModel):
     task_id: str
     status: TaskStatus
     video_data: Optional[str] = Field(None, description="Base64 encoded final video data")
+    thumbnail_data: Optional[str] = Field(None, description="Base64 encoded thumbnail image")
     error: Optional[str] = None
     created_at: datetime
     completed_at: Optional[datetime] = None 

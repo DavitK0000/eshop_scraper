@@ -286,31 +286,31 @@ class BolScraper(BaseScraper):
                 'Sec-Fetch-Site': 'none',
                 'Sec-Fetch-User': '?1',
                 'Cache-Control': 'max-age=0',
-                'Referer': 'https://www.bol.com/',
+                'Referer': 'https://www.bol.com/be/fr',
                 'Sec-Ch-Ua': '"Not_A Brand";v="8", "Chromium";v="120", "Google Chrome";v="120"',
                 'Sec-Ch-Ua-Mobile': '?0',
                 'Sec-Ch-Ua-Platform': '"Windows"',
             })
             
             # Inject bol.com specific stealth scripts
-            await self.page.add_init_script("""
-                // Bol.com specific stealth
-                Object.defineProperty(navigator, 'webdriver', {
-                    get: () => undefined,
-                });
+            # await self.page.add_init_script("""
+            #     // Bol.com specific stealth
+            #     Object.defineProperty(navigator, 'webdriver', {
+            #         get: () => undefined,
+            #     });
                 
-                // Override performance timing
-                const originalGetEntries = Performance.prototype.getEntries;
-                Performance.prototype.getEntries = function() {
-                    const entries = originalGetEntries.call(this);
-                    return entries.filter(entry => !entry.name.includes('automation'));
-                };
+            #     // Override performance timing
+            #     const originalGetEntries = Performance.prototype.getEntries;
+            #     Performance.prototype.getEntries = function() {
+            #         const entries = originalGetEntries.call(this);
+            #         return entries.filter(entry => !entry.name.includes('automation'));
+            #     };
                 
-                // Override user agent
-                Object.defineProperty(navigator, 'userAgent', {
-                    get: () => 'Mozilla/5.0 (Windows NT 10.0; Win64; x64) AppleWebKit/537.36 (KHTML, like Gecko) Chrome/120.0.0.0 Safari/537.36',
-                });
-            """)
+            #     // Override user agent
+            #     Object.defineProperty(navigator, 'userAgent', {
+            #         get: () => 'Mozilla/5.0 (Windows NT 10.0; Win64; x64) AppleWebKit/537.36 (KHTML, like Gecko) Chrome/120.0.0.0 Safari/537.36',
+            #     });
+            # """)
             
             logger.info("Enhanced bol.com stealth features applied")
             
@@ -322,24 +322,44 @@ class BolScraper(BaseScraper):
         await super().setup_browser()
         
         # Setup Bol.com specific features
-        await self._setup_bol_cookies()
+        # await self._setup_bol_cookies()
         await self._enhanced_bol_stealth()
         
-        # Set Bol.com specific headers
+        # Set Bol.com specific headers with more realistic values
         await self.page.set_extra_http_headers({
-            'Accept': 'text/html,application/xhtml+xml,application/xml;q=0.9,image/webp,image/apng,*/*;q=0.8,application/signed-exchange;v=b3;q=0.7',
-            'Accept-Language': 'nl-NL,nl;q=0.9,en;q=0.8',
+            'Accept': 'text/html,application/xhtml+xml,application/xml;q=0.9,image/avif,image/webp,image/apng,*/*;q=0.8,application/signed-exchange;v=b3;q=0.7',
+            'Accept-Language': 'en-US,en;q=0.9,ar;q=0.8',
             'Accept-Encoding': 'gzip, deflate, br',
-            'DNT': '1',
-            'Connection': 'keep-alive',
+            'Cache-Control': 'max-age=0',
+            'Priority': 'u=0, i',
             'Upgrade-Insecure-Requests': '1',
             'Sec-Fetch-Dest': 'document',
             'Sec-Fetch-Mode': 'navigate',
-            'Sec-Fetch-Site': 'none',
+            'Sec-Fetch-Site': 'same-origin',
             'Sec-Fetch-User': '?1',
             'Cache-Control': 'max-age=0',
             'Referer': 'https://www.bol.com/',
+            'sec-ch-ua': '"Not)A;Brand";v="8", "Chromium";v="138", "Google Chrome";v="138"',
+            'sec-ch-ua-mobile': '?0',
+            'sec-ch-ua-platform': '"Windows"',
         })
+        
+        # Set realistic viewport for Dutch users
+        await self.page.set_viewport_size({'width': 1920, 'height': 1080})
+        
+        # Set timezone to Netherlands
+        await self.page.add_init_script("""
+            Object.defineProperty(Intl, 'DateTimeFormat', {
+                get: function() {
+                    return function(locale, options) {
+                        if (locale === 'nl-NL') {
+                            return new Intl.DateTimeFormat('nl-NL', options);
+                        }
+                        return new Intl.DateTimeFormat(locale, options);
+                    };
+                }
+            });
+        """)
     
     async def extract_product_info(self) -> ProductInfo:
         """

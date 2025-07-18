@@ -83,10 +83,23 @@ class ScraperFactory:
         scraper_class = cls._scrapers.get(domain)
         
         if scraper_class:
-            return scraper_class(url, proxy, user_agent, block_images)
+            scraper = scraper_class(url, proxy, user_agent, block_images)
+            # Log which browser will be used for this domain
+            from app.config import settings
+            browser_type = settings.get_browser_for_domain(domain)
+            import logging
+            logger = logging.getLogger(__name__)
+            logger.info(f"Created {scraper_class.__name__} for {domain} using {browser_type} browser")
+            return scraper
         else:
             # Return a generic scraper for unsupported domains
-            return GenericScraper(url, proxy, user_agent, block_images)
+            scraper = GenericScraper(url, proxy, user_agent, block_images)
+            from app.config import settings
+            browser_type = settings.get_browser_for_domain(domain)
+            import logging
+            logger = logging.getLogger(__name__)
+            logger.info(f"Created GenericScraper for {domain} using {browser_type} browser")
+            return scraper
     
     @classmethod
     def _extract_domain(cls, url: str) -> str:

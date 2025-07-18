@@ -5,12 +5,14 @@ from playwright.async_api import async_playwright, Browser, Page
 import logging
 import os
 import re
+import asyncio
 from datetime import datetime
 from urllib.parse import urlparse
 from app.models import ProductInfo
 from app.utils import sanitize_text, extract_price_from_text, extract_price_value, extract_rating_from_text, proxy_manager, parse_url_domain, user_agent_manager
 from app.config import settings
 from app.stealth_browser import StealthBrowser
+from app.browser_manager import browser_manager
 
 logger = logging.getLogger(__name__)
 
@@ -30,8 +32,9 @@ class BaseScraper(ABC):
         self.html_content: Optional[str] = None
         self.soup: Optional[BeautifulSoup] = None
         self.proxy_rotation_attempts = 0
-        self.max_proxy_rotation_attempts = 3
+        self.max_proxy_rotation_attempts = settings.MAX_PROXY_ROTATION_ATTEMPTS
         self.domain = parse_url_domain(url)
+        self.browser_type = settings.get_browser_for_domain(self.domain)
 
     
     def _is_browser_closed(self) -> bool:
@@ -72,48 +75,62 @@ class BaseScraper(ABC):
     
     async def _handle_ip_blocking(self) -> bool:
         """Handle IP blocking by rotating proxy and retrying"""
-        if self.proxy_rotation_attempts >= self.max_proxy_rotation_attempts:
-            logger.error(f"Maximum proxy rotation attempts ({self.max_proxy_rotation_attempts}) reached")
-            return False
+        # Use a loop to prevent infinite recursion
+        while self.proxy_rotation_attempts < self.max_proxy_rotation_attempts:
+            # Check if IP is still blocked
+            if not self._is_ip_blocked():
+                return True
+            
+            logger.info(f"IP blocking detected, attempting proxy rotation (attempt {self.proxy_rotation_attempts + 1}/{self.max_proxy_rotation_attempts})...")
+            
+            # Get a new proxy using the improved rotation method
+            new_proxy = proxy_manager.rotate_proxy()
+            if not new_proxy:
+                logger.error("No proxies available for rotation")
+                return False
+            
+            logger.info(f"Rotating to new proxy: {new_proxy}")
+            
+            # Cleanup current browser
+            await self.cleanup()
+            
+            # Update proxy and retry
+            self.proxy = new_proxy
+            self.proxy_rotation_attempts += 1
+            
+            # Add a small delay between retries to avoid overwhelming the target site
+            if self.proxy_rotation_attempts > 1:
+                delay = min(2 ** self.proxy_rotation_attempts, 10)  # Exponential backoff, max 10 seconds
+                logger.info(f"Waiting {delay} seconds before retry...")
+                await asyncio.sleep(delay)
+            
+            try:
+                # Re-setup browser with new proxy
+                await self.setup_browser()
+                
+                # Navigate to the page again
+                await self.page.goto(self.url, wait_until='domcontentloaded', timeout=300000)
+                await self._wait_for_dynamic_content()
+                
+                # Get updated content
+                self.html_content = await self.page.content()
+                self.soup = BeautifulSoup(self.html_content, 'html.parser')
+                
+                # Check if blocking is resolved
+                if not self._is_ip_blocked():
+                    logger.info("IP blocking resolved with new proxy")
+                    return True
+                
+                logger.warning("IP blocking persists even with new proxy, will retry...")
+                
+            except Exception as e:
+                logger.error(f"Error during proxy rotation attempt {self.proxy_rotation_attempts}: {e}")
+                # Continue to next attempt if there's an error
+                continue
         
-        if not self._is_ip_blocked():
-            return True
-        
-        logger.info(f"IP blocking detected, attempting proxy rotation (attempt {self.proxy_rotation_attempts + 1}/{self.max_proxy_rotation_attempts})...")
-        
-        # Get a new proxy using the improved rotation method
-        new_proxy = proxy_manager.rotate_proxy()
-        if not new_proxy:
-            logger.error("No proxies available for rotation")
-            return False
-        
-        logger.info(f"Rotating to new proxy: {new_proxy}")
-        
-        # Cleanup current browser
-        await self.cleanup()
-        
-        # Update proxy and retry
-        self.proxy = new_proxy
-        self.proxy_rotation_attempts += 1
-        
-        # Re-setup browser with new proxy
-        await self.setup_browser()
-        
-        # Navigate to the page again
-        await self.page.goto(self.url, wait_until='domcontentloaded', timeout=300000)
-        await self._wait_for_dynamic_content()
-        
-        # Get updated content
-        self.html_content = await self.page.content()
-        self.soup = BeautifulSoup(self.html_content, 'html.parser')
-        
-        # Check if blocking is resolved
-        if self._is_ip_blocked():
-            logger.warning("IP blocking persists even with new proxy, will retry...")
-            return await self._handle_ip_blocking()  # Recursive retry
-        
-        logger.info("IP blocking resolved with new proxy")
-        return True
+        # If we get here, we've exhausted all attempts
+        logger.error(f"Maximum proxy rotation attempts ({self.max_proxy_rotation_attempts}) reached")
+        return False
     
     async def _setup_image_blocking(self):
         """Setup image blocking to save bandwidth"""
@@ -232,49 +249,24 @@ class BaseScraper(ABC):
     async def setup_browser(self):
         """Setup Playwright browser with advanced stealth features"""
         try:
-            self.playwright = await async_playwright().start()
-            
-            # Use stealth browser arguments
-            browser_args = StealthBrowser.get_stealth_browser_args()
-            
-            # Configure proxy using Playwright's built-in proxy support
-            proxy_config = None
-            if self.proxy:
-                proxy_config = {
-                    'server': self.proxy,
-                    'username': settings.DECODO_USERNAME if hasattr(settings, 'DECODO_USERNAME') else None,
-                    'password': settings.DECODO_PASSWORD if hasattr(settings, 'DECODO_PASSWORD') else None
-                }
-                logger.info(f"Using proxy: {self.proxy}")
-            
-            # Launch browser with stealth configuration
-            self.browser = await self.playwright.chromium.launch(
-                headless=settings.PLAYWRIGHT_HEADLESS,
-                args=browser_args,
-                proxy=proxy_config
-            )
-            
             # Get appropriate user agent for the domain
             if not self.user_agent:
                 self.user_agent = user_agent_manager.get_user_agent_for_domain(self.domain)
             
-            # Create context with stealth options
-            context_options = StealthBrowser.get_stealth_context_options()
-            context_options['user_agent'] = self.user_agent
-            
-            self.context = await self.browser.new_context(**context_options)
-            self.page = await self.context.new_page()
+            # Setup browser using browser manager
+            self.browser, self.context, self.page = await browser_manager.setup_browser(
+                browser_type=self.browser_type,
+                proxy=self.proxy,
+                user_agent=self.user_agent
+            )
             
             # Setup stealth features
             await StealthBrowser.setup_stealth_page(self.page, self.user_agent, self.domain)
             
-            # Set timeout
-            self.page.set_default_timeout(settings.PLAYWRIGHT_TIMEOUT)
-            
             # Setup image blocking to save bandwidth
             await self._setup_image_blocking()
             
-            logger.info(f"Stealth browser setup completed for {self.url}")
+            logger.info(f"Stealth browser setup completed for {self.url} using {self.browser_type}")
             
         except Exception as e:
             logger.error(f"Failed to setup browser: {e}")
@@ -379,14 +371,13 @@ class BaseScraper(ABC):
             if hasattr(self, '_blocked_images_count') and self._blocked_images_count > 0:
                 logger.info(f"Final image blocking statistics: {self._blocked_images_count} images blocked")
             
-            if self.page:
-                await self.page.close()
-            if hasattr(self, 'context'):
-                await self.context.close()
-            if self.browser:
-                await self.browser.close()
-            if hasattr(self, 'playwright'):
-                await self.playwright.stop()
+            # Use browser manager cleanup
+            await browser_manager.cleanup()
+            
+            # Reset local references
+            self.browser = None
+            self.page = None
+            
         except Exception as e:
             logger.error(f"Error during cleanup: {e}")
     

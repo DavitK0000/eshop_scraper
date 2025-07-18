@@ -351,6 +351,7 @@ async def get_video_task_status(task_id: str) -> VideoProcessResponse:
         task_id=task_id,
         status=task_info['status'],
         video_data=task_info.get('video_data'),
+        thumbnail_data=task_info.get('thumbnail_data'),
         error=task_info.get('error'),
         created_at=task_info['created_at'],
         completed_at=task_info.get('completed_at')
@@ -369,6 +370,7 @@ async def get_all_video_tasks() -> List[VideoProcessResponse]:
             task_id=task_id,
             status=task_info['status'],
             video_data=task_info.get('video_data'),
+            thumbnail_data=task_info.get('thumbnail_data'),
             error=task_info.get('error'),
             created_at=task_info['created_at'],
             completed_at=task_info.get('completed_at')

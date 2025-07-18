@@ -93,6 +93,11 @@ class VideoProcessingService:
                         merged_video, audio_file, temp_dir, output_resolution
                     )
                 
+                # Extract thumbnail from merged video (before subtitles are burned in)
+                self._update_task_status(task_id, TaskStatus.RUNNING, "Extracting thumbnail")
+                thumbnail_file = self._extract_thumbnail(merged_video, temp_dir)
+                thumbnail_base64 = self._encode_thumbnail_to_base64(thumbnail_file)
+                
                 # Convert to base64
                 self._update_task_status(task_id, TaskStatus.RUNNING, "Encoding final video")
                 video_base64 = self._encode_video_to_base64(final_video)
@@ -101,6 +106,7 @@ class VideoProcessingService:
                 self.tasks[task_id].update({
                     'status': TaskStatus.COMPLETED,
                     'video_data': video_base64,
+                    'thumbnail_data': thumbnail_base64,
                     'completed_at': datetime.now(),
                     'updated_at': datetime.now(),
                     'message': 'Video processing completed successfully'
@@ -287,6 +293,57 @@ class VideoProcessingService:
             return base64.b64encode(video_bytes).decode('utf-8')
         except Exception as e:
             raise Exception(f"Failed to encode video to base64: {str(e)}")
+    
+    def _extract_thumbnail(self, video_file: str, temp_dir: str) -> str:
+        """Extract thumbnail from video using FFmpeg"""
+        try:
+            thumbnail_file = os.path.join(temp_dir, "thumbnail.jpg")
+            
+            # FFmpeg command to extract thumbnail at 1 second mark
+            cmd = [
+                'ffmpeg', '-y',
+                '-i', os.path.basename(video_file),  # Input video (relative path)
+                '-ss', '00:00:01',                   # Seek to 1 second
+                '-vframes', '1',                     # Extract 1 frame
+                '-q:v', '2',                         # High quality
+                '-f', 'image2',                      # Force image2 format
+                os.path.basename(thumbnail_file)     # Output thumbnail (relative path)
+            ]
+            
+            result = subprocess.run(cmd, capture_output=True, text=True, cwd=temp_dir)
+            
+            if result.returncode != 0:
+                logger.warning(f"Failed to extract thumbnail: {result.stderr}")
+                # Try extracting at 0 seconds if 1 second fails
+                cmd = [
+                    'ffmpeg', '-y',
+                    '-i', os.path.basename(video_file),
+                    '-ss', '00:00:00',
+                    '-vframes', '1',
+                    '-q:v', '2',
+                    '-f', 'image2',
+                    os.path.basename(thumbnail_file)
+                ]
+                
+                result = subprocess.run(cmd, capture_output=True, text=True, cwd=temp_dir)
+                
+                if result.returncode != 0:
+                    logger.error(f"Failed to extract thumbnail at 0 seconds: {result.stderr}")
+                    raise Exception(f"Failed to extract thumbnail: {result.stderr}")
+            
+            return thumbnail_file
+            
+        except Exception as e:
+            raise Exception(f"Failed to extract thumbnail: {str(e)}")
+    
+    def _encode_thumbnail_to_base64(self, thumbnail_file: str) -> str:
+        """Encode thumbnail image to base64 string"""
+        try:
+            with open(thumbnail_file, 'rb') as f:
+                thumbnail_bytes = f.read()
+            return base64.b64encode(thumbnail_bytes).decode('utf-8')
+        except Exception as e:
+            raise Exception(f"Failed to encode thumbnail to base64: {str(e)}")
     
     def _update_task_status(self, task_id: str, status: TaskStatus, message: str):
         """Update task status"""

@@ -12,7 +12,9 @@ class StealthBrowser:
     
     @staticmethod
     def get_stealth_browser_args() -> list:
-        """Get browser arguments for stealth mode"""
+        """Get browser arguments for stealth mode (deprecated - use browser config instead)"""
+        # This method is kept for backward compatibility
+        # New implementations should use settings.get_browser_config()
         return [
             # Basic stealth flags
             '--disable-blink-features=AutomationControlled',
@@ -260,15 +262,11 @@ class StealthBrowser:
     
     @staticmethod
     async def _set_european_location(page: Page) -> None:
-        """Set European geolocation for European sites"""
+        """Set European geolocation for European sites (DISABLED)"""
         try:
-            # Set geolocation to Netherlands (for bol.com)
-            await page.context.grant_permissions(['geolocation'])
-            await page.set_geolocation({
-                'latitude': 52.3676,
-                'longitude': 4.9041,
-                'accuracy': 100
-            })
+            # Geolocation is disabled for privacy - no location data will be set
+            logger.info("Geolocation disabled for privacy protection")
+            pass
         except Exception as e:
             logger.warning(f"Failed to set geolocation: {e}")
     
@@ -341,12 +339,7 @@ class StealthBrowser:
             'user_agent': None,  # Will be set separately
             'locale': 'en-US',
             'timezone_id': 'Europe/Amsterdam',
-            'geolocation': {
-                'latitude': 52.3676,
-                'longitude': 4.9041,
-                'accuracy': 100
-            },
-            'permissions': ['geolocation'],
+            # Geolocation disabled for privacy protection
             'ignore_https_errors': True,
             'java_script_enabled': True,
             'has_touch': False,

@@ -1,5 +1,5 @@
 import os
-from typing import List
+from typing import List, Dict
 from dotenv import load_dotenv
 
 load_dotenv()
@@ -29,9 +29,211 @@ class Settings:
     MAX_RETRIES: int = int(os.getenv("MAX_RETRIES", "3"))
     CACHE_TTL: int = int(os.getenv("CACHE_TTL", "3600"))  # 1 hour
     
+    # Browser Settings
+    # Available browsers: "chrome", "firefox", "safari"
+    DEFAULT_BROWSER: str = "chrome"
+    
+    # Platform-specific browser selection
+    # Format: {"platform_domain": "browser_name"}
+    PLATFORM_BROWSERS: Dict[str, str] = {
+        # Amazon platforms - use Chrome for better compatibility
+        "amazon.com": "chrome",
+        "amazon.co.uk": "chrome", 
+        "amazon.de": "chrome",
+        "amazon.fr": "chrome",
+        "amazon.it": "chrome",
+        "amazon.es": "chrome",
+        "amazon.nl": "chrome",
+        "amazon.ca": "chrome",
+        "amazon.com.au": "chrome",
+        "amazon.co.jp": "chrome",
+        "amazon.in": "chrome",
+        
+        # eBay platforms - use Firefox for better stealth
+        "ebay.com": "firefox",
+        "ebay.co.uk": "firefox",
+        "ebay.de": "firefox", 
+        "ebay.fr": "firefox",
+        "ebay.it": "firefox",
+        "ebay.es": "firefox",
+        "ebay.ca": "firefox",
+        "ebay.nl": "firefox",
+        "ebay.com.au": "firefox",
+        
+        # JD.com - use Chrome for better performance
+        "jd.com": "chrome",
+        "global.jd.com": "chrome",
+        
+        # European platforms - use Firefox for better compatibility
+        "otto.de": "firefox",
+        "bol.com": "chrome",
+        "cdiscount.com": "firefox",
+    }
+    
+    # Browser-specific configurations
+    BROWSER_CONFIGS: Dict[str, Dict] = {
+        "chrome": {
+            "name": "chromium",
+            "args": [
+                '--disable-blink-features=AutomationControlled',
+                '--disable-web-security',
+                '--disable-features=VizDisplayCompositor',
+                '--disable-ipc-flooding-protection',
+                '--disable-automation',
+                '--disable-dev-shm-usage',
+                '--disable-setuid-sandbox',
+                '--no-first-run',
+                '--no-zygote',
+                '--no-sandbox',
+                '--disable-gpu',
+                '--disable-background-timer-throttling',
+                '--disable-backgrounding-occluded-windows',
+                '--disable-renderer-backgrounding',
+                '--disable-background-networking',
+                '--disable-plugins',
+                '--disable-extensions',
+                '--disable-default-apps',
+                '--disable-sync',
+                '--disable-translate',
+                '--hide-scrollbars',
+                '--mute-audio',
+                '--safebrowsing-disable-auto-update',
+                '--disable-webrtc-encryption',
+                '--disable-webrtc-hw-encoding',
+                '--disable-webrtc-hw-decoding',
+                '--disable-webrtc-multiple-routes',
+                '--disable-webrtc-hw-vp8-encoding',
+                '--disable-webrtc-hw-vp8-decoding',
+                '--disable-2d-canvas-clip-aa',
+                '--disable-3d-apis',
+                '--disable-accelerated-2d-canvas',
+                '--disable-webgl',
+                '--disable-webgl2',
+                '--disable-audio-service',
+                '--disable-audio-input',
+                '--disable-audio-output',
+                '--disable-font-subpixel-positioning',
+                '--lang=en-US,en',
+                '--accept-lang=en-US,en;q=0.9',
+                '--memory-pressure-off',
+                '--max_old_space_size=4096',
+                '--disable-background-networking',
+                '--disable-background-timer-throttling',
+                '--disable-client-side-phishing-detection',
+                '--disable-component-extensions-with-background-pages',
+                '--disable-default-apps',
+                '--disable-domain-reliability',
+                '--disable-features=TranslateUI',
+                '--disable-hang-monitor',
+                '--disable-ipc-flooding-protection',
+                '--disable-prompt-on-repost',
+                '--disable-renderer-backgrounding',
+                '--disable-sync',
+                '--force-color-profile=srgb',
+                '--metrics-recording-only',
+                '--no-first-run',
+                '--password-store=basic',
+                '--use-mock-keychain',
+                '--disable-features=site-per-process',
+                '--disable-site-isolation-trials',
+                '--disable-features=VizDisplayCompositor',
+            ],
+            "viewport": {"width": 1920, "height": 1080},
+            "timeout": 30000,
+        },
+        "firefox": {
+            "name": "firefox",
+            "args": [
+                '--no-remote',
+                '--width=1920',
+                '--height=1080',
+                '--devtools',
+            ],
+            "firefox_user_prefs": {
+                "permissions.default.geo": 2,  # Block geolocation
+                "geo.enabled": False,  # Disable geolocation service
+                "geo.provider.use_corelocation": False,  # Disable core location
+                "geo.provider.use_gpsd": False,  # Disable GPS daemon
+                "geo.provider.use_mls": False,  # Disable Mozilla Location Service
+            },
+            "viewport": {"width": 1920, "height": 1080},
+            "timeout": 30000,
+        },
+        "safari": {
+            "name": "webkit",
+            "args": [
+                '--disable-blink-features=AutomationControlled',
+                '--disable-web-security',
+                '--disable-features=VizDisplayCompositor',
+                '--disable-ipc-flooding-protection',
+                '--disable-automation',
+                '--disable-dev-shm-usage',
+                '--disable-setuid-sandbox',
+                '--no-first-run',
+                '--no-zygote',
+                '--no-sandbox',
+                '--disable-gpu',
+                '--disable-background-timer-throttling',
+                '--disable-backgrounding-occluded-windows',
+                '--disable-renderer-backgrounding',
+                '--disable-background-networking',
+                '--disable-plugins',
+                '--disable-extensions',
+                '--disable-default-apps',
+                '--disable-sync',
+                '--disable-translate',
+                '--hide-scrollbars',
+                '--mute-audio',
+                '--safebrowsing-disable-auto-update',
+                '--disable-webrtc-encryption',
+                '--disable-webrtc-hw-encoding',
+                '--disable-webrtc-hw-decoding',
+                '--disable-webrtc-multiple-routes',
+                '--disable-webrtc-hw-vp8-encoding',
+                '--disable-webrtc-hw-vp8-decoding',
+                '--disable-2d-canvas-clip-aa',
+                '--disable-3d-apis',
+                '--disable-accelerated-2d-canvas',
+                '--disable-webgl',
+                '--disable-webgl2',
+                '--disable-audio-service',
+                '--disable-audio-input',
+                '--disable-audio-output',
+                '--disable-font-subpixel-positioning',
+                '--lang=en-US,en',
+                '--accept-lang=en-US,en;q=0.9',
+                '--memory-pressure-off',
+                '--max_old_space_size=4096',
+                '--disable-background-networking',
+                '--disable-background-timer-throttling',
+                '--disable-client-side-phishing-detection',
+                '--disable-component-extensions-with-background-pages',
+                '--disable-default-apps',
+                '--disable-domain-reliability',
+                '--disable-features=TranslateUI',
+                '--disable-hang-monitor',
+                '--disable-ipc-flooding-protection',
+                '--disable-prompt-on-repost',
+                '--disable-renderer-backgrounding',
+                '--disable-sync',
+                '--force-color-profile=srgb',
+                '--metrics-recording-only',
+                '--no-first-run',
+                '--password-store=basic',
+                '--use-mock-keychain',
+                '--disable-features=site-per-process',
+                '--disable-site-isolation-trials',
+                '--disable-features=VizDisplayCompositor',
+            ],
+            "viewport": {"width": 1920, "height": 1080},
+            "timeout": 30000,
+        }
+    }
+    
     # Proxy Settings
     PROXY_LIST: List[str] = os.getenv("PROXY_LIST", "").split(",") if os.getenv("PROXY_LIST") else []
     ROTATE_PROXIES: bool = os.getenv("ROTATE_PROXIES", "True").lower() == "true"
+    MAX_PROXY_ROTATION_ATTEMPTS: int = int(os.getenv("MAX_PROXY_ROTATION_ATTEMPTS", "3"))
     
     # Decodo Proxy Settings
     DECODO_USERNAME: str = os.getenv("DECODO_USERNAME", "")
@@ -62,6 +264,18 @@ class Settings:
     
     # Logging
     LOG_LEVEL: str = os.getenv("LOG_LEVEL", "INFO")
+    
+    @classmethod
+    def get_browser_for_domain(cls, domain: str) -> str:
+        """Get the appropriate browser for a given domain"""
+        # Remove www. prefix for matching
+        clean_domain = domain.replace("www.", "")
+        return cls.PLATFORM_BROWSERS.get(clean_domain, cls.DEFAULT_BROWSER)
+    
+    @classmethod
+    def get_browser_config(cls, browser_name: str) -> Dict:
+        """Get configuration for a specific browser"""
+        return cls.BROWSER_CONFIGS.get(browser_name, cls.BROWSER_CONFIGS[cls.DEFAULT_BROWSER])
 
 
 settings = Settings() 

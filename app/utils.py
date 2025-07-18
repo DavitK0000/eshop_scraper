@@ -29,7 +29,7 @@ class DecodoProxyManager:
         self.session_id = None
         self.current_proxy = None
         self.proxy_rotation_attempts = 0
-        self.max_rotation_attempts = 15
+        self.max_rotation_attempts = 5
         
     def _format_proxy_url(self) -> str:
         """Format proxy URL with authentication"""
