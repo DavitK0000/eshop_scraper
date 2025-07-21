@@ -356,6 +356,7 @@ def parse_price_with_regional_format(price_text: str, domain: str = None) -> Opt
     
     number_str = match.group(1)
     
+    # Enhanced logic to detect European format based on number structure
     # If we have both comma and period, determine which is decimal separator
     if ',' in number_str and '.' in number_str:
         # Count digits after each separator
@@ -374,11 +375,29 @@ def parse_price_with_regional_format(price_text: str, domain: str = None) -> Opt
         # If neither has 2 digits, use domain-based decision
         else:
             pass  # Use domain-based decision
+    # If we only have a comma, check if it's followed by exactly 2 digits (EU decimal format)
+    elif ',' in number_str and '.' not in number_str:
+        comma_parts = number_str.split(',')
+        # If the part after comma has exactly 2 digits, it's likely EU decimal format
+        if len(comma_parts) == 2 and len(comma_parts[-1]) == 2:
+            is_european_format = True
+        # If the part after comma has 3 digits, it's likely US thousands separator
+        elif len(comma_parts) == 2 and len(comma_parts[-1]) == 3:
+            is_european_format = False
+        # For other cases, use domain-based decision
+        else:
+            pass  # Use domain-based decision
+        
+        # Add debug logging for comma-only case
+        import logging
+        logger = logging.getLogger(__name__)
+        logger.debug(f"Comma-only format detection: '{number_str}' -> parts={comma_parts}, "
+                    f"last_part_length={len(comma_parts[-1]) if comma_parts else 0}, is_european={is_european_format}")
     
     # Parse the number based on format
     try:
         if is_european_format:
-            # European format: 1.234,56 -> 1234.56
+            # European format: 1.234,56 -> 1234.56 or 86,80 -> 86.80
             # Remove dots (thousands separators) and replace comma with dot
             clean_number = number_str.replace('.', '').replace(',', '.')
         else:
@@ -386,8 +405,17 @@ def parse_price_with_regional_format(price_text: str, domain: str = None) -> Opt
             # Remove commas (thousands separators)
             clean_number = number_str.replace(',', '')
         
+        # Add debug logging
+        import logging
+        logger = logging.getLogger(__name__)
+        logger.debug(f"Price parsing: original='{price_text}', extracted='{number_str}', "
+                    f"is_european={is_european_format}, cleaned='{clean_number}', result={float(clean_number)}")
+        
         return float(clean_number)
     except ValueError:
+        import logging
+        logger = logging.getLogger(__name__)
+        logger.warning(f"Failed to parse price: '{price_text}' -> '{number_str}' (is_european={is_european_format})")
         return None
 
 
