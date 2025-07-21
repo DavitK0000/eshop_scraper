@@ -1,6 +1,7 @@
 from typing import Optional
 from app.scrapers.base import BaseScraper
 from app.models import ProductInfo
+from app.utils import extract_number_from_text
 
 
 class JDScraper(BaseScraper):
@@ -19,7 +20,12 @@ class JDScraper(BaseScraper):
             product_info.price = self.extract_price_value('.p-price .price')
             product_info.description = self.find_element_text('.news')
             product_info.rating = self.extract_rating('.comment-item .comment-star')
-            product_info.review_count = self.find_element_text('.comment-count')
+            
+            # Extract review count as number
+            review_count_text = self.find_element_text('.comment-count')
+            if review_count_text:
+                product_info.review_count = extract_number_from_text(review_count_text)
+            
             product_info.brand = self.find_element_text('.parameter2 li')
             product_info.availability = self.find_element_text('.store-prompt')
             

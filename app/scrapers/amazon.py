@@ -1,7 +1,7 @@
 from typing import Optional
 from app.scrapers.base import BaseScraper
 from app.models import ProductInfo
-from app.utils import map_currency_symbol_to_code, parse_url_domain
+from app.utils import map_currency_symbol_to_code, parse_url_domain, parse_price_with_regional_format, extract_number_from_text
 
 
 class AmazonScraper(BaseScraper):
@@ -21,7 +21,7 @@ class AmazonScraper(BaseScraper):
             price_fraction = self.find_element_text('.a-price-fraction')
             if price_whole:
                 price_str = price_whole + (price_fraction or '0')
-                product_info.price = float(price_str.replace(',', '.'))
+                product_info.price = parse_price_with_regional_format(price_str, parse_url_domain(self.url))
             
             # Extract currency symbol and convert to 3-character code
             currency_symbol = self.find_element_text('.a-price-symbol')
@@ -29,7 +29,12 @@ class AmazonScraper(BaseScraper):
             
             product_info.description = self.find_element_text('div#feature-bullets>ul.a-unordered-list')
             product_info.rating = self.extract_rating('.a-icon-alt')
-            product_info.review_count = self.find_element_text('#acrCustomerReviewText')
+            
+            # Extract review count as number
+            review_count_text = self.find_element_text('#acrCustomerReviewText')
+            if review_count_text:
+                product_info.review_count = extract_number_from_text(review_count_text)
+            
             product_info.availability = self.find_element_text('#availability')
             product_info.brand = self.find_element_text('#bylineInfo')
             

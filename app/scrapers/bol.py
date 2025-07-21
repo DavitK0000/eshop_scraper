@@ -1,7 +1,7 @@
 from typing import Optional
 from app.scrapers.base import BaseScraper
 from app.models import ProductInfo
-from app.utils import sanitize_text, extract_price_value, parse_url_domain
+from app.utils import sanitize_text, extract_price_value, parse_url_domain, parse_price_with_regional_format
 import logging
 import random
 import time
@@ -826,7 +826,9 @@ class BolScraper(BaseScraper):
             
             # Ensure we have a valid price format and convert to float
             if re.match(r'^\d+(\.\d{1,2})?$', cleaned_price):
-                return float(cleaned_price)
+                domain = parse_url_domain(self.url) if self.url else None
+                price_value = parse_price_with_regional_format(cleaned_price, domain)
+                return price_value
             
             return None
             

@@ -1,7 +1,7 @@
 from typing import Optional
 from app.scrapers.base import BaseScraper
 from app.models import ProductInfo
-from app.utils import sanitize_text, extract_price_from_text, extract_price_value, parse_url_domain
+from app.utils import sanitize_text, extract_price_from_text, extract_price_value, parse_url_domain, parse_price_with_regional_format
 import logging
 import re
 
@@ -458,10 +458,11 @@ class CDiscountScraper(BaseScraper):
                 else:
                     # Fallback to simple comma replacement
                     try:
-                        price_str = content_price.replace(',', '.')
-                        price_float = float(price_str)
-                        result['price'] = price_float
-                        return result
+                        domain = parse_url_domain(self.url) if self.url else None
+                        price_value = parse_price_with_regional_format(content_price, domain)
+                        if price_value is not None:
+                            result['price'] = price_value
+                            return result
                     except ValueError:
                         pass
             
@@ -479,9 +480,11 @@ class CDiscountScraper(BaseScraper):
                         try:
                             # Combine main price and cents
                             full_price = f"{main_price.strip()}.{cents.strip()}"
-                            price_float = float(full_price)
-                            result['price'] = price_float
-                            return result
+                            domain = parse_url_domain(self.url) if self.url else None
+                            price_value = parse_price_with_regional_format(full_price, domain)
+                            if price_value is not None:
+                                result['price'] = price_value
+                                return result
                         except ValueError:
                             pass
             

@@ -579,4 +579,44 @@ def _get_default_currency_by_domain(domain: str) -> str:
         return "EUR"
     
     # Default to USD
-    return "USD" 
+    return "USD"
+
+
+def extract_number_from_text(text: str) -> Optional[int]:
+    """
+    Extract number from text like '123 ratings', '14 reviews', '1,234 customers'
+    
+    Args:
+        text: Text containing numbers (e.g., "14 ratings", "1,234 reviews")
+    
+    Returns:
+        Extracted number as integer, or None if no number found
+    """
+    if not text:
+        return None
+    
+    import re
+    
+    # Remove common words and extract numbers
+    text = text.lower()
+    text = re.sub(r'(ratings?|reviews?|customers?|bewertungen?|avis|évaluations?|commentaires?|mal|times|ratings?|reviews?)', '', text)
+    
+    # Remove commas and other non-numeric characters except digits
+    text = re.sub(r'[^\d]', '', text)
+    
+    # Find numbers in the text
+    if text:
+        try:
+            return int(text)
+        except ValueError:
+            pass
+    
+    # Fallback: try to find any number pattern
+    numbers = re.findall(r'\d+', text)
+    if numbers:
+        try:
+            return int(numbers[0])
+        except ValueError:
+            pass
+    
+    return None 

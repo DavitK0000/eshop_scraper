@@ -1,13 +1,24 @@
+"""
+Video Processing Service
+
+This module provides video processing capabilities including:
+- Downloading videos from URLs
+- Merging multiple videos
+- Adding audio and subtitles
+- Extracting thumbnails
+- Converting to base64 format
+"""
+
 import asyncio
 import base64
 import os
 import tempfile
 import uuid
 import logging
-from datetime import datetime
-from typing import Dict, Any, Optional
 import subprocess
-import json
+from datetime import datetime
+from typing import Dict, Any, Optional, List
+import httpx
 
 from app.models import TaskStatus, VideoProcessResponse
 
@@ -15,28 +26,38 @@ logger = logging.getLogger(__name__)
 
 
 class VideoProcessingService:
+    """Service for processing videos with audio and subtitle support."""
+    
     def __init__(self):
         self.tasks: Dict[str, Dict[str, Any]] = {}
     
+    # ============================================================================
+    # Public API Methods
+    # ============================================================================
+    
     async def process_video(
         self,
-        video_urls: list[str],
+        video_urls: List[str],
         audio_data: str,
         subtitle_text: Optional[str] = None,
         output_resolution: str = "1920x1080"
     ) -> VideoProcessResponse:
         """
-        Process video by merging multiple videos, adding audio, and embedding subtitles
+        Process video by merging multiple videos, adding audio, and embedding subtitles.
+        
+        Args:
+            video_urls: List of video URLs to download and merge
+            audio_data: Base64 encoded audio data
+            subtitle_text: Optional SRT subtitle text
+            output_resolution: Output video resolution (default: 1920x1080)
+            
+        Returns:
+            VideoProcessResponse with task ID and status
         """
         task_id = str(uuid.uuid4())
         
         # Create task entry
-        self.tasks[task_id] = {
-            'status': TaskStatus.PENDING,
-            'created_at': datetime.now(),
-            'updated_at': datetime.now(),
-            'message': 'Task created'
-        }
+        self._create_task(task_id)
         
         # Start processing in background
         asyncio.create_task(self._process_video_task(
@@ -49,114 +70,124 @@ class VideoProcessingService:
             created_at=datetime.now()
         )
     
+    def get_task_status(self, task_id: str) -> Optional[Dict[str, Any]]:
+        """Get task status by task ID."""
+        return self.tasks.get(task_id)
+    
+    def get_all_tasks(self) -> Dict[str, Dict[str, Any]]:
+        """Get all tasks."""
+        return self.tasks.copy()
+    
+    # ============================================================================
+    # Main Processing Pipeline
+    # ============================================================================
+    
     async def _process_video_task(
         self,
         task_id: str,
-        video_urls: list[str],
+        video_urls: List[str],
         audio_data: str,
         subtitle_text: Optional[str],
         output_resolution: str
     ):
-        """Background task to process the video"""
+        """Main video processing pipeline."""
         try:
             self._update_task_status(task_id, TaskStatus.RUNNING, "Starting video processing")
             
-            # Create temporary directory for processing
             with tempfile.TemporaryDirectory() as temp_dir:
-                # Download videos
+                # Step 1: Download videos
                 self._update_task_status(task_id, TaskStatus.RUNNING, "Downloading videos")
                 video_files = await self._download_videos(video_urls, temp_dir)
                 
-                # Save audio data
+                # Step 2: Save audio data
                 self._update_task_status(task_id, TaskStatus.RUNNING, "Processing audio")
                 audio_file = self._save_audio_data(audio_data, temp_dir)
                 
-                # Create subtitle file (if provided)
+                # Step 3: Create subtitle file (if provided)
                 subtitle_file = None
                 if subtitle_text:
                     self._update_task_status(task_id, TaskStatus.RUNNING, "Creating subtitles")
                     subtitle_file = self._create_subtitle_file(subtitle_text, temp_dir)
-                    logger.info(f"Created subtitle file: {subtitle_file}")
-                    # Log first few lines of subtitle for debugging
-                    try:
-                        with open(subtitle_file, 'r', encoding='utf-8') as f:
-                            subtitle_content = f.read()
-                            logger.info(f"Subtitle content preview: {subtitle_content[:200]}...")
-                    except Exception as e:
-                        logger.warning(f"Could not read subtitle file for logging: {e}")
                 
-                # Merge videos
+                # Step 4: Merge videos
                 self._update_task_status(task_id, TaskStatus.RUNNING, "Merging videos")
                 merged_video = self._merge_videos(video_files, temp_dir, output_resolution)
                 
-                # Add audio and subtitles (if provided)
+                # Step 5: Add audio and subtitles
                 if subtitle_text:
                     self._update_task_status(task_id, TaskStatus.RUNNING, "Adding audio and subtitles")
-                    final_video = self._add_audio_and_subtitles(
-                        merged_video, audio_file, subtitle_file, temp_dir, output_resolution
-                    )
-                    
-                    # Verify subtitle was burned in
-                    subtitle_verified = self._verify_subtitle_burned(final_video, temp_dir)
-                    if not subtitle_verified:
-                        logger.warning("Subtitle burning verification failed, but continuing with processing")
                 else:
                     self._update_task_status(task_id, TaskStatus.RUNNING, "Adding audio")
-                    final_video = self._add_audio_only(
-                        merged_video, audio_file, temp_dir, output_resolution
-                    )
+                final_video = self._add_audio_and_subtitles_to_video(
+                    merged_video, audio_file, subtitle_file, temp_dir, output_resolution
+                )
                 
-                # Extract thumbnail from merged video (before subtitles are burned in)
+                # Step 6: Extract thumbnail and encode results
                 self._update_task_status(task_id, TaskStatus.RUNNING, "Extracting thumbnail")
-                thumbnail_file = self._extract_thumbnail(merged_video, temp_dir)
-                thumbnail_base64 = self._encode_thumbnail_to_base64(thumbnail_file)
-                
-                # Convert to base64
+                thumbnail_base64 = self._extract_and_encode_thumbnail(merged_video, temp_dir)
                 self._update_task_status(task_id, TaskStatus.RUNNING, "Encoding final video")
                 video_base64 = self._encode_video_to_base64(final_video)
                 
-                # Update task with success
-                self.tasks[task_id].update({
-                    'status': TaskStatus.COMPLETED,
-                    'video_data': video_base64,
-                    'thumbnail_data': thumbnail_base64,
-                    'completed_at': datetime.now(),
-                    'updated_at': datetime.now(),
-                    'message': 'Video processing completed successfully'
-                })
+                # Step 7: Update task with success
+                self._complete_task_success(task_id, video_base64, thumbnail_base64)
                 
         except Exception as e:
             logger.error(f"Error processing video task {task_id}: {e}", exc_info=True)
-            self.tasks[task_id].update({
-                'status': TaskStatus.FAILED,
-                'error': str(e),
-                'updated_at': datetime.now(),
-                'message': f'Video processing failed: {str(e)}'
-            })
+            self._complete_task_failure(task_id, str(e))
     
-    async def _download_videos(self, video_urls: list[str], temp_dir: str) -> list[str]:
-        """Download videos from URLs"""
-        import httpx
+    # ============================================================================
+    # Video Download Methods
+    # ============================================================================
+    
+    async def _download_videos(self, video_urls: List[str], temp_dir: str) -> List[str]:
+        """Download videos from URLs."""
+        
+        # Remove duplicate URLs
+        unique_urls = self._remove_duplicates_preserve_order(video_urls)
+        if len(unique_urls) != len(video_urls):
+            logger.warning(f"Removed {len(video_urls) - len(unique_urls)} duplicate URLs")
+        
+        logger.info(f"Downloading {len(unique_urls)} videos from URLs")
         
         video_files = []
         async with httpx.AsyncClient() as client:
-            for i, url in enumerate(video_urls):
-                try:
-                    response = await client.get(url)
-                    response.raise_for_status()
-                    
-                    video_file = os.path.join(temp_dir, f"video_{i}.mp4")
-                    with open(video_file, 'wb') as f:
-                        f.write(response.content)
-                    video_files.append(video_file)
-                    
-                except Exception as e:
-                    raise Exception(f"Failed to download video {url}: {str(e)}")
+            for i, url in enumerate(unique_urls):
+                video_file = await self._download_single_video(client, url, temp_dir, i)
+                video_files.append(video_file)
         
+        logger.info(f"Successfully downloaded {len(video_files)} videos")
         return video_files
     
+    async def _download_single_video(
+        self, 
+        client: httpx.AsyncClient, 
+        url: str, 
+        temp_dir: str, 
+        index: int
+    ) -> str:
+        """Download a single video from URL."""
+        try:
+            logger.info(f"Downloading video {index+1}: {url}")
+            response = await client.get(url)
+            response.raise_for_status()
+            
+            video_file = os.path.join(temp_dir, f"video_{index}.mp4")
+            with open(video_file, 'wb') as f:
+                f.write(response.content)
+            
+            logger.info(f"Downloaded: {os.path.basename(video_file)} ({len(response.content)} bytes)")
+            return video_file
+            
+        except Exception as e:
+            raise Exception(f"Failed to download video {url}: {str(e)}")
+    
+    # ============================================================================
+    # Audio Processing Methods
+    # ============================================================================
+    
     def _save_audio_data(self, audio_data: str, temp_dir: str) -> str:
-        """Save base64 audio data to file"""
+        """Save base64 audio data to file."""
+        
         try:
             audio_bytes = base64.b64decode(audio_data)
             audio_file = os.path.join(temp_dir, "audio.mp3")
@@ -166,206 +197,275 @@ class VideoProcessingService:
         except Exception as e:
             raise Exception(f"Failed to save audio data: {str(e)}")
     
+    # ============================================================================
+    # Subtitle Processing Methods
+    # ============================================================================
+    
     def _create_subtitle_file(self, subtitle_srt: str, temp_dir: str) -> str:
-        """Save SRT subtitle content to file and convert to ASS format for better compatibility"""
+        """Create subtitle file and convert to ASS format if possible."""
+        
         subtitle_file = os.path.join(temp_dir, "subtitles.srt")
         ass_file = os.path.join(temp_dir, "subtitles.ass")
         
-        # Write the SRT content directly to file
+        # Write SRT content
         with open(subtitle_file, 'w', encoding='utf-8') as f:
             f.write(subtitle_srt)
         
-        # Validate SRT format by checking if it has proper structure
-        lines = subtitle_srt.strip().split('\n')
-        if len(lines) < 4 or not lines[0].isdigit():
+        # Validate SRT format
+        if not self._is_valid_srt_format(subtitle_srt):
             logger.warning("SRT format appears invalid, using as-is")
             return subtitle_file
         
-        # Convert SRT to ASS format using FFmpeg for better compatibility
-        cmd = [
-            'ffmpeg', '-y',
-            '-i', subtitle_file,
-            ass_file
-        ]
+        # Try to convert to ASS format
+        if self._convert_srt_to_ass(subtitle_file, ass_file, temp_dir):
+            return ass_file
         
+        return subtitle_file
+    
+    def _is_valid_srt_format(self, subtitle_srt: str) -> bool:
+        """Check if SRT content has valid format."""
+        lines = subtitle_srt.strip().split('\n')
+        return len(lines) >= 4 and lines[0].isdigit()
+    
+    def _convert_srt_to_ass(self, srt_file: str, ass_file: str, temp_dir: str) -> bool:
+        """Convert SRT file to ASS format using FFmpeg."""
+        cmd = ['ffmpeg', '-y', '-i', srt_file, ass_file]
         result = subprocess.run(cmd, capture_output=True, text=True, cwd=temp_dir)
         
         if result.returncode != 0:
-            logger.warning(f"Failed to convert SRT to ASS, using SRT directly: {result.stderr}")
-            return subtitle_file
+            logger.warning(f"Failed to convert SRT to ASS: {result.stderr}")
+            return False
         
-        # Verify ASS file was created and has content
-        if os.path.exists(ass_file) and os.path.getsize(ass_file) > 0:
-            return ass_file
-        else:
-            logger.warning("ASS file creation failed or empty, using SRT directly")
-            return subtitle_file
+        return os.path.exists(ass_file) and os.path.getsize(ass_file) > 0
     
-    def _merge_videos(self, video_files: list[str], temp_dir: str, output_resolution: str) -> str:
-        """Merge multiple videos using ffmpeg"""
+    # ============================================================================
+    # Video Merging Methods
+    # ============================================================================
+    
+    def _merge_videos(self, video_files: List[str], temp_dir: str, output_resolution: str) -> str:
+        """Merge multiple videos using FFmpeg."""
+        
         if len(video_files) == 1:
             return video_files[0]
         
-        # Create file list for ffmpeg
+        # Remove duplicate video files
+        unique_video_files = self._remove_duplicates_preserve_order(video_files)
+        if len(unique_video_files) != len(video_files):
+            logger.warning(f"Removed {len(video_files) - len(unique_video_files)} duplicate video files")
+        
+        # Verify all files exist
+        self._verify_video_files_exist(unique_video_files)
+        
+        # Log video files being merged
+        self._log_video_files_for_merging(unique_video_files)
+        
+        # Try primary merging method
+        try:
+            return self._merge_videos_with_concat_demuxer(unique_video_files, temp_dir)
+        except Exception as e:
+            logger.warning(f"Primary merge method failed: {e}")
+            return self._merge_videos_with_filter_complex(unique_video_files, temp_dir)
+    
+    def _merge_videos_with_concat_demuxer(self, video_files: List[str], temp_dir: str) -> str:
+        """Merge videos using FFmpeg concat demuxer."""
+        file_list = self._create_ffmpeg_file_list(video_files, temp_dir)
+        merged_video = os.path.join(temp_dir, "merged.mp4")
+        
+        cmd = [
+            'ffmpeg', '-y',
+            '-f', 'concat',
+            '-safe', '0',
+            '-i', file_list,
+            '-c', 'copy',
+            merged_video
+        ]
+        
+        self._run_ffmpeg_command(cmd, "concat demuxer")
+        logger.info(f"Successfully merged videos using concat demuxer: {merged_video}")
+        return merged_video
+    
+    def _merge_videos_with_filter_complex(self, video_files: List[str], temp_dir: str) -> str:
+        """Merge videos using FFmpeg filter_complex."""
+        merged_video = os.path.join(temp_dir, "merged_alt.mp4")
+        
+        inputs = []
+        filter_parts = []
+        
+        for i, video_file in enumerate(video_files):
+            inputs.extend(['-i', video_file])
+            filter_parts.append(f'[{i}:v:0][{i}:a:0]')
+        
+        filter_complex = ''.join(filter_parts) + f'concat=n={len(video_files)}:v=1:a=1[outv][outa]'
+        
+        cmd = [
+            'ffmpeg', '-y'
+        ] + inputs + [
+            '-filter_complex', filter_complex,
+            '-map', '[outv]',
+            '-map', '[outa]',
+            '-c:v', 'copy',
+            '-c:a', 'copy',
+            merged_video
+        ]
+        
+        self._run_ffmpeg_command(cmd, "filter_complex")
+        logger.info(f"Successfully merged videos using filter_complex: {merged_video}")
+        return merged_video
+    
+    def _create_ffmpeg_file_list(self, video_files: List[str], temp_dir: str) -> str:
+        """Create FFmpeg file list for concat demuxer."""
         file_list = os.path.join(temp_dir, "file_list.txt")
         with open(file_list, 'w') as f:
             for video_file in video_files:
                 f.write(f"file '{video_file}'\n")
         
-        merged_video = os.path.join(temp_dir, "merged.mp4")
+        # Log file list content for debugging
+        with open(file_list, 'r') as f:
+            logger.info(f"File list content:\n{f.read()}")
         
-        # FFmpeg command to merge videos (all videos are already 1920x1080)
-        cmd = [
-            'ffmpeg', '-y',  # Overwrite output file
-            '-f', 'concat',  # Use concat demuxer
-            '-safe', '0',    # Allow unsafe file paths
-            '-i', file_list, # Input file list
-            '-c', 'copy',    # Copy streams without re-encoding
-            merged_video
-        ]
-        
-        result = subprocess.run(cmd, capture_output=True, text=True)
-        
-        if result.returncode != 0:
-            logger.error(f"FFmpeg command failed: {' '.join(cmd)}")
-            logger.error(f"FFmpeg stderr: {result.stderr}")
-            logger.error(f"FFmpeg stdout: {result.stdout}")
-            raise Exception(f"FFmpeg merge failed: {result.stderr}")
-        
-        return merged_video
+        return file_list
+    
+    # ============================================================================
+    # Audio and Subtitle Addition Methods
+    # ============================================================================
+    
+    def _add_audio_and_subtitles_to_video(
+        self,
+        video_file: str,
+        audio_file: str,
+        subtitle_file: Optional[str],
+        temp_dir: str,
+        output_resolution: str
+    ) -> str:
+        """Add audio and subtitles to video."""
+        if subtitle_file:
+            return self._add_audio_and_subtitles(video_file, audio_file, subtitle_file, temp_dir)
+        else:
+            return self._add_audio_only(video_file, audio_file, temp_dir)
     
     def _add_audio_and_subtitles(
         self,
         video_file: str,
         audio_file: str,
         subtitle_file: str,
-        temp_dir: str,
-        output_resolution: str
+        temp_dir: str
     ) -> str:
-        """Add audio and embed subtitles in the video"""
+        """Add audio and burn subtitles into video."""
         final_video = os.path.join(temp_dir, "final.mp4")
-        
-        # Use a more robust approach for Windows paths with FFmpeg
-        # Create a relative path within the temp directory to avoid path issues
         subtitle_filename = os.path.basename(subtitle_file)
         
-        # FFmpeg command to add audio and burn subtitles (video is already at correct resolution)
-        # Use ASS filter for better compatibility with Windows paths
+        # Determine subtitle filter
         if subtitle_filename.endswith('.ass'):
             subtitle_filter = f'ass={subtitle_filename}'
         else:
-            # For SRT files, use the subtitles filter with proper escaping
             subtitle_filter = f"subtitles='{subtitle_filename}'"
         
         cmd = [
             'ffmpeg', '-y',
-            '-i', os.path.basename(video_file),    # Input video (relative path)
-            '-i', os.path.basename(audio_file),    # Input audio (relative path)
-            '-vf', subtitle_filter,                # Use ASS or subtitles filter
-            '-c:v', 'libx264',          # Video codec (need to re-encode for subtitles)
-            '-c:a', 'aac',              # Audio codec
-            '-shortest',                # End when shortest input ends
-            '-pix_fmt', 'yuv420p',      # Pixel format for compatibility
-            '-crf', '23',               # Constant rate factor for good quality
-            os.path.basename(final_video)  # Output video (relative path)
+            '-i', os.path.basename(video_file),
+            '-i', os.path.basename(audio_file),
+            '-vf', subtitle_filter,
+            '-c:v', 'libx264',
+            '-c:a', 'aac',
+            '-shortest',
+            '-pix_fmt', 'yuv420p',
+            '-crf', '23',
+            os.path.basename(final_video)
         ]
         
-        result = subprocess.run(cmd, capture_output=True, text=True, cwd=temp_dir)
-        
-        if result.returncode != 0:
-            logger.error(f"FFmpeg command failed: {' '.join(cmd)}")
-            logger.error(f"FFmpeg stderr: {result.stderr}")
-            logger.error(f"FFmpeg stdout: {result.stdout}")
-            
-            # Try alternative subtitle burning method if the first one fails
-            logger.info("Trying alternative subtitle burning method...")
-            alternative_filter = f"subtitles={subtitle_filename}:force_style='FontSize=24,PrimaryColour=&Hffffff&,OutlineColour=&H000000&,BorderStyle=3'"
-            
-            cmd_alt = [
-                'ffmpeg', '-y',
-                '-i', os.path.basename(video_file),
-                '-i', os.path.basename(audio_file),
-                '-vf', alternative_filter,
-                '-c:v', 'libx264',
-                '-c:a', 'aac',
-                '-shortest',
-                '-pix_fmt', 'yuv420p',
-                '-crf', '23',
-                os.path.basename(final_video)
-            ]
-            
-            result_alt = subprocess.run(cmd_alt, capture_output=True, text=True, cwd=temp_dir)
-            
-            if result_alt.returncode != 0:
-                logger.error(f"Alternative FFmpeg command also failed: {' '.join(cmd_alt)}")
-                logger.error(f"FFmpeg stderr: {result_alt.stderr}")
-                logger.error(f"FFmpeg stdout: {result_alt.stdout}")
-                raise Exception(f"FFmpeg audio/subtitle processing failed: {result_alt.stderr}")
+        try:
+            self._run_ffmpeg_command(cmd, "audio and subtitle addition", cwd=temp_dir)
+        except Exception as e:
+            logger.warning(f"Primary subtitle method failed: {e}")
+            self._add_audio_and_subtitles_alternative(video_file, audio_file, subtitle_filename, final_video, temp_dir)
         
         return final_video
     
-    def _verify_subtitle_burned(self, video_file: str, temp_dir: str) -> bool:
-        """Verify that subtitles were successfully burned into the video"""
-        try:
-            # Use FFprobe to check if the video has any subtitle streams or burned-in text
-            cmd = [
-                'ffprobe',
-                '-v', 'quiet',
-                '-print_format', 'json',
-                '-show_streams',
-                '-show_frames',
-                '-select_streams', 'v:0',
-                '-show_entries', 'frame=pict_type',
-                os.path.basename(video_file)
-            ]
-            
-            result = subprocess.run(cmd, capture_output=True, text=True, cwd=temp_dir)
-            
-            if result.returncode == 0:
-                # If we can read the video file, it likely has subtitles burned in
-                # since we re-encoded it with the subtitle filter
-                return True
-            else:
-                logger.warning(f"Could not verify subtitle burning: {result.stderr}")
-                return False
-                
-        except Exception as e:
-            logger.warning(f"Error verifying subtitle burning: {str(e)}")
-            return False
-    
-    def _add_audio_only(
+    def _add_audio_and_subtitles_alternative(
         self,
         video_file: str,
         audio_file: str,
-        temp_dir: str,
-        output_resolution: str
-    ) -> str:
-        """Add audio to video without subtitles"""
-        final_video = os.path.join(temp_dir, "final.mp4")
+        subtitle_filename: str,
+        final_video: str,
+        temp_dir: str
+    ):
+        """Alternative method for adding audio and subtitles."""
+        logger.info("Trying alternative subtitle burning method...")
         
-        # FFmpeg command to add audio only (video is already at correct resolution)
+        alternative_filter = (
+            f"subtitles={subtitle_filename}:"
+            "force_style='FontSize=24,PrimaryColour=&Hffffff&,OutlineColour=&H000000&,BorderStyle=3'"
+        )
+        
         cmd = [
             'ffmpeg', '-y',
-            '-i', video_file,           # Input video
-            '-i', audio_file,           # Input audio
-            '-c:v', 'copy',             # Copy video stream (already at correct resolution)
-            '-c:a', 'aac',              # Audio codec
-            '-shortest',                # End when shortest input ends
+            '-i', os.path.basename(video_file),
+            '-i', os.path.basename(audio_file),
+            '-vf', alternative_filter,
+            '-c:v', 'libx264',
+            '-c:a', 'aac',
+            '-shortest',
+            '-pix_fmt', 'yuv420p',
+            '-crf', '23',
+            os.path.basename(final_video)
+        ]
+        
+        self._run_ffmpeg_command(cmd, "alternative audio and subtitle addition", cwd=temp_dir)
+    
+    def _add_audio_only(self, video_file: str, audio_file: str, temp_dir: str) -> str:
+        """Add audio to video without subtitles."""
+        final_video = os.path.join(temp_dir, "final.mp4")
+        
+        cmd = [
+            'ffmpeg', '-y',
+            '-i', video_file,
+            '-i', audio_file,
+            '-c:v', 'copy',
+            '-c:a', 'aac',
+            '-shortest',
             final_video
         ]
         
-        result = subprocess.run(cmd, capture_output=True, text=True)
-        
-        if result.returncode != 0:
-            logger.error(f"FFmpeg command failed: {' '.join(cmd)}")
-            logger.error(f"FFmpeg stderr: {result.stderr}")
-            logger.error(f"FFmpeg stdout: {result.stdout}")
-            raise Exception(f"FFmpeg audio processing failed: {result.stderr}")
-        
+        self._run_ffmpeg_command(cmd, "audio addition")
         return final_video
     
+    # ============================================================================
+    # Thumbnail and Encoding Methods
+    # ============================================================================
+    
+    def _extract_and_encode_thumbnail(self, video_file: str, temp_dir: str) -> str:
+        """Extract thumbnail from video and encode to base64."""
+        
+        thumbnail_file = self._extract_thumbnail(video_file, temp_dir)
+        return self._encode_thumbnail_to_base64(thumbnail_file)
+    
+    def _extract_thumbnail(self, video_file: str, temp_dir: str) -> str:
+        """Extract thumbnail from video using FFmpeg."""
+        thumbnail_file = os.path.join(temp_dir, "thumbnail.jpg")
+        
+        # Try extracting at 1 second first
+        cmd = [
+            'ffmpeg', '-y',
+            '-i', os.path.basename(video_file),
+            '-ss', '00:00:01',
+            '-vframes', '1',
+            '-q:v', '2',
+            '-f', 'image2',
+            os.path.basename(thumbnail_file)
+        ]
+        
+        try:
+            self._run_ffmpeg_command(cmd, "thumbnail extraction at 1s", cwd=temp_dir)
+        except Exception:
+            # Try extracting at 0 seconds if 1 second fails
+            cmd[3] = '00:00:00'  # Change seek time to 0 seconds
+            self._run_ffmpeg_command(cmd, "thumbnail extraction at 0s", cwd=temp_dir)
+        
+        return thumbnail_file
+    
     def _encode_video_to_base64(self, video_file: str) -> str:
-        """Encode video file to base64"""
+        """Encode video file to base64."""
+        
         try:
             with open(video_file, 'rb') as f:
                 video_bytes = f.read()
@@ -373,50 +473,8 @@ class VideoProcessingService:
         except Exception as e:
             raise Exception(f"Failed to encode video to base64: {str(e)}")
     
-    def _extract_thumbnail(self, video_file: str, temp_dir: str) -> str:
-        """Extract thumbnail from video using FFmpeg"""
-        try:
-            thumbnail_file = os.path.join(temp_dir, "thumbnail.jpg")
-            
-            # FFmpeg command to extract thumbnail at 1 second mark
-            cmd = [
-                'ffmpeg', '-y',
-                '-i', os.path.basename(video_file),  # Input video (relative path)
-                '-ss', '00:00:01',                   # Seek to 1 second
-                '-vframes', '1',                     # Extract 1 frame
-                '-q:v', '2',                         # High quality
-                '-f', 'image2',                      # Force image2 format
-                os.path.basename(thumbnail_file)     # Output thumbnail (relative path)
-            ]
-            
-            result = subprocess.run(cmd, capture_output=True, text=True, cwd=temp_dir)
-            
-            if result.returncode != 0:
-                logger.warning(f"Failed to extract thumbnail: {result.stderr}")
-                # Try extracting at 0 seconds if 1 second fails
-                cmd = [
-                    'ffmpeg', '-y',
-                    '-i', os.path.basename(video_file),
-                    '-ss', '00:00:00',
-                    '-vframes', '1',
-                    '-q:v', '2',
-                    '-f', 'image2',
-                    os.path.basename(thumbnail_file)
-                ]
-                
-                result = subprocess.run(cmd, capture_output=True, text=True, cwd=temp_dir)
-                
-                if result.returncode != 0:
-                    logger.error(f"Failed to extract thumbnail at 0 seconds: {result.stderr}")
-                    raise Exception(f"Failed to extract thumbnail: {result.stderr}")
-            
-            return thumbnail_file
-            
-        except Exception as e:
-            raise Exception(f"Failed to extract thumbnail: {str(e)}")
-    
     def _encode_thumbnail_to_base64(self, thumbnail_file: str) -> str:
-        """Encode thumbnail image to base64 string"""
+        """Encode thumbnail image to base64 string."""
         try:
             with open(thumbnail_file, 'rb') as f:
                 thumbnail_bytes = f.read()
@@ -424,8 +482,52 @@ class VideoProcessingService:
         except Exception as e:
             raise Exception(f"Failed to encode thumbnail to base64: {str(e)}")
     
+    # ============================================================================
+    # Utility Methods
+    # ============================================================================
+    
+    def _remove_duplicates_preserve_order(self, items: List[str]) -> List[str]:
+        """Remove duplicates while preserving order."""
+        return list(dict.fromkeys(items))
+    
+    def _verify_video_files_exist(self, video_files: List[str]):
+        """Verify all video files exist."""
+        for video_file in video_files:
+            if not os.path.exists(video_file):
+                raise Exception(f"Video file not found: {video_file}")
+    
+    def _log_video_files_for_merging(self, video_files: List[str]):
+        """Log video files being merged."""
+        logger.info(f"Merging {len(video_files)} videos:")
+        for i, video_file in enumerate(video_files):
+            logger.info(f"  {i+1}. {os.path.basename(video_file)}")
+    
+    def _run_ffmpeg_command(self, cmd: List[str], operation: str, cwd: Optional[str] = None):
+        """Run FFmpeg command with error handling."""
+        logger.info(f"Running FFmpeg {operation}: {' '.join(cmd)}")
+        result = subprocess.run(cmd, capture_output=True, text=True, cwd=cwd)
+        
+        if result.returncode != 0:
+            logger.error(f"FFmpeg {operation} failed: {' '.join(cmd)}")
+            logger.error(f"FFmpeg stderr: {result.stderr}")
+            logger.error(f"FFmpeg stdout: {result.stdout}")
+            raise Exception(f"FFmpeg {operation} failed: {result.stderr}")
+    
+    # ============================================================================
+    # Task Management Methods
+    # ============================================================================
+    
+    def _create_task(self, task_id: str):
+        """Create a new task entry."""
+        self.tasks[task_id] = {
+            'status': TaskStatus.PENDING,
+            'created_at': datetime.now(),
+            'updated_at': datetime.now(),
+            'message': 'Task created'
+        }
+    
     def _update_task_status(self, task_id: str, status: TaskStatus, message: str):
-        """Update task status"""
+        """Update task status."""
         if task_id in self.tasks:
             self.tasks[task_id].update({
                 'status': status,
@@ -433,13 +535,25 @@ class VideoProcessingService:
                 'updated_at': datetime.now()
             })
     
-    def get_task_status(self, task_id: str) -> Optional[Dict[str, Any]]:
-        """Get task status"""
-        return self.tasks.get(task_id)
+    def _complete_task_success(self, task_id: str, video_base64: str, thumbnail_base64: str):
+        """Complete task with success."""
+        self.tasks[task_id].update({
+            'status': TaskStatus.COMPLETED,
+            'video_data': video_base64,
+            'thumbnail_data': thumbnail_base64,
+            'completed_at': datetime.now(),
+            'updated_at': datetime.now(),
+            'message': 'Video processing completed successfully'
+        })
     
-    def get_all_tasks(self) -> Dict[str, Dict[str, Any]]:
-        """Get all tasks"""
-        return self.tasks.copy()
+    def _complete_task_failure(self, task_id: str, error_message: str):
+        """Complete task with failure."""
+        self.tasks[task_id].update({
+            'status': TaskStatus.FAILED,
+            'error': error_message,
+            'updated_at': datetime.now(),
+            'message': f'Video processing failed: {error_message}'
+        })
 
 
 # Global instance
