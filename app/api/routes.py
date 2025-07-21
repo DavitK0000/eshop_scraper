@@ -327,7 +327,8 @@ async def process_video(
             video_urls=request.video_urls,
             audio_data=request.audio_data,
             subtitle_text=request.subtitle_text,
-            output_resolution=request.output_resolution
+            output_resolution=request.output_resolution,
+            watermark=request.watermark
         )
         
         return response

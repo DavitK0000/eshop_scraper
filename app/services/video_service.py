@@ -40,7 +40,8 @@ class VideoProcessingService:
         video_urls: List[str],
         audio_data: str,
         subtitle_text: Optional[str] = None,
-        output_resolution: str = "1920x1080"
+        output_resolution: str = "1920x1080",
+        watermark: bool = False
     ) -> VideoProcessResponse:
         """
         Process video by merging multiple videos, adding audio, and embedding subtitles.
@@ -61,7 +62,7 @@ class VideoProcessingService:
         
         # Start processing in background
         asyncio.create_task(self._process_video_task(
-            task_id, video_urls, audio_data, subtitle_text, output_resolution
+            task_id, video_urls, audio_data, subtitle_text, output_resolution, watermark
         ))
         
         return VideoProcessResponse(
@@ -88,7 +89,8 @@ class VideoProcessingService:
         video_urls: List[str],
         audio_data: str,
         subtitle_text: Optional[str],
-        output_resolution: str
+        output_resolution: str,
+        watermark: bool
     ):
         """Main video processing pipeline."""
         try:
@@ -113,13 +115,17 @@ class VideoProcessingService:
                 self._update_task_status(task_id, TaskStatus.RUNNING, "Merging videos")
                 merged_video = self._merge_videos(video_files, temp_dir, output_resolution)
                 
-                # Step 5: Add audio and subtitles
-                if subtitle_text:
+                # Step 5: Add audio, subtitles, and watermark
+                if subtitle_text and watermark:
+                    self._update_task_status(task_id, TaskStatus.RUNNING, "Adding audio, subtitles, and watermark")
+                elif subtitle_text:
                     self._update_task_status(task_id, TaskStatus.RUNNING, "Adding audio and subtitles")
+                elif watermark:
+                    self._update_task_status(task_id, TaskStatus.RUNNING, "Adding audio and watermark")
                 else:
                     self._update_task_status(task_id, TaskStatus.RUNNING, "Adding audio")
-                final_video = self._add_audio_and_subtitles_to_video(
-                    merged_video, audio_file, subtitle_file, temp_dir, output_resolution
+                final_video = self._add_audio_subtitles_and_watermark_to_video(
+                    merged_video, audio_file, subtitle_file, watermark, temp_dir, output_resolution
                 )
                 
                 # Step 6: Extract thumbnail and encode results
@@ -326,8 +332,27 @@ class VideoProcessingService:
         return file_list
     
     # ============================================================================
-    # Audio and Subtitle Addition Methods
+    # Audio, Subtitle, and Watermark Addition Methods
     # ============================================================================
+    
+    def _add_audio_subtitles_and_watermark_to_video(
+        self,
+        video_file: str,
+        audio_file: str,
+        subtitle_file: Optional[str],
+        watermark: bool,
+        temp_dir: str,
+        output_resolution: str
+    ) -> str:
+        """Add audio, subtitles, and watermark to video."""
+        if subtitle_file and watermark:
+            return self._add_audio_subtitles_and_watermark(video_file, audio_file, subtitle_file, temp_dir)
+        elif subtitle_file:
+            return self._add_audio_and_subtitles(video_file, audio_file, subtitle_file, temp_dir)
+        elif watermark:
+            return self._add_audio_and_watermark(video_file, audio_file, temp_dir)
+        else:
+            return self._add_audio_only(video_file, audio_file, temp_dir)
     
     def _add_audio_and_subtitles_to_video(
         self,
@@ -354,17 +379,46 @@ class VideoProcessingService:
         final_video = os.path.join(temp_dir, "final.mp4")
         subtitle_filename = os.path.basename(subtitle_file)
         
-        # Determine subtitle filter
-        if subtitle_filename.endswith('.ass'):
-            subtitle_filter = f'ass={subtitle_filename}'
-        else:
-            subtitle_filter = f"subtitles='{subtitle_filename}'"
+        # Try multiple approaches for subtitle addition
+        methods = [
+            self._try_ass_subtitle_only,
+            self._try_srt_subtitle_only,
+            self._try_audio_only
+        ]
+        
+        for method in methods:
+            try:
+                result = method(video_file, audio_file, subtitle_file, final_video, temp_dir)
+                if result:
+                    return result
+            except Exception as e:
+                logger.warning(f"Method {method.__name__} failed: {e}")
+                continue
+        
+        # If all methods fail, fall back to audio only
+        logger.warning("All subtitle methods failed, using audio only")
+        return self._add_audio_only(video_file, audio_file, temp_dir)
+    
+    def _try_ass_subtitle_only(
+        self,
+        video_file: str,
+        audio_file: str,
+        subtitle_file: str,
+        final_video: str,
+        temp_dir: str
+    ) -> Optional[str]:
+        """Try ASS subtitle only (no watermark)."""
+        subtitle_filename = os.path.basename(subtitle_file)
+        if not subtitle_filename.endswith('.ass'):
+            return None
+            
+        logger.info("Trying ASS subtitle only...")
         
         cmd = [
             'ffmpeg', '-y',
             '-i', os.path.basename(video_file),
             '-i', os.path.basename(audio_file),
-            '-vf', subtitle_filter,
+            '-vf', f'ass={subtitle_filename}',
             '-c:v', 'libx264',
             '-c:a', 'aac',
             '-shortest',
@@ -373,35 +427,73 @@ class VideoProcessingService:
             os.path.basename(final_video)
         ]
         
-        try:
-            self._run_ffmpeg_command(cmd, "audio and subtitle addition", cwd=temp_dir)
-        except Exception as e:
-            logger.warning(f"Primary subtitle method failed: {e}")
-            self._add_audio_and_subtitles_alternative(video_file, audio_file, subtitle_filename, final_video, temp_dir)
+        self._run_ffmpeg_command(cmd, "ASS subtitle only", cwd=temp_dir)
         
-        return final_video
+        # Verify the file was created
+        if os.path.exists(final_video) and os.path.getsize(final_video) > 0:
+            return final_video
+        else:
+            logger.error(f"ASS subtitle only failed - file not created: {final_video}")
+            return None
     
-    def _add_audio_and_subtitles_alternative(
+    def _try_srt_subtitle_only(
         self,
         video_file: str,
         audio_file: str,
-        subtitle_filename: str,
+        subtitle_file: str,
         final_video: str,
         temp_dir: str
-    ):
-        """Alternative method for adding audio and subtitles."""
-        logger.info("Trying alternative subtitle burning method...")
+    ) -> Optional[str]:
+        """Try SRT subtitle only (no watermark)."""
+        subtitle_filename = os.path.basename(subtitle_file)
+        if not subtitle_filename.endswith('.srt'):
+            return None
+            
+        logger.info("Trying SRT subtitle only...")
         
-        alternative_filter = (
-            f"subtitles={subtitle_filename}:"
-            "force_style='FontSize=24,PrimaryColour=&Hffffff&,OutlineColour=&H000000&,BorderStyle=3'"
+        cmd = [
+            'ffmpeg', '-y',
+            '-i', os.path.basename(video_file),
+            '-i', os.path.basename(audio_file),
+            '-vf', f"subtitles='{subtitle_filename}'",
+            '-c:v', 'libx264',
+            '-c:a', 'aac',
+            '-shortest',
+            '-pix_fmt', 'yuv420p',
+            '-crf', '23',
+            os.path.basename(final_video)
+        ]
+        
+        self._run_ffmpeg_command(cmd, "SRT subtitle only", cwd=temp_dir)
+        
+        # Verify the file was created
+        if os.path.exists(final_video) and os.path.getsize(final_video) > 0:
+            return final_video
+        else:
+            logger.error(f"SRT subtitle only failed - file not created: {final_video}")
+            return None
+    
+    def _add_audio_and_watermark(
+        self,
+        video_file: str,
+        audio_file: str,
+        temp_dir: str
+    ) -> str:
+        """Add audio and watermark to video."""
+        final_video = os.path.join(temp_dir, "final.mp4")
+        
+        # Create watermark filter with "PromoNexAI" text using Windows default font
+        watermark_filter = (
+            "drawtext=text='PromoNexAI':fontcolor=white@0.7:fontsize=72:"
+            "fontfile='C\\:/Windows/Fonts/arial.ttf':"
+            "x=(w-text_w)/2:y=(h-text_h)/2:box=1:boxcolor=black@0.3:boxborderw=5"
         )
         
         cmd = [
             'ffmpeg', '-y',
             '-i', os.path.basename(video_file),
             '-i', os.path.basename(audio_file),
-            '-vf', alternative_filter,
+            '-vf', watermark_filter,
             '-c:v', 'libx264',
             '-c:a', 'aac',
             '-shortest',
@@ -410,7 +502,224 @@ class VideoProcessingService:
             os.path.basename(final_video)
         ]
         
-        self._run_ffmpeg_command(cmd, "alternative audio and subtitle addition", cwd=temp_dir)
+        self._run_ffmpeg_command(cmd, "audio and watermark addition", cwd=temp_dir)
+        
+        # Verify the file was created
+        if os.path.exists(final_video) and os.path.getsize(final_video) > 0:
+            return final_video
+        else:
+            raise Exception(f"Audio and watermark addition failed - file not created: {final_video}")
+    
+    def _add_audio_subtitles_and_watermark(
+        self,
+        video_file: str,
+        audio_file: str,
+        subtitle_file: str,
+        temp_dir: str
+    ) -> str:
+        """Add audio, subtitles, and watermark to video."""
+        final_video = os.path.join(temp_dir, "final.mp4")
+        subtitle_filename = os.path.basename(subtitle_file)
+        
+        # Try multiple approaches for subtitle and watermark addition
+        methods = [
+            self._try_ass_subtitle_with_watermark,
+            self._try_srt_subtitle_with_watermark,
+            self._try_watermark_only_with_audio,
+            self._try_simple_watermark_with_audio,
+            self._try_audio_only
+        ]
+        
+        for method in methods:
+            try:
+                result = method(video_file, audio_file, subtitle_file, final_video, temp_dir)
+                if result:
+                    return result
+            except Exception as e:
+                logger.warning(f"Method {method.__name__} failed: {e}")
+                continue
+        
+        # If all methods fail, fall back to audio only
+        logger.warning("All subtitle and watermark methods failed, using audio only")
+        return self._add_audio_only(video_file, audio_file, temp_dir)
+    
+    def _try_ass_subtitle_with_watermark(
+        self,
+        video_file: str,
+        audio_file: str,
+        subtitle_file: str,
+        final_video: str,
+        temp_dir: str
+    ) -> Optional[str]:
+        """Try ASS subtitle with watermark."""
+        subtitle_filename = os.path.basename(subtitle_file)
+        if not subtitle_filename.endswith('.ass'):
+            return None
+            
+        logger.info("Trying ASS subtitle with watermark...")
+        
+        combined_filter = (
+            f"ass={subtitle_filename},"
+            "drawtext=text='PromoNexAI':fontcolor=white@0.7:fontsize=72:"
+            "fontfile='C\\:/Windows/Fonts/arial.ttf':"
+            "x=(w-text_w)/2:y=(h-text_h)/2:box=1:boxcolor=black@0.3:boxborderw=5"
+        )
+        
+        cmd = [
+            'ffmpeg', '-y',
+            '-i', os.path.basename(video_file),
+            '-i', os.path.basename(audio_file),
+            '-vf', combined_filter,
+            '-c:v', 'libx264',
+            '-c:a', 'aac',
+            '-shortest',
+            '-pix_fmt', 'yuv420p',
+            '-crf', '23',
+            os.path.basename(final_video)
+        ]
+        
+        self._run_ffmpeg_command(cmd, "ASS subtitle with watermark", cwd=temp_dir)
+        
+        # Verify the file was created
+        if os.path.exists(final_video) and os.path.getsize(final_video) > 0:
+            return final_video
+        else:
+            logger.error(f"ASS subtitle with watermark failed - file not created: {final_video}")
+            return None
+    
+    def _try_srt_subtitle_with_watermark(
+        self,
+        video_file: str,
+        audio_file: str,
+        subtitle_file: str,
+        final_video: str,
+        temp_dir: str
+    ) -> Optional[str]:
+        """Try SRT subtitle with watermark."""
+        subtitle_filename = os.path.basename(subtitle_file)
+        if not subtitle_filename.endswith('.srt'):
+            return None
+            
+        logger.info("Trying SRT subtitle with watermark...")
+        
+        combined_filter = (
+            f"subtitles='{subtitle_filename}',"
+            "drawtext=text='PromoNexAI':fontcolor=white@0.7:fontsize=72:"
+            "fontfile='C\\:/Windows/Fonts/arial.ttf':"
+            "x=(w-text_w)/2:y=(h-text_h)/2:box=1:boxcolor=black@0.3:boxborderw=5"
+        )
+        
+        cmd = [
+            'ffmpeg', '-y',
+            '-i', os.path.basename(video_file),
+            '-i', os.path.basename(audio_file),
+            '-vf', combined_filter,
+            '-c:v', 'libx264',
+            '-c:a', 'aac',
+            '-shortest',
+            '-pix_fmt', 'yuv420p',
+            '-crf', '23',
+            os.path.basename(final_video)
+        ]
+        
+        self._run_ffmpeg_command(cmd, "SRT subtitle with watermark", cwd=temp_dir)
+        
+        # Verify the file was created
+        if os.path.exists(final_video) and os.path.getsize(final_video) > 0:
+            return final_video
+        else:
+            logger.error(f"SRT subtitle with watermark failed - file not created: {final_video}")
+            return None
+    
+    def _try_watermark_only_with_audio(
+        self,
+        video_file: str,
+        audio_file: str,
+        subtitle_file: str,
+        final_video: str,
+        temp_dir: str
+    ) -> Optional[str]:
+        """Try watermark only with audio (no subtitles)."""
+        logger.info("Trying watermark only with audio...")
+        
+        watermark_filter = (
+            "drawtext=text='PromoNexAI':fontcolor=white@0.7:fontsize=72:"
+            "fontfile='C\\:/Windows/Fonts/arial.ttf':"
+            "x=(w-text_w)/2:y=(h-text_h)/2:box=1:boxcolor=black@0.3:boxborderw=5"
+        )
+        
+        cmd = [
+            'ffmpeg', '-y',
+            '-i', os.path.basename(video_file),
+            '-i', os.path.basename(audio_file),
+            '-vf', watermark_filter,
+            '-c:v', 'libx264',
+            '-c:a', 'aac',
+            '-shortest',
+            '-pix_fmt', 'yuv420p',
+            '-crf', '23',
+            os.path.basename(final_video)
+        ]
+        
+        self._run_ffmpeg_command(cmd, "watermark only with audio", cwd=temp_dir)
+        
+        # Verify the file was created
+        if os.path.exists(final_video) and os.path.getsize(final_video) > 0:
+            return final_video
+        else:
+            logger.error(f"Watermark only with audio failed - file not created: {final_video}")
+            return None
+    
+    def _try_simple_watermark_with_audio(
+        self,
+        video_file: str,
+        audio_file: str,
+        subtitle_file: str,
+        final_video: str,
+        temp_dir: str
+    ) -> Optional[str]:
+        """Try simple watermark with audio (no subtitles, basic text)."""
+        logger.info("Trying simple watermark with audio...")
+        
+        # Use a simpler watermark without complex font settings
+        simple_watermark_filter = (
+            "drawtext=text='PromoNexAI':fontcolor=white:fontsize=48:"
+            "x=(w-text_w)/2:y=(h-text_h)/2"
+        )
+        
+        cmd = [
+            'ffmpeg', '-y',
+            '-i', os.path.basename(video_file),
+            '-i', os.path.basename(audio_file),
+            '-vf', simple_watermark_filter,
+            '-c:v', 'libx264',
+            '-c:a', 'aac',
+            '-shortest',
+            '-pix_fmt', 'yuv420p',
+            '-crf', '23',
+            os.path.basename(final_video)
+        ]
+        
+        self._run_ffmpeg_command(cmd, "simple watermark with audio", cwd=temp_dir)
+        
+        # Verify the file was created
+        if os.path.exists(final_video) and os.path.getsize(final_video) > 0:
+            return final_video
+        else:
+            logger.error(f"Simple watermark with audio failed - file not created: {final_video}")
+            return None
+    
+    def _try_audio_only(
+        self,
+        video_file: str,
+        audio_file: str,
+        subtitle_file: str,
+        final_video: str,
+        temp_dir: str
+    ) -> Optional[str]:
+        """Try audio only (no subtitles, no watermark)."""
+        logger.info("Trying audio only...")
+        return self._add_audio_only(video_file, audio_file, temp_dir)
     
     def _add_audio_only(self, video_file: str, audio_file: str, temp_dir: str) -> str:
         """Add audio to video without subtitles."""
@@ -418,16 +727,21 @@ class VideoProcessingService:
         
         cmd = [
             'ffmpeg', '-y',
-            '-i', video_file,
-            '-i', audio_file,
+            '-i', os.path.basename(video_file),
+            '-i', os.path.basename(audio_file),
             '-c:v', 'copy',
             '-c:a', 'aac',
             '-shortest',
-            final_video
+            os.path.basename(final_video)
         ]
         
-        self._run_ffmpeg_command(cmd, "audio addition")
-        return final_video
+        self._run_ffmpeg_command(cmd, "audio addition", cwd=temp_dir)
+        
+        # Verify the file was created
+        if os.path.exists(final_video) and os.path.getsize(final_video) > 0:
+            return final_video
+        else:
+            raise Exception(f"Audio addition failed - file not created: {final_video}")
     
     # ============================================================================
     # Thumbnail and Encoding Methods
@@ -460,6 +774,10 @@ class VideoProcessingService:
             # Try extracting at 0 seconds if 1 second fails
             cmd[3] = '00:00:00'  # Change seek time to 0 seconds
             self._run_ffmpeg_command(cmd, "thumbnail extraction at 0s", cwd=temp_dir)
+        
+        # Verify the thumbnail was created
+        if not os.path.exists(thumbnail_file) or os.path.getsize(thumbnail_file) == 0:
+            raise Exception(f"Thumbnail extraction failed - file not created: {thumbnail_file}")
         
         return thumbnail_file
     
@@ -507,11 +825,38 @@ class VideoProcessingService:
         logger.info(f"Running FFmpeg {operation}: {' '.join(cmd)}")
         result = subprocess.run(cmd, capture_output=True, text=True, cwd=cwd)
         
+        # Always check if the output file was created, regardless of return code
+        output_file = None
+        for arg in cmd:
+            if arg.endswith('.mp4') and not arg.startswith('-'):
+                output_file = arg
+                break
+        
+        if output_file and cwd:
+            output_file = os.path.join(cwd, output_file)
+        
+        file_created = output_file and os.path.exists(output_file) and os.path.getsize(output_file) > 0
+        
         if result.returncode != 0:
+            # Check if it's just a font configuration warning
+            if "Fontconfig error" in result.stderr and "Cannot load default config file" in result.stderr:
+                if file_created:
+                    logger.warning(f"Font configuration warning in {operation}, but file was created successfully")
+                    return
+                else:
+                    logger.error(f"Font configuration warning and file not created: {output_file}")
+                    logger.error(f"FFmpeg stderr: {result.stderr}")
+                    raise Exception(f"FFmpeg {operation} failed despite font warning: {result.stderr}")
+            
             logger.error(f"FFmpeg {operation} failed: {' '.join(cmd)}")
             logger.error(f"FFmpeg stderr: {result.stderr}")
             logger.error(f"FFmpeg stdout: {result.stdout}")
             raise Exception(f"FFmpeg {operation} failed: {result.stderr}")
+        elif not file_created:
+            logger.error(f"FFmpeg {operation} returned success but file not created: {output_file}")
+            logger.error(f"FFmpeg stderr: {result.stderr}")
+            logger.error(f"FFmpeg stdout: {result.stdout}")
+            raise Exception(f"FFmpeg {operation} succeeded but file not created: {output_file}")
     
     # ============================================================================
     # Task Management Methods

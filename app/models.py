@@ -68,6 +68,7 @@ class VideoProcessRequest(BaseModel):
     audio_data: str = Field(..., description="Base64 encoded audio data")
     subtitle_text: Optional[str] = Field(None, description="Subtitle text to embed in the video (optional)")
     output_resolution: str = Field("1920x1080", description="Output video resolution")
+    watermark: bool = Field(False, description="Add 'PromoNexAI' watermark to the center of the video")
 
 
 class VideoProcessResponse(BaseModel):
