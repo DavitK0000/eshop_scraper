@@ -27,6 +27,8 @@ body {
     flex-direction: column;
     overflow: visible;
     scroll-behavior: smooth;
+    /* Prevent unwanted scrolling on mobile */
+    -webkit-overflow-scrolling: touch;
 }
 
 /* Chat Holder */
@@ -709,6 +711,20 @@ body {
     
     .container {
         padding: 0 0.5rem;
+    }
+    
+    /* Mobile-specific scrolling improvements */
+    body {
+        overflow-x: hidden;
+        position: relative;
+    }
+    
+    .main-container {
+        overflow-x: hidden;
+    }
+    
+    .chat-holder {
+        overflow-x: hidden;
     }
 }
 

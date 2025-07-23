@@ -120,6 +120,8 @@ const sections = [
 
 let currentSectionIndex = 0;
 let selectedDebtAmount = null;
+let isUserScrolling = false;
+let scrollTimeout;
 
 // ============================================================================
 // UTILITY FUNCTIONS
@@ -133,25 +135,46 @@ function getCurrentTime() {
 }
 
 function scrollToBottom() {
-  // Only scroll when chat content actually overflows the viewport
+  // Don't scroll if user is actively scrolling
+  if (isUserScrolling) {
+    return;
+  }
+  
+  // Only scroll when new content would overflow the screen height
   setTimeout(() => {
     const chatContainer = document.getElementById("chatContainer");
     
     if (chatContainer) {
-      const chatRect = chatContainer.getBoundingClientRect();
+      const containerHeight = chatContainer.scrollHeight;
       const viewportHeight = window.innerHeight;
+      const currentScrollTop = window.pageYOffset || document.documentElement.scrollTop;
+      const chatTop = chatContainer.offsetTop;
+      const chatBottom = chatTop + containerHeight;
       
-      // Check if the chat container extends beyond the viewport
-      const isOverflowing = chatRect.bottom > viewportHeight;
+      // Only scroll if the new content would overflow the visible area
+      const visibleBottom = currentScrollTop + viewportHeight;
       
-      if (isOverflowing) {
-        // Calculate how much to scroll to show the bottom of the chat
-        const scrollAmount = chatRect.bottom - viewportHeight + 50; // 50px padding from bottom
-        
-        window.scrollBy({
-          top: scrollAmount,
-          behavior: 'smooth'
-        });
+      // Check if we're on mobile (smaller viewport)
+      const isMobile = window.innerWidth <= 768;
+      
+      // More conservative scrolling on mobile - only scroll if content is significantly below viewport
+      if (isMobile) {
+        // On mobile, only scroll if chat bottom is more than 100px below visible area
+        // This prevents unnecessary scrolling when content fits in viewport
+        if (chatBottom > visibleBottom + 100) {
+          window.scrollTo({
+            top: chatBottom - viewportHeight + 50, // Less padding on mobile
+            behavior: 'smooth'
+          });
+        }
+      } else {
+        // Desktop behavior - scroll if content overflows
+        if (chatBottom > visibleBottom) {
+          window.scrollTo({
+            top: chatBottom - viewportHeight + 100, // 100px padding from bottom
+            behavior: 'smooth'
+          });
+        }
       }
     }
   }, 150); // Small delay to ensure DOM updates are complete
@@ -770,5 +793,38 @@ document.addEventListener('DOMContentLoaded', function () {
         }
       });
     }, 250); // Debounce resize events
+  });
+  
+  // Detect user scrolling to prevent auto-scroll interference
+  window.addEventListener('scroll', function() {
+    isUserScrolling = true;
+    clearTimeout(scrollTimeout);
+    
+    scrollTimeout = setTimeout(() => {
+      isUserScrolling = false;
+    }, 1000); // Reset after 1 second of no scrolling
+  });
+  
+  // Detect touch scrolling on mobile
+  let touchStartY = 0;
+  let touchEndY = 0;
+  
+  document.addEventListener('touchstart', function(e) {
+    touchStartY = e.touches[0].clientY;
+  });
+  
+  document.addEventListener('touchmove', function(e) {
+    touchEndY = e.touches[0].clientY;
+    const touchDiff = Math.abs(touchStartY - touchEndY);
+    
+    // If user is scrolling more than 10px, consider it intentional scrolling
+    if (touchDiff > 10) {
+      isUserScrolling = true;
+      clearTimeout(scrollTimeout);
+      
+      scrollTimeout = setTimeout(() => {
+        isUserScrolling = false;
+      }, 1500); // Reset after 1.5 seconds of no touch scrolling
+    }
   });
 });
