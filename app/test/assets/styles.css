@@ -245,7 +245,7 @@ body {
     flex-direction: row;
     gap: 0.5rem;
     margin-top: 0.75rem;
-    margin-left: 40px; /* Reduced to 10px spacing from avatar */
+    margin-left: 10px; /* Align with message content */
     animation: fadeInText 0.6s ease-out;
     flex-wrap: wrap;
 }
@@ -683,6 +683,7 @@ body {
     .agent-chat-options {
         gap: 0.25rem;
         flex-direction: column;
+        margin-left: 10px; /* Align with message content on mobile */
     }
     
     .agent-chat-options button {
@@ -762,6 +763,7 @@ body {
     /* Ensure buttons are always visible on mobile */
     .agent-chat-options {
         margin-bottom: 1rem;
+        margin-left: 10px; /* Align with message content on mobile */
     }
 }
 
