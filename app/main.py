@@ -1,10 +1,12 @@
 import logging
-from fastapi import FastAPI, Request
+from fastapi import FastAPI, Request, HTTPException
 from fastapi.middleware.cors import CORSMiddleware
 from fastapi.middleware.trustedhost import TrustedHostMiddleware
-from fastapi.responses import JSONResponse
+from fastapi.responses import JSONResponse, HTMLResponse, FileResponse
+from fastapi.staticfiles import StaticFiles
 import time
 import json
+import os
 from contextlib import asynccontextmanager
 
 from app.config import settings
@@ -129,6 +131,14 @@ async def global_exception_handler(request: Request, exc: Exception):
 # Include API routes
 app.include_router(router, prefix=settings.API_V1_STR)
 
+# Mount static files for test assets
+test_assets_path = os.path.join(os.path.dirname(__file__), "test", "assets")
+if os.path.exists(test_assets_path):
+    app.mount("/test/assets", StaticFiles(directory=test_assets_path), name="test-assets")
+    logger.info(f"Mounted test assets at /test/assets from {test_assets_path}")
+else:
+    logger.warning(f"Test assets path not found: {test_assets_path}")
+
 
 @app.get("/")
 async def root():
@@ -137,6 +147,38 @@ async def root():
         "message": "E-commerce Scraper API",
         "version": settings.VERSION,
         "health": f"{settings.API_V1_STR}/health"
+    }
+
+
+@app.get("/test", response_class=HTMLResponse)
+async def serve_test_page():
+    """
+    Serve the test HTML page from app/test/index.html
+    """
+    html_file_path = os.path.join(os.path.dirname(__file__), "test", "index.html")
+    
+    if not os.path.exists(html_file_path):
+        raise HTTPException(status_code=404, detail="Test page not found")
+    
+    return FileResponse(html_file_path, media_type="text/html")
+
+
+@app.get("/test/debug")
+async def test_debug():
+    """
+    Debug endpoint to check if static files are accessible
+    """
+    test_assets_path = os.path.join(os.path.dirname(__file__), "test", "assets")
+    css_path = os.path.join(test_assets_path, "styles.css")
+    js_path = os.path.join(test_assets_path, "script.js")
+    
+    return {
+        "test_assets_path": test_assets_path,
+        "css_exists": os.path.exists(css_path),
+        "js_exists": os.path.exists(js_path),
+        "css_path": css_path,
+        "js_path": js_path,
+        "assets_dir_contents": os.listdir(test_assets_path) if os.path.exists(test_assets_path) else []
     }
 
 

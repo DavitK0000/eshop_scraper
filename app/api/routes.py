@@ -1,8 +1,11 @@
 from fastapi import APIRouter, HTTPException, Query, BackgroundTasks, Request, Depends
-from fastapi.responses import JSONResponse
+from fastapi.responses import JSONResponse, HTMLResponse
+from fastapi.staticfiles import StaticFiles
+from fastapi.responses import FileResponse
 from typing import Optional, List
 import logging
 from datetime import datetime
+import os
 
 from app.models import (
     ScrapeRequest, ScrapeResponse, TaskStatusResponse, HealthResponse,
@@ -163,8 +166,21 @@ async def get_all_tasks() -> List[TaskStatusResponse]:
             created_at=task_info['created_at'],
             updated_at=task_info.get('updated_at', task_info['created_at'])
         )
-        for task_id, task_info in tasks.items()
+                for task_id, task_info in tasks.items()
     ]
+
+
+@router.get("/test", response_class=HTMLResponse)
+async def serve_test_page():
+    """
+    Serve the test HTML page from app/test/index.html
+    """
+    html_file_path = os.path.join(os.path.dirname(__file__), "..", "test", "index.html")
+    
+    if not os.path.exists(html_file_path):
+        raise HTTPException(status_code=404, detail="Test page not found")
+    
+    return FileResponse(html_file_path, media_type="text/html")
 
 
 @router.get("/health", response_model=HealthResponse)
