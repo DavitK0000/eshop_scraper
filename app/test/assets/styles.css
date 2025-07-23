@@ -190,6 +190,7 @@ body {
     white-space: nowrap;
     z-index: 5;
     pointer-events: none;
+    min-width: 40px; /* Ensure minimum width for centering */
 }
 
 /* Agent container positioning for timestamp */
@@ -254,7 +255,7 @@ body {
     color: white;
     border: none;
     padding: 0.75rem 1rem;
-    border-radius: 0.5rem;
+    border-radius: 1rem;
     font-size: 1.1rem;
     font-weight: 600;
     cursor: pointer;
@@ -284,7 +285,7 @@ body {
     color: white;
     border: none;
     padding: 0.75rem 1rem;
-    border-radius: 0.5rem;
+    border-radius: 1rem;
     font-size: 1.1rem;
     font-weight: 600;
     cursor: pointer;
@@ -314,7 +315,7 @@ body {
     color: white;
     border: none;
     padding: 0.75rem 1rem;
-    border-radius: 0.5rem;
+    border-radius: 1rem;
     font-size: 1.1rem;
     font-weight: 600;
     cursor: pointer;
@@ -335,6 +336,13 @@ body {
     box-shadow: 0 4px 8px rgba(0, 0, 0, 0.15);
     color: white;
     text-decoration: none;
+}
+
+/* Override link-style hover for secondary buttons */
+.link-style.secondary-btn:hover {
+    background-color: rgba(37, 99, 235, 0.1) !important;
+    color: #1d4ed8 !important;
+    box-shadow: 0 3px 6px rgba(37, 99, 235, 0.15) !important;
 }
 
 .link-style:active {
@@ -370,28 +378,27 @@ body {
 
 /* Secondary Button Styles - Less prominent */
 .secondary-btn {
-    background-color: #f8f9fa !important;
-    color: #6c757d !important;
-    border: 2px solid #dee2e6 !important;
+    background-color: transparent !important;
+    color: #2563eb !important;
+    border: none !important;
     padding: 0.75rem 1rem !important;
     font-size: 1rem !important;
     font-weight: 500 !important;
-    box-shadow: 0 2px 4px rgba(0, 0, 0, 0.1) !important;
-    opacity: 0.8 !important;
+    box-shadow: none !important;
+    opacity: 1 !important;
 }
 
 .secondary-btn:hover {
-    background-color: #e9ecef !important;
-    border-color: #adb5bd !important;
+    background-color: rgba(37, 99, 235, 0.1) !important;
     transform: translateY(-1px) !important;
-    box-shadow: 0 3px 6px rgba(0, 0, 0, 0.15) !important;
-    color: #495057 !important;
+    box-shadow: 0 3px 6px rgba(37, 99, 235, 0.15) !important;
+    color: #1d4ed8 !important;
     opacity: 1 !important;
 }
 
 .secondary-btn:active {
     transform: translateY(0) !important;
-    box-shadow: 0 2px 4px rgba(0, 0, 0, 0.1) !important;
+    box-shadow: none !important;
 }
 
 .agent-chat-options button:before {
@@ -472,7 +479,7 @@ body {
     color: white;
     border: none;
     padding: 1rem 2rem;
-    border-radius: 0.5rem;
+    border-radius: 1rem;
     font-size: 1.125rem;
     font-weight: 700;
     cursor: pointer;
@@ -515,7 +522,7 @@ body {
     color: white;
     border: none;
     padding: 1rem 2rem;
-    border-radius: 0.5rem;
+    border-radius: 1rem;
     font-size: 1.125rem;
     font-weight: 700;
     cursor: pointer;
@@ -552,7 +559,7 @@ body {
     background-color: #f3f4f6;
     color: #1f2937;
     padding: 2rem 1rem;
-    margin-top: 2rem;
+    margin-top: 16rem;
 }
 
 .container {
@@ -756,6 +763,13 @@ body {
 /* Utility Classes */
 .hidden {
     display: none !important;
+}
+
+/* Button hiding animation */
+.agent-chat-options.hiding {
+    opacity: 0;
+    transform: translateY(-10px);
+    transition: all 0.3s ease;
 }
 
 .flex {

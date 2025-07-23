@@ -236,14 +236,13 @@ function positionAvatarAtLastMessage(agentBlock) {
   }
 }
 
-// Function to position timestamp at the bottom right of the last message content
+// Function to position timestamp below the avatar
 function positionTimestampAtLastMessage(agentBlock) {
   const timestampSpan = agentBlock.querySelector('.message-timestamp');
-  const messageContents = agentBlock.querySelectorAll('.message-content');
+  const avatarContainer = agentBlock.querySelector('.agent-img');
   
-  if (timestampSpan && messageContents.length > 0) {
-    const lastMessage = messageContents[messageContents.length - 1];
-    const lastMessageRect = lastMessage.getBoundingClientRect();
+  if (timestampSpan && avatarContainer) {
+    const avatarRect = avatarContainer.getBoundingClientRect();
     const agentBlockRect = agentBlock.getBoundingClientRect();
     
     // Check if mobile view
@@ -253,19 +252,20 @@ function positionTimestampAtLastMessage(agentBlock) {
     let timestampLeft, timestampTop;
     
     if (isMobile) {
-      // Mobile positioning - closer to message due to limited space
-      timestampLeft = lastMessageRect.right - agentBlockRect.left + 5; // 5px to the right of the message
-      timestampTop = lastMessageRect.bottom - agentBlockRect.top - 12; // Adjust for smaller font
+      // Mobile positioning - center below avatar
+      timestampLeft = avatarRect.left - agentBlockRect.left + (avatarRect.width / 2) - 15; // Center horizontally
+      timestampTop = avatarRect.bottom - agentBlockRect.top + 5; // 5px below avatar
     } else {
-      // Desktop positioning
-      timestampLeft = lastMessageRect.right - agentBlockRect.left + 10; // 10px to the right of the message
-      timestampTop = lastMessageRect.bottom - agentBlockRect.top - 15; // Align bottom with message
+      // Desktop positioning - center below avatar
+      timestampLeft = avatarRect.left - agentBlockRect.left + (avatarRect.width / 2) - 20; // Center horizontally
+      timestampTop = avatarRect.bottom - agentBlockRect.top + 8; // 8px below avatar
     }
     
     timestampSpan.style.left = `${timestampLeft}px`;
     timestampSpan.style.top = `${timestampTop}px`;
     timestampSpan.style.right = 'auto';
     timestampSpan.style.bottom = 'auto';
+    timestampSpan.style.textAlign = 'center'; // Center the text
   }
 }
 
@@ -364,7 +364,15 @@ function createSelectionButtons(selections) {
 
       if (option.stBtn) {
         element.classList.add("special-start-btn");
-        element.onclick = () => handleUserResponse(option, "st");
+        element.onclick = (e) => {
+          // Disable all buttons in this container to prevent multiple clicks
+          const buttons = selectionContainer.querySelectorAll('button, a');
+          buttons.forEach(btn => {
+            btn.style.pointerEvents = 'none';
+            btn.style.opacity = '0.6';
+          });
+          handleUserResponse(option, "st");
+        };
       } else {
         // Determine if this is a secondary button (Can't Talk Now)
         if (option.title.includes("Can't Talk Now")) {
@@ -372,7 +380,15 @@ function createSelectionButtons(selections) {
         } else {
           element.classList.add("opt-btn");
         }
-        element.onclick = () => handleUserResponse(option);
+        element.onclick = (e) => {
+          // Disable all buttons in this container to prevent multiple clicks
+          const buttons = selectionContainer.querySelectorAll('button, a');
+          buttons.forEach(btn => {
+            btn.style.pointerEvents = 'none';
+            btn.style.opacity = '0.6';
+          });
+          handleUserResponse(option);
+        };
       }
     }
 
@@ -404,24 +420,11 @@ function addBotMessage(text) {
   const chatMessage = createChatMessage(text);
   chatBubbleContainer.appendChild(chatMessage);
   
-  // Add timestamp outside the message content, at the bottom right of the agent container
-  const timestamp = getCurrentTime();
-  const timestampSpan = document.createElement('span');
-  timestampSpan.className = 'message-timestamp';
-  timestampSpan.textContent = timestamp;
-  timestampSpan.style.opacity = '0'; // Start hidden
-  
-  // Add timestamp to the agent container (outside message content)
-  agentBlock.appendChild(timestampSpan);
-  
   chatContainer.appendChild(agentBlock);
   
-  // Position avatar and show timestamp after content is fully rendered
+  // Position avatar after content is fully rendered
   setTimeout(() => {
     positionAvatarAtLastMessage(agentBlock);
-    positionTimestampAtLastMessage(agentBlock);
-    timestampSpan.style.opacity = '1'; // Show timestamp
-    timestampSpan.style.transition = 'opacity 0.3s ease'; // Smooth fade in
     scrollToBottom(); // Scroll if new content overflows
   }, 300); // Longer delay to ensure content is fully rendered
 }
@@ -439,16 +442,6 @@ function showScheduleForm() {
 
   const chatMessage = createChatMessage("📝 Please complete the form below to schedule your call.");
   chatBubbleContainer.appendChild(chatMessage);
-  
-  // Add timestamp outside the message content, at the bottom right of the agent container
-  const timestamp = getCurrentTime();
-  const timestampSpan = document.createElement('span');
-  timestampSpan.className = 'message-timestamp';
-  timestampSpan.textContent = timestamp;
-  timestampSpan.style.opacity = '0'; // Start hidden
-  
-  // Add timestamp to the agent container (outside message content)
-  agentBlock.appendChild(timestampSpan);
   
   chatContainer.appendChild(agentBlock);
 
@@ -631,40 +624,50 @@ function handleUserResponse(option, type) {
   const userMessage = type === "st" ? option.stBtn : option.title;
   addUserMessage(userMessage);
 
-  // Capture debt value from first question
+  // ✅ Capture debt value from first question
   if (currentSectionIndex === 0) {
     selectedDebtAmount = option.title.includes("Yes") ? 15000 : 10000;
   }
 
+  // Hide the buttons after selection
   const chatContainer = document.getElementById("chatContainer");
-
-  if (option.stBtn !== "Call Now To Claim Benefits") {
-    const selectionBlocks = chatContainer.querySelectorAll(".agent-chat-options");
-    if (selectionBlocks.length > 0) {
-      const lastSelectionBlock = selectionBlocks[selectionBlocks.length - 1];
-      lastSelectionBlock.classList.add("hidden");
-    }
-  }
-
-  // Handle special cases
-  if (option.title.includes("Busy? Request A Call Back") || option.title.includes("Can't Talk Now - Request A Call Back")) {
-    fbq('track', 'Schedule');
-    const queryString = window.location.search;
-    const targetURL = `https://www.curadebt.com/debtpps?a_=single-mom-debt-relief&b_fb${queryString}`;
+  const selectionBlocks = chatContainer.querySelectorAll(".agent-chat-options");
+  if (selectionBlocks.length > 0) {
+    const lastSelectionBlock = selectionBlocks[selectionBlocks.length - 1];
+    lastSelectionBlock.classList.add("hiding");
+    
+    // Remove the block after animation
     setTimeout(() => {
-      window.location.href = targetURL;
-    }, 800);
-    return;
+      lastSelectionBlock.remove();
+    }, 300);
   }
 
-  // Handle call tracking
-  if (option.title.includes("Call Now To Claim Benefits") || option.href && option.href.includes("tel:")) {
-    fbq('track', 'Call');
-    // Track call initiation
-    console.log('Call tracking initiated');
-  }
+  // ✅ Replace form with redirect
+if (option.title.includes("Busy? Request A Call Back")) {
+    fbq('track', 'Schedule'); // 🔥 Fire Facebook Lead event
+  const queryString = window.location.search; // includes the '?'
+  const targetURL = `https://www.curadebt.com/debtpps/${queryString}`;
+  setTimeout(() => {
+    window.location.href = targetURL;
+  }, 800);
+  return;
+}
 
-  // Continue to next section
+// ✅ If user clicks "Call Now", trigger dial immediately
+if (option.stBtn === "Call Now") {
+      // 🔥 Fire Facebook Pixel Contact event
+  fbq('track', 'Contact');
+    // Trigger Ringba call link
+  const link = document.getElementById('ringbaCallLink');
+  if (link) {
+    link.click(); // Trigger the <a href="tel:..."> link that Ringba replaced
+  } else {
+    console.warn("Ringba call link not found");
+  }
+  return;
+}
+
+
   if (option.nextSectionIndex !== undefined) {
     currentSectionIndex = option.nextSectionIndex;
     setTimeout(() => handleSection(currentSectionIndex), 800);
@@ -709,15 +712,19 @@ async function displayMessage(section) {
       typingMessage.remove();
       const chatMessage = createChatMessage(message.text, false);
       
-      // Remove timestamp from all previous messages in this block
-      const previousTimestamps = agentBlock.querySelectorAll('.message-timestamp');
-      previousTimestamps.forEach(timestamp => {
-        timestamp.remove();
-      });
-      
       chatBubbleContainer.appendChild(chatMessage);
       
-      // Add timestamp outside the message content, at the bottom right of the agent container
+      // Position avatar after content is fully rendered
+      setTimeout(() => {
+        positionAvatarAtLastMessage(agentBlock);
+      }, 300); // Longer delay to ensure content is fully rendered
+    }
+
+    if (message.selections) {
+      const selectionBlock = createSelectionButtons(message.selections);
+      chatBubbleContainer.appendChild(selectionBlock);
+      
+      // Add timestamp only when buttons appear
       const timestamp = getCurrentTime();
       const timestampSpan = document.createElement('span');
       timestampSpan.className = 'message-timestamp';
@@ -726,24 +733,15 @@ async function displayMessage(section) {
       
       // Add timestamp to the agent container (outside message content)
       agentBlock.appendChild(timestampSpan);
-
+      
       // Position avatar and show timestamp after content is fully rendered
       setTimeout(() => {
         positionAvatarAtLastMessage(agentBlock);
         positionTimestampAtLastMessage(agentBlock);
         timestampSpan.style.opacity = '1'; // Show timestamp
         timestampSpan.style.transition = 'opacity 0.3s ease'; // Smooth fade in
+        scrollToBottom(); // Scroll if new content overflows
       }, 300); // Longer delay to ensure content is fully rendered
-    }
-
-    if (message.selections) {
-      const selectionBlock = createSelectionButtons(message.selections);
-      chatBubbleContainer.appendChild(selectionBlock);
-      
-      // Scroll if new content overflows
-      setTimeout(() => {
-        scrollToBottom();
-      }, 200);
     }
   }
 }
