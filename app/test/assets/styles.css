@@ -757,7 +757,7 @@ body {
     /* Mobile timestamp positioning adjustments */
     .agent-container .message-timestamp,
     .user-container .message-timestamp {
-        display: none; /* Hide timestamps on mobile */
+        font-size: 0.65rem; /* Smaller font size for mobile */
     }
     
     /* Ensure buttons are always visible on mobile */

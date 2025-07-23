@@ -300,9 +300,9 @@ function createUserMessage(text) {
     let timestampLeft, timestampTop;
     
     if (isMobile) {
-      // Mobile positioning - timestamps are hidden via CSS
-      timestampLeft = 0;
-      timestampTop = 0;
+      // Mobile positioning - position to the right of the message with smaller spacing
+      timestampLeft = userMessageRect.right - userBlockRect.left + 5; // 5px to the right of the message
+      timestampTop = userMessageRect.bottom - userBlockRect.top - 10; // Align bottom with message
     } else {
       // Desktop positioning - position to the right of the message
       timestampLeft = userMessageRect.right - userBlockRect.left + 10; // 10px to the right of the message
@@ -787,9 +787,9 @@ document.addEventListener('DOMContentLoaded', function () {
           let timestampLeft, timestampTop;
           
           if (isMobile) {
-            // Mobile positioning - timestamps are hidden via CSS
-            timestampLeft = 0;
-            timestampTop = 0;
+            // Mobile positioning - position to the right of the message with smaller spacing
+            timestampLeft = userMessageRect.right - userBlockRect.left + 5;
+            timestampTop = userMessageRect.bottom - userBlockRect.top - 10;
           } else {
             // Desktop positioning - position to the right of the message
             timestampLeft = userMessageRect.right - userBlockRect.left + 10;
