@@ -766,6 +766,37 @@ body {
     }
 }
 
+/* Call Now Button */
+.call-now-button {
+    display: inline-block;
+    background-color: #005C4B;
+    color: white;
+    text-decoration: none;
+    padding: 1rem 2rem;
+    border-radius: 1rem;
+    font-size: 1.125rem;
+    font-weight: 700;
+    text-align: center;
+    box-shadow: 0 4px 15px rgba(0, 92, 75, 0.3);
+    transition: all 0.3s ease;
+    margin: 1rem auto;
+    max-width: 200px;
+    position: relative;
+    overflow: hidden;
+}
+
+.call-now-button:hover {
+    background-color: #004A3D;
+    transform: translateY(-2px);
+    box-shadow: 0 6px 20px rgba(0, 92, 75, 0.4);
+    color: white;
+    text-decoration: none;
+}
+
+.call-now-button:active {
+    transform: translateY(0);
+}
+
 /* Utility Classes */
 .hidden {
     display: none !important;

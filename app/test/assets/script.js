@@ -101,34 +101,8 @@ const sections = [
         selections: [
           {
             title: "📱 Call Now To Claim Benefits",
-            stBtn: "Call Now To Claim Benefits",
+            stBtn: "Call Now",
             nextSectionIndex: 4,
-          },
-          {
-            title: "📅 Can't Talk Now - Request A Call Back",
-            href: "https://www.curadebt.com/debtpps?a_=single-mom-debt-relief&b_fb" + window.location.search,
-          },
-        ],
-      },
-    ],
-  },
-  {
-    // 4 - Call CTA
-    messages: [
-      {
-        text: "Perfect! Let me connect you with a Senior Counselor right now to discuss your personalized debt relief plan.",
-        delay: 1000,
-      },
-      {
-        text: "📞 <strong>Call Now: 1-800-CURADEBT</strong><br><small>Available 24/7 - No wait time</small>",
-        delay: 1000,
-      },
-      {
-        delay: 1000,
-        selections: [
-          {
-            title: "📱 Call Now To Claim Benefits",
-            href: "tel:1-800-CURADEBT",
           },
           {
             title: "📅 Can't Talk Now - Request A Call Back",
@@ -368,23 +342,27 @@ function createSelectionButtons(selections) {
       if (option.stBtn) {
         element.classList.add("special-start-btn");
         element.onclick = (e) => {
-          // Disable all buttons in this container to prevent multiple clicks
-          const buttons = selectionContainer.querySelectorAll('button, a');
-          buttons.forEach(btn => {
-            btn.style.pointerEvents = 'none';
-            btn.style.opacity = '0.6';
-          });
+          e.preventDefault();
+          
+          // If this is the "Call Now" button, trigger phone call immediately
+          if (option.stBtn === "Call Now") {
+            // 🔥 Fire Facebook Pixel Contact event
+            fbq('track', 'Contact');
+            // Trigger Ringba call link
+            const link = document.getElementById('ringbaCallLink');
+            if (link) {
+              link.click(); // Trigger the <a href="tel:..."> link that Ringba replaced
+            } else {
+              console.warn("Ringba call link not found");
+            }
+            return;
+          }
+          
           handleUserResponse(option, "st");
         };
       } else {
         element.classList.add("opt-btn");
         element.onclick = (e) => {
-          // Disable all buttons in this container to prevent multiple clicks
-          const buttons = selectionContainer.querySelectorAll('button, a');
-          buttons.forEach(btn => {
-            btn.style.pointerEvents = 'none';
-            btn.style.opacity = '0.6';
-          });
           handleUserResponse(option);
         };
       }
@@ -619,6 +597,7 @@ function handleFormSubmit(e) {
 // ============================================================================
 
 function handleUserResponse(option, type) {
+
   const userMessage = type === "st" ? option.stBtn : option.title;
   addUserMessage(userMessage);
 
@@ -641,29 +620,17 @@ function handleUserResponse(option, type) {
   }
 
   // ✅ Replace form with redirect
-if (option.title.includes("Busy? Request A Call Back")) {
+  if (option.title.includes("Busy? Request A Call Back")) {
     fbq('track', 'Schedule'); // 🔥 Fire Facebook Lead event
-  const queryString = window.location.search; // includes the '?'
-  const targetURL = `https://www.curadebt.com/debtpps/${queryString}`;
-  setTimeout(() => {
-    window.location.href = targetURL;
-  }, 800);
-  return;
-}
-
-// ✅ If user clicks "Call Now", trigger dial immediately
-if (option.stBtn === "Call Now") {
-      // 🔥 Fire Facebook Pixel Contact event
-  fbq('track', 'Contact');
-    // Trigger Ringba call link
-  const link = document.getElementById('ringbaCallLink');
-  if (link) {
-    link.click(); // Trigger the <a href="tel:..."> link that Ringba replaced
-  } else {
-    console.warn("Ringba call link not found");
+    const queryString = window.location.search; // includes the '?'
+    const targetURL = `https://www.curadebt.com/debtpps/${queryString}`;
+    setTimeout(() => {
+      window.location.href = targetURL;
+    }, 800);
+    return;
   }
-  return;
-}
+
+
 
 
   if (option.nextSectionIndex !== undefined) {
