@@ -100,8 +100,39 @@ const sections = [
         delay: 1000,
         selections: [
           {
+            title: "📞 Call Now - Get Your Lower Payment",
+            stBtn: "Call Now",
+            nextSectionIndex: 4,
+          },
+          {
             title: "📅 Can't Talk Now - Request A Call Back",
-            href: "https://www.curadebt.com/debtpps" + window.location.search,
+            href: "https://www.curadebt.com/debtpps?a_=single-mom-debt-relief&b_fb" + window.location.search,
+          },
+        ],
+      },
+    ],
+  },
+  {
+    // 4 - Call CTA
+    messages: [
+      {
+        text: "Perfect! Let me connect you with a Senior Counselor right now to discuss your personalized debt relief plan.",
+        delay: 1000,
+      },
+      {
+        text: "📞 <strong>Call Now: 1-800-CURADEBT</strong><br><small>Available 24/7 - No wait time</small>",
+        delay: 1000,
+      },
+      {
+        delay: 1000,
+        selections: [
+          {
+            title: "📞 Call Now",
+            href: "tel:1-800-CURADEBT",
+          },
+          {
+            title: "📅 Schedule Call Back",
+            href: "https://www.curadebt.com/debtpps?a_=single-mom-debt-relief&b_fb" + window.location.search,
           },
         ],
       },
@@ -220,7 +251,7 @@ function createSelectionButtons(selections) {
     ? "agent-chat-options"
     : "agent-chat-options";
 
-  selections.forEach((option) => {
+  selections.forEach((option, index) => {
     let element;
 
     if (option.href) {
@@ -229,7 +260,13 @@ function createSelectionButtons(selections) {
       element.target = "_blank";
       element.rel = "noopener noreferrer";
       element.textContent = option.title;
-      element.className = "link-style";
+      
+      // Determine if this is a secondary button (Can't Talk Now)
+      if (option.title.includes("Can't Talk Now")) {
+        element.className = "link-style secondary-btn";
+      } else {
+        element.className = "link-style";
+      }
     } else {
       element = document.createElement("button");
       element.textContent = option.title;
@@ -238,7 +275,12 @@ function createSelectionButtons(selections) {
         element.classList.add("special-start-btn");
         element.onclick = () => handleUserResponse(option, "st");
       } else {
-        element.classList.add("opt-btn");
+        // Determine if this is a secondary button (Can't Talk Now)
+        if (option.title.includes("Can't Talk Now")) {
+          element.classList.add("opt-btn", "secondary-btn");
+        } else {
+          element.classList.add("opt-btn");
+        }
         element.onclick = () => handleUserResponse(option);
       }
     }
@@ -416,6 +458,8 @@ function handleFormSubmit(e) {
   params.append("f_whereyoulive", form.f_whereyoulive.value);
   params.append("f_totaldebt", form.f_totaldebt.value);
   params.append("f_affiliateid", "Facebook");
+  params.append("a_", "single-mom-debt-relief");
+  params.append("b_fb", "1");
 
   const formBlock = form.closest('.agent-container');
 
@@ -474,14 +518,21 @@ function handleUserResponse(option, type) {
   }
 
   // Handle special cases
-  if (option.title.includes("Busy? Request A Call Back")) {
+  if (option.title.includes("Busy? Request A Call Back") || option.title.includes("Schedule Call Back")) {
     fbq('track', 'Schedule');
     const queryString = window.location.search;
-    const targetURL = `https://www.curadebt.com/debtpps/${queryString}`;
+    const targetURL = `https://www.curadebt.com/debtpps?a_=single-mom-debt-relief&b_fb${queryString}`;
     setTimeout(() => {
       window.location.href = targetURL;
     }, 800);
     return;
+  }
+
+  // Handle call tracking
+  if (option.title.includes("Call Now") || option.href && option.href.includes("tel:")) {
+    fbq('track', 'Call');
+    // Track call initiation
+    console.log('Call tracking initiated');
   }
 
   // Continue to next section

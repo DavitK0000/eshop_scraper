@@ -16,7 +16,7 @@ body {
     font-family: ui-sans-serif, system-ui, sans-serif, "Apple Color Emoji", "Segoe UI Emoji", "Segoe UI Symbol", "Noto Color Emoji";
     line-height: 1.5;
     color: #1f2937;
-    background-color: #f9fafb;
+    background-color: white;
 }
 
 /* Main Container */
@@ -68,7 +68,7 @@ body {
 .chat-container {
     flex: 1;
     overflow-y: visible;
-    padding: 0 2rem 0.5rem 2rem;
+    padding: 3rem 2rem 0.5rem 2rem;
     display: flex;
     flex-direction: column;
     gap: 0.5rem;
@@ -111,7 +111,7 @@ body {
 
 /* Individual chat message animations within agent blocks */
 .agent-container .message-content {
-    background-color: #fff;
+    background-color: #f8f9fa;
     padding: 0.5rem 0.75rem;
     border-radius: 0.5rem;
     box-shadow: 0 1px 3px rgba(0, 0, 0, 0.1);
@@ -187,7 +187,7 @@ body {
 }
 
 .user-container .message-content {
-    background-color: #dcf8c6;
+    background-color: white;
     padding: 0.5rem 0.75rem;
     border-radius: 0.5rem;
     box-shadow: 0 1px 3px rgba(0, 0, 0, 0.1);
@@ -195,7 +195,7 @@ body {
     word-wrap: break-word;
     font-size: 1rem;
     line-height: 1.5;
-    color: #1f2937;
+    color: #6c757d;
     min-width: 70px;
 }
 
@@ -218,9 +218,9 @@ body {
 }
 
 .agent-chat-options button {
-    background-color: rgba(0, 94, 84, 0.1);
-    color: #005e54;
-    border: 2px solid #005e54;
+    background-color: #005C4B;
+    color: white;
+    border: none;
     padding: 0.75rem 1rem;
     border-radius: 0.5rem;
     font-size: 1rem;
@@ -236,7 +236,7 @@ body {
 }
 
 .agent-chat-options button:hover {
-    background-color: rgba(0, 94, 84, 0.2);
+    background-color: #004A3D;
     transform: translateY(-1px);
     box-shadow: 0 4px 8px rgba(0, 0, 0, 0.15);
 }
@@ -248,9 +248,9 @@ body {
 
 /* Option Button Style */
 .opt-btn {
-    background-color: rgba(0, 94, 84, 0.1);
-    color: #005e54;
-    border: 2px solid #005e54;
+    background-color: #005C4B;
+    color: white;
+    border: none;
     padding: 0.75rem 1rem;
     border-radius: 0.5rem;
     font-size: 1rem;
@@ -266,7 +266,7 @@ body {
 }
 
 .opt-btn:hover {
-    background-color: rgba(0, 94, 84, 0.2);
+    background-color: #004A3D;
     transform: translateY(-1px);
     box-shadow: 0 4px 8px rgba(0, 0, 0, 0.15);
 }
@@ -278,9 +278,9 @@ body {
 
 /* Link Style Button */
 .link-style {
-    background-color: rgba(0, 94, 84, 0.1);
-    color: #005e54;
-    border: 2px solid #005e54;
+    background-color: #005C4B;
+    color: white;
+    border: none;
     padding: 0.75rem 1rem;
     border-radius: 0.5rem;
     font-size: 1rem;
@@ -298,16 +298,68 @@ body {
 }
 
 .link-style:hover {
-    background-color: rgba(0, 94, 84, 0.2);
+    background-color: #004A3D;
     transform: translateY(-1px);
     box-shadow: 0 4px 8px rgba(0, 0, 0, 0.15);
-    color: #005e54;
+    color: white;
     text-decoration: none;
 }
 
 .link-style:active {
     transform: translateY(0);
     box-shadow: 0 2px 4px rgba(0, 0, 0, 0.1);
+}
+
+/* Primary Button Styles - Highlighted */
+.primary-btn {
+    background-color: #005C4B !important;
+    color: white !important;
+    border: 2px solid #005C4B !important;
+    padding: 1rem 1.5rem !important;
+    font-size: 1.1rem !important;
+    font-weight: 700 !important;
+    box-shadow: 0 4px 12px rgba(0, 92, 75, 0.3) !important;
+    transform: scale(1.02) !important;
+    position: relative !important;
+}
+
+.primary-btn:hover {
+    background-color: #004A3D !important;
+    border-color: #004A3D !important;
+    transform: translateY(-2px) scale(1.02) !important;
+    box-shadow: 0 6px 16px rgba(0, 92, 75, 0.4) !important;
+    color: white !important;
+}
+
+.primary-btn:active {
+    transform: translateY(0) scale(1.02) !important;
+    box-shadow: 0 4px 12px rgba(0, 92, 75, 0.3) !important;
+}
+
+/* Secondary Button Styles - Less prominent */
+.secondary-btn {
+    background-color: #f8f9fa !important;
+    color: #6c757d !important;
+    border: 2px solid #dee2e6 !important;
+    padding: 0.75rem 1rem !important;
+    font-size: 1rem !important;
+    font-weight: 500 !important;
+    box-shadow: 0 2px 4px rgba(0, 0, 0, 0.1) !important;
+    opacity: 0.8 !important;
+}
+
+.secondary-btn:hover {
+    background-color: #e9ecef !important;
+    border-color: #adb5bd !important;
+    transform: translateY(-1px) !important;
+    box-shadow: 0 3px 6px rgba(0, 0, 0, 0.15) !important;
+    color: #495057 !important;
+    opacity: 1 !important;
+}
+
+.secondary-btn:active {
+    transform: translateY(0) !important;
+    box-shadow: 0 2px 4px rgba(0, 0, 0, 0.1) !important;
 }
 
 .agent-chat-options button:before {
@@ -384,7 +436,7 @@ body {
 
 /* Special Start Button */
 .special-start-btn {
-    background: linear-gradient(135deg, #005e54 0%, #004d44 100%);
+    background: #005C4B;
     color: white;
     border: none;
     padding: 1rem 2rem;
@@ -393,7 +445,7 @@ body {
     font-weight: 700;
     cursor: pointer;
     transition: all 0.3s ease;
-    box-shadow: 0 4px 15px rgba(0, 94, 84, 0.3);
+    box-shadow: 0 4px 15px rgba(0, 92, 75, 0.3);
     position: relative;
     overflow: hidden;
     text-transform: uppercase;
@@ -403,8 +455,8 @@ body {
 
 .special-start-btn:hover {
     transform: translateY(-2px);
-    box-shadow: 0 6px 20px rgba(0, 94, 84, 0.4);
-    background: linear-gradient(135deg, #004d44 0%, #003d36 100%);
+    box-shadow: 0 6px 20px rgba(0, 92, 75, 0.4);
+    background: #004A3D;
 }
 
 .special-start-btn:active {
@@ -427,7 +479,7 @@ body {
 }
 
 .btn-act {
-    background: linear-gradient(135deg, #005e54 0%, #004d44 100%);
+    background: #005C4B;
     color: white;
     border: none;
     padding: 1rem 2rem;
@@ -436,7 +488,7 @@ body {
     font-weight: 700;
     cursor: pointer;
     transition: all 0.3s ease;
-    box-shadow: 0 4px 15px rgba(0, 94, 84, 0.3);
+    box-shadow: 0 4px 15px rgba(0, 92, 75, 0.3);
     text-decoration: none;
     display: inline-block;
     text-align: center;
@@ -444,7 +496,8 @@ body {
 
 .btn-act:hover {
     transform: translateY(-2px);
-    box-shadow: 0 6px 20px rgba(0, 94, 84, 0.4);
+    box-shadow: 0 6px 20px rgba(0, 92, 75, 0.4);
+    background: #004A3D;
 }
 
 .btn-act a {
