@@ -17,6 +17,7 @@ body {
     line-height: 1.5;
     color: #1f2937;
     background-color: white;
+    scroll-behavior: smooth;
 }
 
 /* Main Container */
@@ -25,6 +26,7 @@ body {
     display: flex;
     flex-direction: column;
     overflow: visible;
+    scroll-behavior: smooth;
 }
 
 /* Chat Holder */
@@ -68,7 +70,7 @@ body {
 .chat-container {
     flex: 1;
     overflow-y: visible;
-    padding: 3rem 2rem 0.5rem 2rem;
+    padding: 3rem 2rem 2rem 2rem;
     display: flex;
     flex-direction: column;
     gap: 0.5rem;
@@ -117,14 +119,15 @@ body {
     box-shadow: 0 1px 3px rgba(0, 0, 0, 0.1);
     max-width: 80%;
     word-wrap: break-word;
-    font-size: 1rem;
+    font-size: 1.2rem;
     line-height: 1.5;
     margin-bottom: 0.5rem;
     margin-left: 10px; /* Reduced to 10px spacing from avatar */
+    position: relative;
 }
 
 .agent-container .message-content:last-child {
-    margin-bottom: 0;
+    margin-bottom: 25px;
 }
 
 .agent-chat {
@@ -177,6 +180,33 @@ body {
     text-align: right;
 }
 
+/* Timestamp styling for messages */
+.agent-container .message-timestamp,
+.user-container .message-timestamp {
+    position: absolute;
+    font-size: 0.75rem;
+    color: #9ca3af;
+    font-weight: 400;
+    white-space: nowrap;
+    z-index: 5;
+    pointer-events: none;
+}
+
+/* Agent container positioning for timestamp */
+.agent-container {
+    position: relative;
+}
+
+/* User container positioning for timestamp */
+.user-container {
+    position: relative;
+}
+
+/* Ensure agent chat container has proper positioning for timestamp alignment */
+.agent-chat {
+    position: relative;
+}
+
 /* User Container */
 .user-container {
     display: flex;
@@ -193,10 +223,12 @@ body {
     box-shadow: 0 1px 3px rgba(0, 0, 0, 0.1);
     max-width: 80%;
     word-wrap: break-word;
-    font-size: 1rem;
+    font-size: 1.2rem;
     line-height: 1.5;
     color: #6c757d;
     min-width: 70px;
+    position: relative;
+    margin-bottom: 25px;
 }
 
 .user-container .message-time {
@@ -223,7 +255,7 @@ body {
     border: none;
     padding: 0.75rem 1rem;
     border-radius: 0.5rem;
-    font-size: 1rem;
+    font-size: 1.1rem;
     font-weight: 600;
     cursor: pointer;
     transition: all 0.2s ease;
@@ -253,7 +285,7 @@ body {
     border: none;
     padding: 0.75rem 1rem;
     border-radius: 0.5rem;
-    font-size: 1rem;
+    font-size: 1.1rem;
     font-weight: 600;
     cursor: pointer;
     transition: all 0.2s ease;
@@ -283,7 +315,7 @@ body {
     border: none;
     padding: 0.75rem 1rem;
     border-radius: 0.5rem;
-    font-size: 1rem;
+    font-size: 1.1rem;
     font-weight: 600;
     cursor: pointer;
     transition: all 0.2s ease;
@@ -648,14 +680,14 @@ body {
     
     .agent-chat-options button {
         padding: 0.5rem 0.75rem;
-        font-size: 0.875rem;
+        font-size: 1rem;
         white-space: normal;
     }
     
     .opt-btn,
     .link-style {
         padding: 0.5rem 0.75rem;
-        font-size: 0.875rem;
+        font-size: 1rem;
         white-space: normal;
     }
     
@@ -693,20 +725,31 @@ body {
     }
     
     .chat-container {
-        padding: 0 1.5rem 0.5rem 1.5rem;
+        padding: 0 1.5rem 2rem 1.5rem;
     }
     
     .agent-container .message-content,
     .user-container .message-content {
         max-width: 95%;
-        font-size: 0.875rem;
+        font-size: 1rem;
     }
     
     .opt-btn,
     .link-style {
         padding: 0.5rem 0.75rem;
-        font-size: 0.875rem;
+        font-size: 1rem;
         white-space: normal;
+    }
+    
+    /* Mobile timestamp positioning adjustments */
+    .agent-container .message-timestamp,
+    .user-container .message-timestamp {
+        font-size: 0.65rem;
+    }
+    
+    /* Ensure buttons are always visible on mobile */
+    .agent-chat-options {
+        margin-bottom: 1rem;
     }
 }
 

@@ -100,8 +100,8 @@ const sections = [
         delay: 1000,
         selections: [
           {
-            title: "📞 Call Now - Get Your Lower Payment",
-            stBtn: "Call Now",
+            title: "📱 Call Now To Claim Benefits",
+            stBtn: "Call Now To Claim Benefits",
             nextSectionIndex: 4,
           },
           {
@@ -127,11 +127,11 @@ const sections = [
         delay: 1000,
         selections: [
           {
-            title: "📞 Call Now",
+            title: "📱 Call Now To Claim Benefits",
             href: "tel:1-800-CURADEBT",
           },
           {
-            title: "📅 Schedule Call Back",
+            title: "📅 Can't Talk Now - Request A Call Back",
             href: "https://www.curadebt.com/debtpps?a_=single-mom-debt-relief&b_fb" + window.location.search,
           },
         ],
@@ -159,7 +159,28 @@ function getCurrentTime() {
 }
 
 function scrollToBottom() {
-  // Removed automatic scrolling - let user control their own scroll position
+  // Only scroll when new content would overflow the screen height
+  setTimeout(() => {
+    const chatContainer = document.getElementById("chatContainer");
+    
+    if (chatContainer) {
+      const containerHeight = chatContainer.scrollHeight;
+      const viewportHeight = window.innerHeight;
+      const currentScrollTop = window.pageYOffset || document.documentElement.scrollTop;
+      const chatTop = chatContainer.offsetTop;
+      const chatBottom = chatTop + containerHeight;
+      
+      // Only scroll if the new content would overflow the visible area
+      const visibleBottom = currentScrollTop + viewportHeight;
+      
+      if (chatBottom > visibleBottom) {
+        window.scrollTo({
+          top: chatBottom - viewportHeight + 100, // 100px padding from bottom
+          behavior: 'smooth'
+        });
+      }
+    }
+  }, 150); // Small delay to ensure DOM updates are complete
 }
 
 function typingEffect() {
@@ -215,6 +236,39 @@ function positionAvatarAtLastMessage(agentBlock) {
   }
 }
 
+// Function to position timestamp at the bottom right of the last message content
+function positionTimestampAtLastMessage(agentBlock) {
+  const timestampSpan = agentBlock.querySelector('.message-timestamp');
+  const messageContents = agentBlock.querySelectorAll('.message-content');
+  
+  if (timestampSpan && messageContents.length > 0) {
+    const lastMessage = messageContents[messageContents.length - 1];
+    const lastMessageRect = lastMessage.getBoundingClientRect();
+    const agentBlockRect = agentBlock.getBoundingClientRect();
+    
+    // Check if mobile view
+    const isMobile = window.innerWidth <= 567;
+    
+    // Calculate position relative to the agent block
+    let timestampLeft, timestampTop;
+    
+    if (isMobile) {
+      // Mobile positioning - closer to message due to limited space
+      timestampLeft = lastMessageRect.right - agentBlockRect.left + 5; // 5px to the right of the message
+      timestampTop = lastMessageRect.bottom - agentBlockRect.top - 12; // Adjust for smaller font
+    } else {
+      // Desktop positioning
+      timestampLeft = lastMessageRect.right - agentBlockRect.left + 10; // 10px to the right of the message
+      timestampTop = lastMessageRect.bottom - agentBlockRect.top - 15; // Align bottom with message
+    }
+    
+    timestampSpan.style.left = `${timestampLeft}px`;
+    timestampSpan.style.top = `${timestampTop}px`;
+    timestampSpan.style.right = 'auto';
+    timestampSpan.style.bottom = 'auto';
+  }
+}
+
 
 
 function createUserMessage(text) {
@@ -226,6 +280,43 @@ function createUserMessage(text) {
   userMessage.innerHTML = `<span>${text}</span>`;
 
   userBlock.appendChild(userMessage);
+  
+  // Add timestamp outside the message content
+  const timestamp = getCurrentTime();
+  const timestampSpan = document.createElement('span');
+  timestampSpan.className = 'message-timestamp';
+  timestampSpan.textContent = timestamp;
+  timestampSpan.style.opacity = '0'; // Start hidden
+  userBlock.appendChild(timestampSpan);
+  
+  // Position timestamp at the bottom right of the user message (same as agent)
+  setTimeout(() => {
+    const userMessageRect = userMessage.getBoundingClientRect();
+    const userBlockRect = userBlock.getBoundingClientRect();
+    
+    // Check if mobile view
+    const isMobile = window.innerWidth <= 567;
+    
+    let timestampLeft, timestampTop;
+    
+    if (isMobile) {
+      // Mobile positioning - same behavior as agent but on the left
+      timestampLeft = userMessageRect.left - userBlockRect.left - 30; // 15px to the left of the message
+      timestampTop = userMessageRect.bottom - userBlockRect.top - 12; // Align bottom with message
+    } else {
+      // Desktop positioning - same behavior as agent but on the left
+      timestampLeft = userMessageRect.left - userBlockRect.left - 35; // 20px to the left of the message
+      timestampTop = userMessageRect.bottom - userBlockRect.top - 15; // Align bottom with message
+    }
+    
+    timestampSpan.style.left = `${timestampLeft}px`;
+    timestampSpan.style.top = `${timestampTop}px`;
+    timestampSpan.style.right = 'auto';
+    timestampSpan.style.bottom = 'auto';
+    timestampSpan.style.opacity = '1'; // Show timestamp
+    timestampSpan.style.transition = 'opacity 0.3s ease'; // Smooth fade in
+  }, 300); // Longer delay to ensure content is fully rendered
+  
   return userBlock;
 }
 
@@ -299,7 +390,11 @@ function addUserMessage(text) {
   const chatContainer = document.getElementById("chatContainer");
   const userBlock = createUserMessage(text);
   chatContainer.appendChild(userBlock);
-  scrollToBottom();
+  
+  // Scroll if new content overflows
+  setTimeout(() => {
+    scrollToBottom();
+  }, 100);
 }
 
 function addBotMessage(text) {
@@ -309,14 +404,26 @@ function addBotMessage(text) {
   const chatMessage = createChatMessage(text);
   chatBubbleContainer.appendChild(chatMessage);
   
+  // Add timestamp outside the message content, at the bottom right of the agent container
+  const timestamp = getCurrentTime();
+  const timestampSpan = document.createElement('span');
+  timestampSpan.className = 'message-timestamp';
+  timestampSpan.textContent = timestamp;
+  timestampSpan.style.opacity = '0'; // Start hidden
+  
+  // Add timestamp to the agent container (outside message content)
+  agentBlock.appendChild(timestampSpan);
+  
   chatContainer.appendChild(agentBlock);
   
-  // Position avatar at the left of this message
+  // Position avatar and show timestamp after content is fully rendered
   setTimeout(() => {
     positionAvatarAtLastMessage(agentBlock);
-  }, 100);
-  
-  scrollToBottom();
+    positionTimestampAtLastMessage(agentBlock);
+    timestampSpan.style.opacity = '1'; // Show timestamp
+    timestampSpan.style.transition = 'opacity 0.3s ease'; // Smooth fade in
+    scrollToBottom(); // Scroll if new content overflows
+  }, 300); // Longer delay to ensure content is fully rendered
 }
 
 // ============================================================================
@@ -332,6 +439,17 @@ function showScheduleForm() {
 
   const chatMessage = createChatMessage("📝 Please complete the form below to schedule your call.");
   chatBubbleContainer.appendChild(chatMessage);
+  
+  // Add timestamp outside the message content, at the bottom right of the agent container
+  const timestamp = getCurrentTime();
+  const timestampSpan = document.createElement('span');
+  timestampSpan.className = 'message-timestamp';
+  timestampSpan.textContent = timestamp;
+  timestampSpan.style.opacity = '0'; // Start hidden
+  
+  // Add timestamp to the agent container (outside message content)
+  agentBlock.appendChild(timestampSpan);
+  
   chatContainer.appendChild(agentBlock);
 
   // Create form
@@ -423,14 +541,25 @@ function showScheduleForm() {
   `;
 
   formContainer.appendChild(formWrapper);
+  
+  // Add timestamp to the form block
+  const formTimestamp = getCurrentTime();
+  const formTimestampSpan = document.createElement('span');
+  formTimestampSpan.className = 'message-timestamp';
+  formTimestampSpan.textContent = formTimestamp;
+  formTimestampSpan.style.opacity = '0'; // Start hidden
+  formBlock.appendChild(formTimestampSpan);
+  
   chatContainer.appendChild(formBlock);
   
-  // Position avatar at the left of the form
+  // Position avatar and show timestamp after content is fully rendered
   setTimeout(() => {
     positionAvatarAtLastMessage(formBlock);
-  }, 100);
-  
-  scrollToBottom();
+    positionTimestampAtLastMessage(formBlock);
+    formTimestampSpan.style.opacity = '1'; // Show timestamp
+    formTimestampSpan.style.transition = 'opacity 0.3s ease'; // Smooth fade in
+    scrollToBottom(); // Scroll if new content overflows
+  }, 300); // Longer delay to ensure content is fully rendered
 
   const form = formWrapper.querySelector("#scheduleForm");
   form.addEventListener("submit", handleFormSubmit);
@@ -509,7 +638,7 @@ function handleUserResponse(option, type) {
 
   const chatContainer = document.getElementById("chatContainer");
 
-  if (option.stBtn !== "Call Now") {
+  if (option.stBtn !== "Call Now To Claim Benefits") {
     const selectionBlocks = chatContainer.querySelectorAll(".agent-chat-options");
     if (selectionBlocks.length > 0) {
       const lastSelectionBlock = selectionBlocks[selectionBlocks.length - 1];
@@ -518,7 +647,7 @@ function handleUserResponse(option, type) {
   }
 
   // Handle special cases
-  if (option.title.includes("Busy? Request A Call Back") || option.title.includes("Schedule Call Back")) {
+  if (option.title.includes("Busy? Request A Call Back") || option.title.includes("Can't Talk Now - Request A Call Back")) {
     fbq('track', 'Schedule');
     const queryString = window.location.search;
     const targetURL = `https://www.curadebt.com/debtpps?a_=single-mom-debt-relief&b_fb${queryString}`;
@@ -529,7 +658,7 @@ function handleUserResponse(option, type) {
   }
 
   // Handle call tracking
-  if (option.title.includes("Call Now") || option.href && option.href.includes("tel:")) {
+  if (option.title.includes("Call Now To Claim Benefits") || option.href && option.href.includes("tel:")) {
     fbq('track', 'Call');
     // Track call initiation
     console.log('Call tracking initiated');
@@ -573,27 +702,48 @@ async function displayMessage(section) {
       // Create typing animation at the bottom
       const typingMessage = createChatMessage(message.text, true);
       chatBubbleContainer.appendChild(typingMessage);
-      scrollToBottom();
 
       await new Promise((resolve) => setTimeout(resolve, message.delay));
 
       // Remove typing animation and create actual message
       typingMessage.remove();
       const chatMessage = createChatMessage(message.text, false);
+      
+      // Remove timestamp from all previous messages in this block
+      const previousTimestamps = agentBlock.querySelectorAll('.message-timestamp');
+      previousTimestamps.forEach(timestamp => {
+        timestamp.remove();
+      });
+      
       chatBubbleContainer.appendChild(chatMessage);
+      
+      // Add timestamp outside the message content, at the bottom right of the agent container
+      const timestamp = getCurrentTime();
+      const timestampSpan = document.createElement('span');
+      timestampSpan.className = 'message-timestamp';
+      timestampSpan.textContent = timestamp;
+      timestampSpan.style.opacity = '0'; // Start hidden
+      
+      // Add timestamp to the agent container (outside message content)
+      agentBlock.appendChild(timestampSpan);
 
-      // Position avatar at the left of this new message
+      // Position avatar and show timestamp after content is fully rendered
       setTimeout(() => {
         positionAvatarAtLastMessage(agentBlock);
-      }, 100);
-
-      scrollToBottom();
+        positionTimestampAtLastMessage(agentBlock);
+        timestampSpan.style.opacity = '1'; // Show timestamp
+        timestampSpan.style.transition = 'opacity 0.3s ease'; // Smooth fade in
+      }, 300); // Longer delay to ensure content is fully rendered
     }
 
     if (message.selections) {
       const selectionBlock = createSelectionButtons(message.selections);
       chatBubbleContainer.appendChild(selectionBlock);
-      scrollToBottom();
+      
+      // Scroll if new content overflows
+      setTimeout(() => {
+        scrollToBottom();
+      }, 200);
     }
   }
 }
@@ -615,4 +765,45 @@ async function handleSection(sectionIndex) {
 document.addEventListener('DOMContentLoaded', function () {
   console.log('DOM loaded, starting chat...');
   handleSection(currentSectionIndex);
+  
+  // Handle window resize for timestamp repositioning only
+  let resizeTimeout;
+  window.addEventListener('resize', function() {
+    clearTimeout(resizeTimeout);
+    resizeTimeout = setTimeout(() => {
+      // Reposition timestamps after resize
+      const agentBlocks = document.querySelectorAll('.agent-container');
+      agentBlocks.forEach(block => {
+        positionAvatarAtLastMessage(block);
+        positionTimestampAtLastMessage(block);
+      });
+      
+      // Reposition user timestamps
+      const userBlocks = document.querySelectorAll('.user-container');
+      userBlocks.forEach(block => {
+        const timestampSpan = block.querySelector('.message-timestamp');
+        const userMessage = block.querySelector('.message-content');
+        if (timestampSpan && userMessage) {
+          const userMessageRect = userMessage.getBoundingClientRect();
+          const userBlockRect = block.getBoundingClientRect();
+          const isMobile = window.innerWidth <= 567;
+          
+          let timestampLeft, timestampTop;
+          
+          if (isMobile) {
+            timestampLeft = userMessageRect.left - userBlockRect.left - 30;
+            timestampTop = userMessageRect.bottom - userBlockRect.top - 12;
+          } else {
+            timestampLeft = userMessageRect.left - userBlockRect.left - 35;
+            timestampTop = userMessageRect.bottom - userBlockRect.top - 15;
+          }
+          
+          timestampSpan.style.left = `${timestampLeft}px`;
+          timestampSpan.style.top = `${timestampTop}px`;
+          timestampSpan.style.right = 'auto';
+          timestampSpan.style.bottom = 'auto';
+        }
+      });
+    }, 250); // Debounce resize events
+  });
 });
