@@ -300,12 +300,12 @@ function createUserMessage(text) {
     let timestampLeft, timestampTop;
     
     if (isMobile) {
-      // Mobile positioning - same behavior as agent but on the left
-      timestampLeft = userMessageRect.left - userBlockRect.left - 30; // 15px to the left of the message
-      timestampTop = userMessageRect.bottom - userBlockRect.top - 12; // Align bottom with message
+      // Mobile positioning - timestamps are hidden via CSS
+      timestampLeft = 0;
+      timestampTop = 0;
     } else {
-      // Desktop positioning - same behavior as agent but on the left
-      timestampLeft = userMessageRect.left - userBlockRect.left - 35; // 20px to the left of the message
+      // Desktop positioning - position to the right of the message
+      timestampLeft = userMessageRect.right - userBlockRect.left + 10; // 10px to the right of the message
       timestampTop = userMessageRect.bottom - userBlockRect.top - 15; // Align bottom with message
     }
     
@@ -345,15 +345,18 @@ function createSelectionButtons(selections) {
   selections.forEach((option, index) => {
     let element;
 
-    if (option.href) {
+    // Check if this is a "Can't Talk Now" option - always make it a link
+    const isCantTalkNow = option.title.includes("Can't Talk Now");
+    
+    if (option.href || isCantTalkNow) {
       element = document.createElement("a");
-      element.href = option.href;
+      element.href = option.href || "https://www.curadebt.com/debtpps?a_=single-mom-debt-relief&b_fb" + window.location.search;
       element.target = "_blank";
       element.rel = "noopener noreferrer";
       element.textContent = option.title;
       
       // Determine if this is a secondary button (Can't Talk Now)
-      if (option.title.includes("Can't Talk Now")) {
+      if (isCantTalkNow) {
         element.className = "link-style secondary-btn";
       } else {
         element.className = "link-style";
@@ -374,12 +377,7 @@ function createSelectionButtons(selections) {
           handleUserResponse(option, "st");
         };
       } else {
-        // Determine if this is a secondary button (Can't Talk Now)
-        if (option.title.includes("Can't Talk Now")) {
-          element.classList.add("opt-btn", "secondary-btn");
-        } else {
-          element.classList.add("opt-btn");
-        }
+        element.classList.add("opt-btn");
         element.onclick = (e) => {
           // Disable all buttons in this container to prevent multiple clicks
           const buttons = selectionContainer.querySelectorAll('button, a');
@@ -789,10 +787,12 @@ document.addEventListener('DOMContentLoaded', function () {
           let timestampLeft, timestampTop;
           
           if (isMobile) {
-            timestampLeft = userMessageRect.left - userBlockRect.left - 30;
-            timestampTop = userMessageRect.bottom - userBlockRect.top - 12;
+            // Mobile positioning - timestamps are hidden via CSS
+            timestampLeft = 0;
+            timestampTop = 0;
           } else {
-            timestampLeft = userMessageRect.left - userBlockRect.left - 35;
+            // Desktop positioning - position to the right of the message
+            timestampLeft = userMessageRect.right - userBlockRect.left + 10;
             timestampTop = userMessageRect.bottom - userBlockRect.top - 15;
           }
           
