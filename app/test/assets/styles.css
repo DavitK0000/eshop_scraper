@@ -487,7 +487,6 @@ body {
     box-shadow: 0 4px 15px rgba(0, 92, 75, 0.3);
     position: relative;
     overflow: hidden;
-    text-transform: uppercase;
     letter-spacing: 0.5px;
     animation: slideInFromBottomRight 0.8s ease-out;
 }
