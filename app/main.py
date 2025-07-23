@@ -134,8 +134,8 @@ app.include_router(router, prefix=settings.API_V1_STR)
 # Mount static files for test assets
 test_assets_path = os.path.join(os.path.dirname(__file__), "test", "assets")
 if os.path.exists(test_assets_path):
-    app.mount("/test/assets", StaticFiles(directory=test_assets_path), name="test-assets")
-    logger.info(f"Mounted test assets at /test/assets from {test_assets_path}")
+    app.mount("/assets", StaticFiles(directory=test_assets_path), name="test-assets")
+    logger.info(f"Mounted test assets at /assets from {test_assets_path}")
 else:
     logger.warning(f"Test assets path not found: {test_assets_path}")
 
@@ -178,7 +178,10 @@ async def test_debug():
         "js_exists": os.path.exists(js_path),
         "css_path": css_path,
         "js_path": js_path,
-        "assets_dir_contents": os.listdir(test_assets_path) if os.path.exists(test_assets_path) else []
+        "assets_dir_contents": os.listdir(test_assets_path) if os.path.exists(test_assets_path) else [],
+        "static_mount_path": "/assets",
+        "expected_css_url": "/assets/styles.css",
+        "expected_js_url": "/assets/script.js"
     }
 
 
