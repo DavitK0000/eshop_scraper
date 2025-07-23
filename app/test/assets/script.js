@@ -133,23 +133,23 @@ function getCurrentTime() {
 }
 
 function scrollToBottom() {
-  // Only scroll when new content would overflow the screen height
+  // Only scroll when chat content actually overflows the viewport
   setTimeout(() => {
     const chatContainer = document.getElementById("chatContainer");
     
     if (chatContainer) {
-      const containerHeight = chatContainer.scrollHeight;
+      const chatRect = chatContainer.getBoundingClientRect();
       const viewportHeight = window.innerHeight;
-      const currentScrollTop = window.pageYOffset || document.documentElement.scrollTop;
-      const chatTop = chatContainer.offsetTop;
-      const chatBottom = chatTop + containerHeight;
       
-      // Only scroll if the new content would overflow the visible area
-      const visibleBottom = currentScrollTop + viewportHeight;
+      // Check if the chat container extends beyond the viewport
+      const isOverflowing = chatRect.bottom > viewportHeight;
       
-      if (chatBottom > visibleBottom) {
-        window.scrollTo({
-          top: chatBottom - viewportHeight + 100, // 100px padding from bottom
+      if (isOverflowing) {
+        // Calculate how much to scroll to show the bottom of the chat
+        const scrollAmount = chatRect.bottom - viewportHeight + 50; // 50px padding from bottom
+        
+        window.scrollBy({
+          top: scrollAmount,
           behavior: 'smooth'
         });
       }
