@@ -3,20 +3,28 @@ from tkinter import ttk, scrolledtext, messagebox
 import requests
 import json
 import threading
+import logging
 from datetime import datetime
-import webbrowser
+
+logger = logging.getLogger(__name__)
 
 class ScraperGUI:
     def __init__(self, root):
         self.root = root
         self.root.title("E-commerce Scraper API Tester")
-        self.root.geometry("1200x800")
+        self.root.geometry("1000x700")
         
         # API Configuration
         self.api_base_url = "http://localhost:8000/api/v1"
-        self.api_key = None
+        
+        # Polling state
+        self.is_polling = False
+        self.polling_task_id = None
         
         self.setup_ui()
+        
+        # Bind window close event
+        self.root.protocol("WM_DELETE_WINDOW", self.on_closing)
         
     def setup_ui(self):
         # Create main frame
@@ -27,7 +35,7 @@ class ScraperGUI:
         self.root.columnconfigure(0, weight=1)
         self.root.rowconfigure(0, weight=1)
         main_frame.columnconfigure(1, weight=1)
-        main_frame.rowconfigure(7, weight=1)
+        main_frame.rowconfigure(6, weight=1)
         
         # Title
         title_label = ttk.Label(main_frame, text="E-commerce Scraper API Tester", 
@@ -45,23 +53,19 @@ class ScraperGUI:
         self.endpoint_entry = ttk.Entry(config_frame, textvariable=self.endpoint_var, width=60)
         self.endpoint_entry.grid(row=0, column=1, sticky=(tk.W, tk.E), padx=(10, 0), pady=5)
         
-        # API Key Input
-        ttk.Label(config_frame, text="API Key (optional):").grid(row=1, column=0, sticky=tk.W, pady=5)
-        self.api_key_var = tk.StringVar()
-        self.api_key_entry = ttk.Entry(config_frame, textvariable=self.api_key_var, width=60, show="*")
-        self.api_key_entry.grid(row=1, column=1, sticky=(tk.W, tk.E), padx=(10, 0), pady=5)
-        
-        # Show/Hide API Key Button
-        self.show_key_var = tk.BooleanVar()
-        ttk.Checkbutton(config_frame, text="Show Key", 
-                       variable=self.show_key_var, 
-                       command=self.toggle_api_key_visibility).grid(row=1, column=2, padx=(10, 0))
+        # Test Connection Button
+        ttk.Button(config_frame, text="Test Connection", 
+                  command=self.test_connection).grid(row=0, column=2, padx=(10, 0))
         
         # URL Input
         ttk.Label(main_frame, text="Product URL:").grid(row=2, column=0, sticky=tk.W, pady=5)
         self.url_var = tk.StringVar()
         self.url_entry = ttk.Entry(main_frame, textvariable=self.url_var, width=60)
         self.url_entry.grid(row=2, column=1, sticky=(tk.W, tk.E), padx=(10, 0), pady=5)
+        
+        # Add Sample URLs Button
+        ttk.Button(main_frame, text="Add Sample URLs", 
+                  command=self.add_sample_urls).grid(row=2, column=2, padx=(10, 0))
         
         # Options Frame
         options_frame = ttk.LabelFrame(main_frame, text="Options", padding="10")
@@ -88,391 +92,287 @@ class ScraperGUI:
         self.user_agent_var = tk.StringVar()
         ttk.Entry(options_frame, textvariable=self.user_agent_var, width=50).grid(row=1, column=2, sticky=tk.W, pady=(10, 0))
         
-        # Buttons Frame
-        buttons_frame = ttk.Frame(main_frame)
-        buttons_frame.grid(row=4, column=0, columnspan=3, pady=10)
+        # Action Buttons Frame
+        action_frame = ttk.Frame(main_frame)
+        action_frame.grid(row=4, column=0, columnspan=3, pady=10)
         
         # Scrape Button
-        self.scrape_button = ttk.Button(buttons_frame, text="Scrape Product", 
-                                       command=self.scrape_product)
+        self.scrape_button = ttk.Button(action_frame, text="Scrape Product", 
+                                       command=self.scrape_product, style="Accent.TButton")
         self.scrape_button.pack(side=tk.LEFT, padx=(0, 10))
         
-        # Health Check Button
-        ttk.Button(buttons_frame, text="Health Check", 
-                  command=self.health_check).pack(side=tk.LEFT, padx=(0, 10))
+        # Stop Polling Button
+        self.stop_button = ttk.Button(action_frame, text="Stop Polling", 
+                                     command=self.stop_polling, state=tk.DISABLED)
+        self.stop_button.pack(side=tk.LEFT)
         
-        # Test Connection Button
-        ttk.Button(buttons_frame, text="Test Connection", 
-                  command=self.test_connection).pack(side=tk.LEFT, padx=(0, 10))
-        
-        # Security Buttons Frame
-        security_buttons_frame = ttk.Frame(main_frame)
-        security_buttons_frame.grid(row=5, column=0, columnspan=3, pady=5)
-        
-        # Security Stats Button
-        ttk.Button(security_buttons_frame, text="Security Stats", 
-                  command=self.security_stats).pack(side=tk.LEFT, padx=(0, 10))
-        
-        # Security Status Button
-        ttk.Button(security_buttons_frame, text="Security Status", 
-                  command=self.security_status).pack(side=tk.LEFT, padx=(0, 10))
-        
-        # Cache Stats Button
-        ttk.Button(security_buttons_frame, text="Cache Stats", 
-                  command=self.cache_stats).pack(side=tk.LEFT, padx=(0, 10))
-        
-        # Clear Cache Button
-        ttk.Button(security_buttons_frame, text="Clear Cache", 
-                  command=self.clear_cache).pack(side=tk.LEFT, padx=(0, 10))
-        
-        # Progress Bar
-        self.progress_var = tk.StringVar(value="Ready")
-        ttk.Label(main_frame, textvariable=self.progress_var).grid(row=6, column=0, columnspan=3, pady=5)
+        # Status Label
+        self.status_var = tk.StringVar(value="Ready")
+        status_label = ttk.Label(main_frame, textvariable=self.status_var, 
+                                font=("Arial", 10, "bold"))
+        status_label.grid(row=5, column=0, columnspan=3, pady=(10, 5))
         
         # Results Frame
         results_frame = ttk.LabelFrame(main_frame, text="Results", padding="10")
-        results_frame.grid(row=7, column=0, columnspan=3, sticky=(tk.W, tk.E, tk.N, tk.S), pady=10)
+        results_frame.grid(row=6, column=0, columnspan=3, sticky=(tk.W, tk.E, tk.N, tk.S), pady=(10, 0))
         results_frame.columnconfigure(0, weight=1)
         results_frame.rowconfigure(0, weight=1)
         
         # Results Text Area
-        self.results_text = scrolledtext.ScrolledText(results_frame, height=20, width=100)
+        self.results_text = scrolledtext.ScrolledText(results_frame, height=15, width=80, 
+                                                     font=("Consolas", 9))
         self.results_text.grid(row=0, column=0, sticky=(tk.W, tk.E, tk.N, tk.S))
         
-        # Status Bar
-        self.status_var = tk.StringVar(value="Ready")
-        status_bar = ttk.Label(main_frame, textvariable=self.status_var, relief=tk.SUNKEN)
-        status_bar.grid(row=8, column=0, columnspan=3, sticky=(tk.W, tk.E), pady=(10, 0))
-        
-        # Add some sample URLs
+        # Add sample URLs
         self.add_sample_urls()
-        
-    def toggle_api_key_visibility(self):
-        """Toggle API key visibility"""
-        if self.show_key_var.get():
-            self.api_key_entry.config(show="")
-        else:
-            self.api_key_entry.config(show="*")
-    
-    def get_headers(self):
-        """Get headers for API requests including authentication"""
-        headers = {
-            'Content-Type': 'application/json',
-            'User-Agent': 'E-commerce-Scraper-GUI/1.0'
-        }
-        
-        # Add API key if provided
-        api_key = self.api_key_var.get().strip()
-        if api_key:
-            headers['Authorization'] = f'Bearer {api_key}'
-        
-        return headers
     
     def add_sample_urls(self):
         """Add sample URLs for testing"""
         sample_urls = [
             "https://www.amazon.com/dp/B08N5WRWNW",  # Amazon product
-            "https://www.ebay.com/itm/123456789",    # eBay product (placeholder)
-            "https://www.jd.com/product/123456.html" # JD.com product (placeholder)
+            "https://www.ebay.com/itm/123456789",    # eBay product
+            "https://www.jd.com/product/123456",     # JD.com product
         ]
         
-        # Create a dropdown for sample URLs
-        sample_frame = ttk.Frame(self.root)
-        sample_frame.grid(row=2, column=1, sticky=tk.E, padx=(0, 10))
-        
-        ttk.Label(sample_frame, text="Sample URLs:").pack(side=tk.LEFT)
-        sample_combo = ttk.Combobox(sample_frame, values=sample_urls, width=40)
-        sample_combo.pack(side=tk.LEFT, padx=(5, 0))
-        sample_combo.bind("<<ComboboxSelected>>", lambda e: self.url_var.set(sample_combo.get()))
-        
+        if not self.url_var.get():
+            self.url_var.set(sample_urls[0])
+    
     def scrape_product(self):
-        """Scrape product from URL"""
+        """Start scraping process"""
         url = self.url_var.get().strip()
         if not url:
             messagebox.showerror("Error", "Please enter a URL")
             return
         
-        # Disable button during scraping
-        self.scrape_button.config(state='disabled')
-        self.progress_var.set("Scraping in progress...")
-        self.status_var.set("Scraping...")
+        # Validate URL format
+        if not url.startswith(('http://', 'https://')):
+            url = "https://" + url
+            self.url_var.set(url)
         
-        # Run scraping in separate thread
-        thread = threading.Thread(target=self._scrape_product_thread, args=(url,))
-        thread.daemon = True
-        thread.start()
-        
+        # Start scraping in background thread
+        threading.Thread(target=self._scrape_product_thread, args=(url,), daemon=True).start()
+    
     def _scrape_product_thread(self, url):
-        """Scrape product in separate thread"""
+        """Scrape product in background thread"""
         try:
-            # Prepare request data as JSON body
+            self.root.after(0, lambda: self.status_var.set("Starting scraping..."))
+            self.root.after(0, lambda: self.scrape_button.config(state=tk.DISABLED))
+            
+            # Prepare request data
             request_data = {
-                'url': url,
-                'force_refresh': self.force_refresh_var.get(),
-                'block_images': self.block_images_var.get()
+                "url": url,
+                "force_refresh": self.force_refresh_var.get(),
+                "block_images": self.block_images_var.get()
             }
             
+            # Add optional parameters
             if self.proxy_var.get().strip():
-                request_data['proxy'] = self.proxy_var.get().strip()
-            
+                request_data["proxy"] = self.proxy_var.get().strip()
             if self.user_agent_var.get().strip():
-                request_data['user_agent'] = self.user_agent_var.get().strip()
+                request_data["user_agent"] = self.user_agent_var.get().strip()
             
-            # Make API request using POST method
-            api_base_url = self.endpoint_var.get().strip()
-            if not api_base_url:
-                api_base_url = "http://localhost:8000/api/v1"
+            # Make API request
+            api_url = f"{self.endpoint_var.get()}/scrape"
+            self.root.after(0, lambda: self.status_var.set("Sending request to API..."))
             
-            headers = self.get_headers()
+            response = requests.post(api_url, json=request_data, timeout=30)
+            response.raise_for_status()
             
-            response = requests.post(f"{api_base_url}/scrape", json=request_data, headers=headers, timeout=60)
-            
-            # Update UI in main thread
-            self.root.after(0, self._handle_scrape_response, response)
-            
-        except Exception as e:
-            self.root.after(0, self._handle_scrape_error, str(e))
-    
-    def _handle_scrape_response(self, response):
-        """Handle scraping response"""
-        self.scrape_button.config(state='normal')
-        
-        if response.status_code == 200:
             data = response.json()
-            self.display_results(data)
-            self.progress_var.set("Scraping completed successfully")
-            self.status_var.set(f"Success - {datetime.now().strftime('%H:%M:%S')}")
-        elif response.status_code == 401:
-            error_msg = "Authentication failed. Please check your API key."
-            self.progress_var.set("Authentication failed")
-            self.status_var.set(f"Auth Error - {datetime.now().strftime('%H:%M:%S')}")
-            messagebox.showerror("Authentication Error", error_msg)
-        elif response.status_code == 403:
-            error_msg = "Access denied. You may have exceeded rate limits or your IP is blocked."
-            self.progress_var.set("Access denied")
-            self.status_var.set(f"Access Denied - {datetime.now().strftime('%H:%M:%S')}")
-            messagebox.showerror("Access Denied", error_msg)
-        elif response.status_code == 429:
-            error_msg = "Rate limit exceeded. Please wait before making another request."
-            self.progress_var.set("Rate limit exceeded")
-            self.status_var.set(f"Rate Limited - {datetime.now().strftime('%H:%M:%S')}")
-            messagebox.showerror("Rate Limit Exceeded", error_msg)
-        else:
-            # Try to get detailed error information
-            try:
-                error_detail = response.json()
-                if 'detail' in error_detail:
-                    error_msg = f"Error {response.status_code}: {error_detail['detail']}"
-                else:
-                    error_msg = f"Error {response.status_code}: {response.text}"
-            except:
-                error_msg = f"Error {response.status_code}: {response.text}"
             
-            self.progress_var.set("Scraping failed")
-            self.status_var.set(f"Error - {datetime.now().strftime('%H:%M:%S')}")
-            messagebox.showerror("Error", error_msg)
+            # Check if task was created successfully
+            if data.get('status') == 'pending':
+                task_id = data.get('task_id')
+                self.root.after(0, lambda: self.status_var.set(f"Task created: {task_id}"))
+                self.root.after(0, lambda: self.results_text.insert(tk.END, f"Task created: {task_id}\n"))
+                
+                # Start polling for results
+                self.start_polling(task_id)
+            else:
+                self.root.after(0, lambda: self.status_var.set("Unexpected response"))
+                self.root.after(0, lambda: self.results_text.insert(tk.END, f"Response: {json.dumps(data, indent=2)}\n"))
+                
+        except requests.exceptions.RequestException as e:
+            error_msg = f"Request failed: {str(e)}"
+            self.root.after(0, lambda: self.status_var.set("Request failed"))
+            self.root.after(0, lambda: self.results_text.insert(tk.END, f"Error: {error_msg}\n"))
+        except Exception as e:
+            error_msg = f"Unexpected error: {str(e)}"
+            self.root.after(0, lambda: self.status_var.set("Error occurred"))
+            self.root.after(0, lambda: self.results_text.insert(tk.END, f"Error: {error_msg}\n"))
+        finally:
+            self.root.after(0, lambda: self.scrape_button.config(state=tk.NORMAL))
     
-    def _handle_scrape_error(self, error_msg):
-        """Handle scraping error"""
-        self.scrape_button.config(state='normal')
-        self.progress_var.set("Scraping failed")
-        self.status_var.set(f"Error - {datetime.now().strftime('%H:%M:%S')}")
-        messagebox.showerror("Error", f"Request failed: {error_msg}")
+    def start_polling(self, task_id):
+        """Start polling for task results"""
+        self.polling_task_id = task_id
+        self.is_polling = True
+        self.root.after(0, lambda: self.stop_button.config(state=tk.NORMAL))
+        
+        # Start polling in background thread
+        threading.Thread(target=self._poll_task_status, args=(task_id,), daemon=True).start()
     
-    def display_results(self, data):
-        """Display scraping results"""
-        self.results_text.delete(1.0, tk.END)
+    def _poll_task_status(self, task_id):
+        """Poll task status in background thread"""
+        start_time = datetime.now()
+        max_wait_time = 300  # 5 minutes
         
-        # Format the JSON response nicely
-        formatted_json = json.dumps(data, indent=2, default=str)
-        self.results_text.insert(tk.END, formatted_json)
-        
-        # Highlight important fields
-        self.highlight_json()
-    
-    def highlight_json(self):
-        """Highlight important JSON fields"""
-        # This is a simple highlighting - you could make it more sophisticated
-        content = self.results_text.get(1.0, tk.END)
-        
-        # Highlight status
-        if '"status": "completed"' in content:
-            self.results_text.tag_configure("success", foreground="green")
-            start = "1.0"
-            while True:
-                pos = self.results_text.search('"status": "completed"', start, tk.END)
-                if not pos:
+        while self.is_polling:
+            try:
+                # Check if we've been waiting too long
+                if (datetime.now() - start_time).seconds > max_wait_time:
+                    self.root.after(0, self._handle_polling_timeout)
                     break
-                end = f"{pos}+18c"
-                self.results_text.tag_add("success", pos, end)
-                start = end
-        
-        if '"status": "failed"' in content:
-            self.results_text.tag_configure("error", foreground="red")
-            start = "1.0"
-            while True:
-                pos = self.results_text.search('"status": "failed"', start, tk.END)
-                if not pos:
+                
+                # Get task status
+                api_url = f"{self.endpoint_var.get()}/tasks/{task_id}"
+                response = requests.get(api_url, timeout=10)
+                response.raise_for_status()
+                
+                data = response.json()
+                status = data.get('status')
+                
+                self.root.after(0, lambda: self.status_var.set(f"Task {task_id}: {status}"))
+                
+                if status == 'completed':
+                    # Task completed successfully
+                    self.root.after(0, lambda: self._handle_scrape_response(data))
                     break
-                end = f"{pos}+15c"
-                self.results_text.tag_add("error", pos, end)
-                start = end
+                elif status == 'failed':
+                    # Task failed
+                    error_msg = data.get('error', 'Unknown error')
+                    self.root.after(0, lambda: self._handle_task_failure(error_msg))
+                    break
+                elif status in ['pending', 'running']:
+                    # Task still in progress, wait and try again
+                    import time
+                    time.sleep(2)
+                else:
+                    # Unknown status
+                    self.root.after(0, lambda: self.status_var.set(f"Unknown status: {status}"))
+                    break
+                    
+            except requests.exceptions.RequestException as e:
+                error_msg = f"Polling request failed: {str(e)}"
+                self.root.after(0, lambda: self._handle_task_failure(error_msg))
+                break
+            except Exception as e:
+                error_msg = f"Polling error: {str(e)}"
+                self.root.after(0, lambda: self._handle_task_failure(error_msg))
+                break
+        
+        # Stop polling
+        self.is_polling = False
+        self.root.after(0, lambda: self.stop_button.config(state=tk.DISABLED))
+    
+    def stop_polling(self):
+        """Stop polling for task results"""
+        self.is_polling = False
+        self.root.after(0, lambda: self.stop_button.config(state=tk.DISABLED))
+        self.root.after(0, lambda: self.status_var.set("Polling stopped"))
+    
+    def _handle_scrape_response(self, data):
+        """Handle successful scrape response"""
+        self.status_var.set("Scraping completed successfully")
+        
+        # Display results
+        self.results_text.insert(tk.END, "\n" + "="*50 + "\n")
+        self.results_text.insert(tk.END, "SCRAPING COMPLETED\n")
+        self.results_text.insert(tk.END, "="*50 + "\n")
+        
+        # Display basic info
+        self.results_text.insert(tk.END, f"Task ID: {data.get('task_id')}\n")
+        self.results_text.insert(tk.END, f"URL: {data.get('url')}\n")
+        self.results_text.insert(tk.END, f"Status: {data.get('status')}\n")
+        self.results_text.insert(tk.END, f"Platform: {data.get('detected_platform', 'Unknown')}\n")
+        self.results_text.insert(tk.END, f"Confidence: {data.get('platform_confidence', 0):.2f}\n")
+        
+        # Display product info if available
+        product_info = data.get('product_info')
+        if product_info:
+            self.results_text.insert(tk.END, "\n" + "-"*30 + "\n")
+            self.results_text.insert(tk.END, "PRODUCT INFORMATION\n")
+            self.results_text.insert(tk.END, "-"*30 + "\n")
+            
+            if product_info.get('title'):
+                self.results_text.insert(tk.END, f"Title: {product_info['title']}\n")
+            if product_info.get('price'):
+                self.results_text.insert(tk.END, f"Price: ${product_info['price']}\n")
+            if product_info.get('description'):
+                desc = product_info['description'][:200] + "..." if len(product_info['description']) > 200 else product_info['description']
+                self.results_text.insert(tk.END, f"Description: {desc}\n")
+            if product_info.get('images'):
+                self.results_text.insert(tk.END, f"Images: {len(product_info['images'])} found\n")
+        
+        # Display full response for debugging
+        self.results_text.insert(tk.END, "\n" + "-"*30 + "\n")
+        self.results_text.insert(tk.END, "FULL RESPONSE\n")
+        self.results_text.insert(tk.END, "-"*30 + "\n")
+        self.results_text.insert(tk.END, json.dumps(data, indent=2))
+        self.results_text.insert(tk.END, "\n")
+        
+        # Scroll to top
+        self.results_text.see(tk.END)
+    
+    def _handle_task_failure(self, error_msg):
+        """Handle task failure"""
+        self.status_var.set("Task failed")
+        self.results_text.insert(tk.END, f"\nERROR: {error_msg}\n")
+        self.results_text.see(tk.END)
+    
+    def _handle_polling_timeout(self):
+        """Handle polling timeout"""
+        self.status_var.set("Polling timeout")
+        self.results_text.insert(tk.END, "\nTIMEOUT: Task took too long to complete\n")
+        self.results_text.see(tk.END)
     
     def test_connection(self):
-        """Test basic API connection and endpoints"""
+        """Test API connection"""
+        threading.Thread(target=self._test_connection_thread, daemon=True).start()
+    
+    def _test_connection_thread(self):
+        """Test connection in background thread"""
         try:
-            api_base_url = self.endpoint_var.get().strip()
-            if not api_base_url:
-                api_base_url = "http://localhost:8000/api/v1"
+            self.root.after(0, lambda: self.status_var.set("Testing connection..."))
             
-            headers = self.get_headers()
-            test_results = []
+            api_url = f"{self.endpoint_var.get()}/health"
+            response = requests.get(api_url, timeout=10)
+            response.raise_for_status()
             
-            # Test 1: Root endpoint
-            try:
-                response = requests.get(api_base_url.replace("/api/v1", ""), timeout=5)
-                test_results.append(f"Root endpoint: {response.status_code}")
-            except Exception as e:
-                test_results.append(f"Root endpoint: Failed - {e}")
+            data = response.json()
+            status = data.get('status', 'unknown')
             
-            # Test 2: Health endpoint
-            try:
-                response = requests.get(f"{api_base_url}/health", headers=headers, timeout=5)
-                test_results.append(f"Health endpoint: {response.status_code}")
-                if response.status_code == 200:
-                    health_data = response.json()
-                    test_results.append(f"Health data: {health_data}")
-            except Exception as e:
-                test_results.append(f"Health endpoint: Failed - {e}")
-            
-            # Test 3: Simple POST request with minimal data
-            try:
-                test_data = {
-                    'url': 'https://www.amazon.com/dp/B08N5WRWNW',
-                    'force_refresh': True,
-                }
-                response = requests.post(f"{api_base_url}/scrape", json=test_data, headers=headers, timeout=30)
-                test_results.append(f"Scrape endpoint: {response.status_code}")
+            if status == 'healthy':
+                self.root.after(0, lambda: self.status_var.set("Connection successful"))
+                self.root.after(0, lambda: messagebox.showinfo("Success", "API connection successful!"))
+            else:
+                self.root.after(0, lambda: self.status_var.set("API unhealthy"))
+                self.root.after(0, lambda: messagebox.showwarning("Warning", f"API status: {status}"))
                 
-                if response.status_code == 200:
-                    scrape_data = response.json()
-                    test_results.append(f"Scrape successful: {scrape_data.get('status', 'unknown')}")
-                    self.display_results(scrape_data)
-                    self.status_var.set(f"Connection test successful - {datetime.now().strftime('%H:%M:%S')}")
-                    return
-                else:
-                    error_detail = response.text
-                    test_results.append(f"Scrape failed: {error_detail}")
-                    
-            except Exception as e:
-                test_results.append(f"Scrape endpoint: Failed - {e}")
-            
-            # Display test results
-            self.display_results({
-                "test_results": test_results,
-                "error": "Some tests failed",
-                "recommendation": "Try running the API with 'start_without_redis.bat' for testing"
-            })
-            self.status_var.set(f"Connection test completed - {datetime.now().strftime('%H:%M:%S')}")
-                
+        except requests.exceptions.RequestException as e:
+            error_msg = f"Connection failed: {str(e)}"
+            self.root.after(0, lambda: self.status_var.set("Connection failed"))
+            self.root.after(0, lambda: messagebox.showerror("Error", error_msg))
         except Exception as e:
-            error_msg = f"Connection test failed: {str(e)}"
-            self.display_results({
-                "error": error_msg,
-                "recommendation": "Check if the API server is running and try 'start_without_redis.bat'"
-            })
-            self.status_var.set(f"Connection test failed - {datetime.now().strftime('%H:%M:%S')}")
+            error_msg = f"Unexpected error: {str(e)}"
+            self.root.after(0, lambda: self.status_var.set("Connection error"))
+            self.root.after(0, lambda: messagebox.showerror("Error", error_msg))
     
-    def health_check(self):
-        """Check API health"""
-        try:
-            api_base_url = self.endpoint_var.get().strip()
-            if not api_base_url:
-                api_base_url = "http://localhost:8000/api/v1"
-            headers = self.get_headers()
-            response = requests.get(f"{api_base_url}/health", headers=headers, timeout=10)
-            if response.status_code == 200:
-                data = response.json()
-                self.display_results(data)
-                self.status_var.set(f"Health check successful - {datetime.now().strftime('%H:%M:%S')}")
-            else:
-                messagebox.showerror("Error", f"Health check failed: {response.status_code}")
-        except Exception as e:
-            messagebox.showerror("Error", f"Health check failed: {str(e)}")
-    
-    def security_stats(self):
-        """Get security statistics"""
-        try:
-            api_base_url = self.endpoint_var.get().strip()
-            if not api_base_url:
-                api_base_url = "http://localhost:8000/api/v1"
-            headers = self.get_headers()
-            response = requests.get(f"{api_base_url}/security/stats", headers=headers, timeout=10)
-            if response.status_code == 200:
-                data = response.json()
-                self.display_results(data)
-                self.status_var.set(f"Security stats retrieved - {datetime.now().strftime('%H:%M:%S')}")
-            else:
-                messagebox.showerror("Error", f"Failed to get security stats: {response.status_code}")
-        except Exception as e:
-            messagebox.showerror("Error", f"Failed to get security stats: {str(e)}")
-    
-    def security_status(self):
-        """Get security status"""
-        try:
-            api_base_url = self.endpoint_var.get().strip()
-            if not api_base_url:
-                api_base_url = "http://localhost:8000/api/v1"
-            headers = self.get_headers()
-            response = requests.get(f"{api_base_url}/security/status", headers=headers, timeout=10)
-            if response.status_code == 200:
-                data = response.json()
-                self.display_results(data)
-                self.status_var.set(f"Security status retrieved - {datetime.now().strftime('%H:%M:%S')}")
-            else:
-                messagebox.showerror("Error", f"Failed to get security status: {response.status_code}")
-        except Exception as e:
-            messagebox.showerror("Error", f"Failed to get security status: {str(e)}")
-    
-    def cache_stats(self):
-        """Get cache statistics"""
-        try:
-            api_base_url = self.endpoint_var.get().strip()
-            if not api_base_url:
-                api_base_url = "http://localhost:8000/api/v1"
-            headers = self.get_headers()
-            response = requests.get(f"{api_base_url}/cache/stats", headers=headers, timeout=10)
-            if response.status_code == 200:
-                data = response.json()
-                self.display_results(data)
-                self.status_var.set(f"Cache stats retrieved - {datetime.now().strftime('%H:%M:%S')}")
-            else:
-                messagebox.showerror("Error", f"Failed to get cache stats: {response.status_code}")
-        except Exception as e:
-            messagebox.showerror("Error", f"Failed to get cache stats: {str(e)}")
-    
-    def clear_cache(self):
-        """Clear all cache"""
-        if messagebox.askyesno("Confirm", "Are you sure you want to clear all cache?"):
-            try:
-                api_base_url = self.endpoint_var.get().strip()
-                if not api_base_url:
-                    api_base_url = "http://localhost:8000/api/v1"
-                headers = self.get_headers()
-                response = requests.delete(f"{api_base_url}/cache", headers=headers, timeout=10)
-                if response.status_code == 200:
-                    data = response.json()
-                    self.display_results(data)
-                    self.status_var.set(f"Cache cleared - {datetime.now().strftime('%H:%M:%S')}")
-                else:
-                    messagebox.showerror("Error", f"Failed to clear cache: {response.status_code}")
-            except Exception as e:
-                messagebox.showerror("Error", f"Failed to clear cache: {str(e)}")
+    def on_closing(self):
+        """Handle window closing"""
+        if self.is_polling:
+            if messagebox.askokcancel("Quit", "A scraping task is still running. Do you want to quit anyway?"):
+                self.is_polling = False
+                self.root.destroy()
+        else:
+            self.root.destroy()
+
 
 def main():
     root = tk.Tk()
     app = ScraperGUI(root)
     root.mainloop()
+
 
 if __name__ == "__main__":
     main() 

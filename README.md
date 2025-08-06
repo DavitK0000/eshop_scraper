@@ -1,452 +1,209 @@
 # E-commerce Scraper API
 
-A high-performance Python-based backend service that exposes an API endpoint to extract live product information from various e-commerce websites. Built with FastAPI and Playwright for handling JavaScript-heavy sites.
+A high-performance API for scraping product information from e-commerce websites with intelligent platform detection.
 
-## Features
+## Architecture
 
-- **FastAPI Backend**: Lightweight, high-performance REST API
-- **Playwright Integration**: Handles JavaScript-heavy sites like Amazon, eBay, JD.com
-- **Asynchronous Processing**: Non-blocking scraping operations
-- **Caching System**: Redis-based caching with configurable TTL
-- **Proxy Rotation**: Support for rotating proxies to bypass restrictions
-- **User Agent Rotation**: Automatic user agent rotation
-- **Retry Logic**: Configurable retry mechanism with exponential backoff
-- **Error Handling**: Comprehensive error handling and logging
-- **Task Management**: Track scraping task status and progress
-- **Video Processing**: Merge videos, add audio, and embed subtitles using FFmpeg
-- **GUI Testing Tool**: Built-in GUI application for testing the API
-- **Security Features**: API key authentication, rate limiting, IP blocking, and abuse prevention
+The system has been simplified and restructured for better separation of concerns:
 
-## Supported Platforms
+### Core Components
 
-- Amazon (multiple regions)
-- eBay (multiple regions)
-- JD.com
-- Generic scraper for unsupported domains
+1. **Browser Manager** (`app/browser_manager.py`)
+   - Handles browser setup and page fetching
+   - Uses Chrome only for consistency
+   - Manages image/video blocking
+   - Handles proxy and user agent configuration
 
-## Prerequisites
+2. **Extractors** (`app/extractors/`)
+   - `BaseExtractor`: Abstract base class for all extractors
+   - `GenericExtractor`: Handles unsupported platforms using common selectors
+   - `AmazonExtractor`: Amazon-specific extraction logic
+   - Platform-specific extractors can be easily added
 
-- Python 3.8+
-- Redis server
-- FFmpeg (for video processing features)
-- Windows Server (as specified)
+3. **Extractor Factory** (`app/extractors/factory.py`)
+   - Creates appropriate extractor based on platform detection
+   - Maps platform names to extractor classes
 
-## Installation
+4. **Scraping Service** (`app/services/scraping_service.py`)
+   - Orchestrates the scraping process
+   - Handles platform detection
+   - Manages task lifecycle
+   - Integrates browser manager and extractors
 
-1. **Clone the repository**
-   ```bash
-   git clone <repository-url>
-   cd eshop-scraper
-   ```
+### How It Works
 
-2. **Create and activate virtual environment**
-   ```bash
-   python -m venv .venv
-   .venv\Scripts\activate  # Windows
-   ```
-
-3. **Install dependencies**
-   ```bash
-   pip install -r requirements.txt
-   ```
-
-4. **Install Playwright browsers**
-   ```bash
-   playwright install
-   ```
-
-5. **Setup Redis**
-   - Install Redis on your Windows server
-   - Start Redis service
-   - Default configuration: `localhost:6379`
-
-6. **Install FFmpeg (for video processing)**
-   ```bash
-   # Check if FFmpeg is installed
-   python install_ffmpeg.py
-   
-   # If not installed, follow the instructions provided by the script
-   # or visit https://ffmpeg.org/download.html
-   ```
-
-7. **Environment Configuration**
-   ```bash
-   # Copy the example environment file
-   copy env_example.txt .env
-   
-   # Edit .env with your settings
-   notepad .env
-   ```
-
-7. **Configure API Keys (Optional)**
-   ```bash
-   # Add your API keys to .env file
-   API_KEY_1=your_secure_api_key_here
-   API_KEY_1_NAME=Premium User
-   API_KEY_1_RATE_LIMIT=200
-   API_KEY_1_DAILY_LIMIT=5000
-   ```
-
-## Configuration
-
-The application can be configured using environment variables. See `env_example.txt` for all available options:
-
-### Key Settings
-
-- `REDIS_URL`: Redis connection string
-- `CACHE_TTL`: Cache time-to-live in seconds (default: 3600)
-- `MAX_RETRIES`: Maximum retry attempts for failed scrapes (default: 3)
-- `PROXY_LIST`: Comma-separated list of proxy servers
-- `ROTATE_PROXIES`: Enable/disable proxy rotation
-- `ROTATE_USER_AGENTS`: Enable/disable user agent rotation
-
-## Usage
-
-### Starting the API Server
-
-```bash
-# Development mode
-python -m app.main
-
-# Or using uvicorn directly
-uvicorn app.main:app --host 0.0.0.0 --port 8000 --reload
-```
-
-The API will be available at:
-- API: http://localhost:8000
-- ReDoc: http://localhost:8000/redoc
-
-### Using the GUI Testing Tool
-
-```bash
-python gui_test.py
-```
-
-The GUI provides:
-- URL input with sample URLs
-- Force refresh option
-- Proxy and user agent configuration
-- Real-time scraping results
-- Health check and cache management
-
-### Testing Security Features
-
-```bash
-python test_security.py
-```
-
-The security test script provides:
-- Rate limiting tests
-- API key authentication tests
-- Domain validation tests
-- User agent validation tests
-- Security endpoint tests
-
-## Security
-
-The API includes comprehensive security features to prevent abuse while remaining publicly accessible:
-
-- **API Key Authentication**: Optional Bearer token authentication for enhanced access
-- **Rate Limiting**: IP-based and API key-based rate limiting
-- **IP Blocking**: Automatic blocking of suspicious IPs
-- **Domain Validation**: Only allowed e-commerce domains can be scraped
-- **User Agent Validation**: Blocks requests with suspicious user agents
-- **Security Monitoring**: Real-time monitoring and statistics
-
-For detailed security documentation, see [SECURITY.md](SECURITY.md).
+1. **Browser Setup**: Browser manager sets up Chrome with image blocking
+2. **Page Fetching**: Browser manager fetches HTML content from the URL
+3. **Platform Detection**: Scraping service detects the e-commerce platform
+4. **Extractor Selection**: Factory creates the appropriate extractor
+5. **Data Extraction**: Extractor parses HTML and extracts product information
 
 ## API Endpoints
 
 ### Core Endpoints
 
-#### `POST /api/v1/scrape`
-Scrape product information from a URL.
+- `POST /api/v1/scrape` - Start a scraping task
+- `GET /api/v1/tasks/{task_id}` - Get task status and results
+- `GET /api/v1/tasks` - List all active tasks
+- `GET /api/v1/health` - Health check
+- `GET /api/v1/test` - Simple test page
 
-**Authentication**: Optional API key via Bearer token
-**Rate Limits**: 
-- With API key: Based on key configuration
-- Without API key: 10 requests per minute
+### Removed Endpoints
 
-**Request Body:**
-```json
-{
-  "url": "https://www.amazon.com/dp/B08N5WRWNW",
-  "force_refresh": false,
-  "proxy": "http://proxy:8080",
-  "user_agent": "Mozilla/5.0..."
-}
+The following endpoints have been removed to simplify the system:
+- Video processing endpoints
+- Security statistics endpoints
+- Cache management endpoints
+- Redis status endpoints
+
+## Installation
+
+1. Install dependencies:
+```bash
+pip install -r requirements.txt
 ```
 
-**With API Key:**
+2. Start the server:
 ```bash
+python -m app.main
+```
+
+Or use the provided batch file:
+```bash
+start_server.bat
+```
+
+## Usage
+
+### API Usage
+
+```bash
+# Start scraping
 curl -X POST "http://localhost:8000/api/v1/scrape" \
-  -H "Authorization: Bearer your_api_key_here" \
   -H "Content-Type: application/json" \
-  -d '{"url": "https://www.amazon.com/dp/B08N5WRWNW"}'
+  -d '{
+    "url": "https://www.amazon.com/dp/B08N5WRWNW",
+    "force_refresh": false,
+    "block_images": true
+  }'
+
+# Check task status
+curl "http://localhost:8000/api/v1/tasks/{task_id}"
 ```
 
-#### `GET /api/v1/scrape`
-Convenience endpoint for simple GET requests.
+### GUI Testing
 
-**Authentication**: Optional API key via Bearer token
-**Rate Limits**: Same as POST endpoint
-
-**Query Parameters:**
-- `url` (required): Product URL
-- `force_refresh` (optional): Bypass cache
-- `proxy` (optional): Custom proxy
-- `user_agent` (optional): Custom user agent
-
-**With API Key:**
+Run the simplified GUI test:
 ```bash
-curl -X GET "http://localhost:8000/api/v1/scrape?url=https://www.amazon.com/dp/B08N5WRWNW" \
-  -H "Authorization: Bearer your_api_key_here"
+python gui_test.py
 ```
 
-### Management Endpoints
+The GUI includes:
+- URL input with sample URLs
+- Basic options (force refresh, block images, proxy, user agent)
+- Real-time status updates
+- Results display
 
-#### `GET /api/v1/health`
-Check API health status.
+## Supported Platforms
 
-#### `GET /api/v1/tasks/{task_id}`
-Get status of a specific scraping task.
+Currently supported platforms:
+- **Amazon** - Full support with ASIN extraction, ratings, reviews
+- **Generic** - Common selectors for unsupported platforms
 
-#### `GET /api/v1/tasks`
-Get all active scraping tasks.
+Platforms can be easily added by:
+1. Creating a new extractor class in `app/extractors/`
+2. Adding it to the factory mapping in `app/extractors/factory.py`
+3. Adding platform detection patterns in `app/services/scraping_service.py`
 
-#### `GET /api/v1/domains`
-Get list of supported domains.
+## Configuration
 
-#### `GET /api/v1/cache/stats`
-Get cache statistics.
+Key configuration options in `app/config.py`:
 
-#### `DELETE /api/v1/cache`
-Clear all cached results.
+### Server Settings
+- `HOST` and `PORT` - Server configuration
+- `LOG_LEVEL` - Logging level
 
-#### `DELETE /api/v1/cache/{url}`
-Invalidate cache for specific URL.
+### Browser Settings
+- `ROTATE_PROXIES` - Enable proxy rotation
+- `ROTATE_USER_AGENTS` - Enable user agent rotation
+- `PLAYWRIGHT_HEADLESS` - Run browser in headless mode
 
-#### `POST /api/v1/tasks/cleanup`
-Clean up old completed tasks.
+### Timeout Settings
+- `BROWSER_NETWORK_IDLE_TIMEOUT` - Time to wait for network idle (default: 5000ms)
+- `BROWSER_DOM_LOAD_TIMEOUT` - Time to wait for DOM content (default: 10000ms)
+- `BROWSER_ADDITIONAL_WAIT` - Additional wait time for content (default: 2000ms)
+- `BROWSER_MAX_RETRIES` - Maximum retry attempts for failed requests (default: 2)
 
-### Video Processing Endpoints
+### Environment Variables
 
-#### `POST /api/v1/video/process`
-Process video by merging multiple videos, adding audio, and embedding subtitles.
+Create a `.env` file with these settings:
 
-**Authentication**: Optional API key via Bearer token
+```env
+# Browser Manager Timeout Settings
+BROWSER_NETWORK_IDLE_TIMEOUT=5000
+BROWSER_DOM_LOAD_TIMEOUT=10000
+BROWSER_ADDITIONAL_WAIT=2000
+BROWSER_MAX_RETRIES=2
 
-**Request Body:**
-```json
-{
-  "video_urls": [
-    "https://example.com/video1.mp4",
-    "https://example.com/video2.mp4"
-  ],
-  "audio_data": "base64_encoded_audio_data",
-  "subtitle_text": "Your subtitle text here",
-  "output_resolution": "1920x1080"
+# Other settings...
+HOST=0.0.0.0
+PORT=8000
+LOG_LEVEL=INFO
+ROTATE_PROXIES=True
+ROTATE_USER_AGENTS=True
+PLAYWRIGHT_HEADLESS=True
+```
+
+## Development
+
+### Adding a New Platform
+
+1. Create extractor class:
+```python
+from app.extractors.base import BaseExtractor
+
+class NewPlatformExtractor(BaseExtractor):
+    def extract_title(self):
+        # Platform-specific title extraction
+        pass
+    
+    def extract_price(self):
+        # Platform-specific price extraction
+        pass
+    
+    # ... other methods
+```
+
+2. Add to factory:
+```python
+_platform_extractors = {
+    'amazon': AmazonExtractor,
+    'newplatform': NewPlatformExtractor,
 }
 ```
 
-**Note:** `subtitle_text` is optional. If not provided or set to `null`, the video will be processed without subtitles.
-
-**Response:**
-```json
-{
-  "task_id": "uuid-string",
-  "status": "pending",
-  "video_data": null,
-  "error": null,
-  "created_at": "2024-01-01T12:00:00",
-  "completed_at": null
-}
-```
-
-#### `GET /api/v1/video/tasks/{task_id}`
-Get status of a video processing task.
-
-#### `GET /api/v1/video/tasks`
-Get all video processing tasks.
-
-**Prerequisites**: FFmpeg must be installed on the system. Run `python install_ffmpeg.py` to check installation.
-
-### Security Endpoints
-
-#### `GET /api/v1/security/stats`
-Get security statistics and monitoring data.
-
-#### `GET /api/v1/security/status`
-Get current security status and configuration.
-
-## Response Format
-
-### Successful Scrape Response
-```json
-{
-  "task_id": "task_abc123_1234567890",
-  "status": "completed",
-  "url": "https://www.amazon.com/dp/B08N5WRWNW",
-  "product_info": {
-    "title": "Product Title",
-    "price": "$99.99",
-    "currency": "USD",
-    "description": "Product description...",
-    "images": ["https://image1.jpg", "https://image2.jpg"],
-    "availability": "In Stock",
-    "rating": 4.5,
-    "review_count": 1234,
-    "seller": "Amazon",
-    "brand": "Brand Name",
-    "sku": "ABC123",
-    "category": "Electronics",
-    "specifications": {
-      "Color": "Black",
-      "Weight": "1.5 lbs"
-    },
-    "raw_data": {
-      "url": "https://www.amazon.com/dp/B08N5WRWNW",
-      "html_length": 50000
-    }
-  },
-  "error": null,
-  "created_at": "2024-01-01T12:00:00",
-  "completed_at": "2024-01-01T12:00:05",
-  "cache_hit": false
-}
-```
-
-### Error Response
-```json
-{
-  "task_id": "task_abc123_1234567890",
-  "status": "failed",
-  "url": "https://invalid-url.com",
-  "product_info": null,
-  "error": "Invalid URL format",
-  "created_at": "2024-01-01T12:00:00",
-  "completed_at": "2024-01-01T12:00:01",
-  "cache_hit": false
-}
-```
-
-## Scraper Development
-
-### Adding New Scrapers
-
-1. Create a new scraper class in `app/scrapers/`:
-   ```python
-   from app.scrapers.base import BaseScraper
-   from app.models import ProductInfo
-   
-   class NewSiteScraper(BaseScraper):
-       async def extract_product_info(self) -> ProductInfo:
-           product_info = ProductInfo()
-           
-           # Extract data using CSS selectors
-           product_info.title = self.find_element_text('.product-title')
-           product_info.price = self.extract_price('.price')
-           # ... more extractions
-           
-           return product_info
-   ```
-
-2. Register the scraper in `app/scrapers/factory.py`:
-   ```python
-   _scrapers = {
-       'newsite.com': NewSiteScraper,
-       # ... existing scrapers
-   }
-   ```
-
-### Scraper Base Class Methods
-
-- `find_element_text(selector)`: Get text from element
-- `find_element_attr(selector, attr)`: Get attribute from element
-- `find_elements_attr(selector, attr)`: Get attributes from multiple elements
-- `extract_price(selector)`: Extract and format price
-- `extract_rating(selector)`: Extract and format rating
-
-## Performance Considerations
-
-### Caching
-- Results are cached in Redis with configurable TTL
-- Use `force_refresh=true` to bypass cache
-- Cache statistics available via API
-
-### Resource Management
-- Playwright browsers are properly cleaned up after each request
-- Memory usage is optimized for Windows Server environment
-- Connection pooling for Redis
-
-### Rate Limiting
-- Configurable rate limiting per minute
-- Exponential backoff for retries
-- Proxy rotation to avoid IP blocking
-
-## Monitoring and Logging
-
-### Log Levels
-- `INFO`: General application flow
-- `WARNING`: Non-critical issues
-- `ERROR`: Scraping failures and errors
-- `DEBUG`: Detailed debugging information
-
-### Health Monitoring
-- `/api/v1/health` endpoint for health checks
-- Redis connection status monitoring
-- Task status tracking
+3. Add platform detection patterns in `ScrapingService`
 
 ## Troubleshooting
 
 ### Common Issues
 
-1. **Playwright Installation**
-   ```bash
-   playwright install
-   playwright install-deps
-   ```
+1. **Browser not starting**: Ensure Chrome is installed and accessible
+2. **Platform not detected**: Check if platform patterns are correctly configured
+3. **Extraction fails**: Verify CSS selectors in the platform extractor
+4. **Timeout errors**: 
+   - Increase `BROWSER_NETWORK_IDLE_TIMEOUT` for slow-loading sites
+   - Increase `BROWSER_DOM_LOAD_TIMEOUT` for complex pages
+   - Increase `BROWSER_MAX_RETRIES` for unreliable connections
+   - Check network connectivity and proxy settings
 
-2. **Redis Connection**
-   - Ensure Redis is running on Windows
-   - Check Redis URL in configuration
-   - Verify network connectivity
+### Logs
 
-3. **Scraping Failures**
-   - Check if site is accessible
-   - Verify CSS selectors are still valid
-   - Try with different proxy/user agent
-
-4. **Memory Issues**
-   - Monitor browser cleanup
-   - Check for memory leaks in long-running processes
-   - Adjust Playwright settings if needed
-
-### Debug Mode
-Set `DEBUG=True` in environment to enable detailed logging and auto-reload.
-
-## Security Considerations
-
-- Configure CORS properly for production
-- Set trusted hosts in production
-- Use HTTPS in production
-- Implement proper authentication if needed
-- Validate and sanitize all inputs
-
-## Contributing
-
-1. Fork the repository
-2. Create a feature branch
-3. Implement your changes
-4. Add tests if applicable
-5. Submit a pull request
+Check logs for detailed error information:
+```bash
+tail -f logs/app.log
+```
 
 ## License
 
-[Add your license information here]
-
-## Support
-
-For issues and questions:
-- Check the troubleshooting section
-- Open an issue in the repository 
+This project is licensed under the MIT License. 

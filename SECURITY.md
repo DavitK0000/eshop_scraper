@@ -74,9 +74,6 @@ SECURITY_CONFIG = {
 ### Without API Key (Anonymous Access)
 ```bash
 # Basic scraping (limited to 10 requests/minute)
-curl -X GET "http://localhost:8000/api/v1/scrape?url=https://amazon.com/product/123"
-
-# POST request
 curl -X POST "http://localhost:8000/api/v1/scrape" \
   -H "Content-Type: application/json" \
   -d '{"url": "https://amazon.com/product/123"}'
@@ -85,10 +82,6 @@ curl -X POST "http://localhost:8000/api/v1/scrape" \
 ### With API Key (Enhanced Access)
 ```bash
 # Using Bearer token authentication
-curl -X GET "http://localhost:8000/api/v1/scrape?url=https://amazon.com/product/123" \
-  -H "Authorization: Bearer your_secure_api_key_here"
-
-# POST request with API key
 curl -X POST "http://localhost:8000/api/v1/scrape" \
   -H "Content-Type: application/json" \
   -H "Authorization: Bearer your_secure_api_key_here" \
@@ -98,8 +91,10 @@ curl -X POST "http://localhost:8000/api/v1/scrape" \
 ### Demo API Key
 For testing purposes, you can use the demo key:
 ```bash
-curl -X GET "http://localhost:8000/api/v1/scrape?url=https://amazon.com/product/123" \
-  -H "Authorization: Bearer demo_key_12345"
+curl -X POST "http://localhost:8000/api/v1/scrape" \
+  -H "Content-Type: application/json" \
+  -H "Authorization: Bearer demo_key_12345" \
+  -d '{"url": "https://amazon.com/product/123"}'
 ```
 
 ## Supported Domains
@@ -133,7 +128,7 @@ Response:
         "ip": "192.168.1.100",
         "status_code": 429,
         "path": "/api/v1/scrape",
-        "method": "GET"
+        "method": "POST"
       }
     }
   ]

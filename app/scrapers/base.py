@@ -34,7 +34,6 @@ class BaseScraper(ABC):
         self.proxy_rotation_attempts = 0
         self.max_proxy_rotation_attempts = settings.MAX_PROXY_ROTATION_ATTEMPTS
         self.domain = parse_url_domain(url)
-        self.browser_type = settings.get_browser_for_domain(self.domain)
 
     
     def _is_browser_closed(self) -> bool:
@@ -247,7 +246,7 @@ class BaseScraper(ABC):
 
     
     async def setup_browser(self):
-        """Setup Playwright browser with advanced stealth features"""
+        """Setup Chrome browser with advanced stealth features"""
         try:
             # Get appropriate user agent for the domain
             if not self.user_agent:
@@ -255,7 +254,6 @@ class BaseScraper(ABC):
             
             # Setup browser using browser manager
             self.browser, self.context, self.page = await browser_manager.setup_browser(
-                browser_type=self.browser_type,
                 proxy=self.proxy,
                 user_agent=self.user_agent
             )
@@ -266,7 +264,7 @@ class BaseScraper(ABC):
             # Setup image blocking to save bandwidth
             await self._setup_image_blocking()
             
-            logger.info(f"Stealth browser setup completed for {self.url} using {self.browser_type}")
+            logger.info(f"Chrome browser setup completed for {self.url}")
             
         except Exception as e:
             logger.error(f"Failed to setup browser: {e}")

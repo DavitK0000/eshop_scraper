@@ -45,6 +45,10 @@ class ScrapeResponse(BaseModel):
     created_at: datetime
     completed_at: Optional[datetime] = None
     cache_hit: bool = False
+    # Platform detection info
+    detected_platform: Optional[str] = Field(None, description="Detected e-commerce platform")
+    platform_confidence: Optional[float] = Field(None, description="Platform detection confidence (0.0 to 1.0)")
+    platform_indicators: List[str] = Field(default_factory=list, description="Platform detection indicators")
 
 
 class TaskStatusResponse(BaseModel):

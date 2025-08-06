@@ -484,9 +484,9 @@ class VideoProcessingService:
         
         # Create watermark filter with "PromoNexAI" text using Windows default font
         watermark_filter = (
-            "drawtext=text='PromoNexAI':fontcolor=white@0.7:fontsize=72:"
+            "drawtext=text='PromoNexAI':fontcolor=white@0.9:fontsize=120:"
             "fontfile='C\\:/Windows/Fonts/arial.ttf':"
-            "x=(w-text_w)/2:y=(h-text_h)/2:box=1:boxcolor=black@0.3:boxborderw=5"
+            "x=(w-text_w)/2:y=(h-text_h)/2"
         )
         
         cmd = [
@@ -560,9 +560,9 @@ class VideoProcessingService:
         
         combined_filter = (
             f"ass={subtitle_filename},"
-            "drawtext=text='PromoNexAI':fontcolor=white@0.7:fontsize=72:"
+            "drawtext=text='PromoNexAI':fontcolor=white@0.9:fontsize=120:"
             "fontfile='C\\:/Windows/Fonts/arial.ttf':"
-            "x=(w-text_w)/2:y=(h-text_h)/2:box=1:boxcolor=black@0.3:boxborderw=5"
+            "x=(w-text_w)/2:y=(h-text_h)/2"
         )
         
         cmd = [
@@ -604,9 +604,9 @@ class VideoProcessingService:
         
         combined_filter = (
             f"subtitles='{subtitle_filename}',"
-            "drawtext=text='PromoNexAI':fontcolor=white@0.7:fontsize=72:"
+            "drawtext=text='PromoNexAI':fontcolor=white@0.9:fontsize=120:"
             "fontfile='C\\:/Windows/Fonts/arial.ttf':"
-            "x=(w-text_w)/2:y=(h-text_h)/2:box=1:boxcolor=black@0.3:boxborderw=5"
+            "x=(w-text_w)/2:y=(h-text_h)/2"
         )
         
         cmd = [
@@ -643,9 +643,9 @@ class VideoProcessingService:
         logger.info("Trying watermark only with audio...")
         
         watermark_filter = (
-            "drawtext=text='PromoNexAI':fontcolor=white@0.7:fontsize=72:"
+            "drawtext=text='PromoNexAI':fontcolor=white@0.9:fontsize=120:"
             "fontfile='C\\:/Windows/Fonts/arial.ttf':"
-            "x=(w-text_w)/2:y=(h-text_h)/2:box=1:boxcolor=black@0.3:boxborderw=5"
+            "x=(w-text_w)/2:y=(h-text_h)/2"
         )
         
         cmd = [
@@ -683,7 +683,7 @@ class VideoProcessingService:
         
         # Use a simpler watermark without complex font settings
         simple_watermark_filter = (
-            "drawtext=text='PromoNexAI':fontcolor=white:fontsize=48:"
+            "drawtext=text='PromoNexAI':fontcolor=white@0.9:fontsize=120:"
             "x=(w-text_w)/2:y=(h-text_h)/2"
         )
         

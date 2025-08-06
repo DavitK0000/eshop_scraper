@@ -1,74 +1,15 @@
 from typing import Optional
 from urllib.parse import urlparse
 from app.scrapers.base import BaseScraper
-from app.scrapers.amazon import AmazonScraper
-from app.scrapers.ebay import EbayScraper
-from app.scrapers.jd import JDScraper
-from app.scrapers.otto import OttoScraper
-from app.scrapers.bol import BolScraper
-from app.scrapers.cdiscount import CDiscountScraper
 
 
 class ScraperFactory:
-    """Factory class to create appropriate scrapers based on URL"""
-    
-    _scrapers = {
-        'amazon.com': AmazonScraper,
-        'www.amazon.com': AmazonScraper,
-        'amazon.co.uk': AmazonScraper,
-        'www.amazon.co.uk': AmazonScraper,
-        'amazon.de': AmazonScraper,
-        'www.amazon.de': AmazonScraper,
-        'amazon.fr': AmazonScraper,
-        'www.amazon.fr': AmazonScraper,
-        'amazon.it': AmazonScraper,
-        'www.amazon.it': AmazonScraper,
-        'amazon.es': AmazonScraper,
-        'www.amazon.es': AmazonScraper,
-        'amazon.nl': AmazonScraper,
-        'www.amazon.nl': AmazonScraper,
-        'amazon.ca': AmazonScraper,
-        'www.amazon.ca': AmazonScraper,
-        'amazon.com.au': AmazonScraper,
-        'www.amazon.com.au': AmazonScraper,
-        'amazon.co.jp': AmazonScraper,
-        'www.amazon.co.jp': AmazonScraper,
-        'amazon.in': AmazonScraper,
-        'www.amazon.in': AmazonScraper,
-        'ebay.com': EbayScraper,
-        'www.ebay.com': EbayScraper,
-        'ebay.co.uk': EbayScraper,
-        'www.ebay.co.uk': EbayScraper,
-        'ebay.de': EbayScraper,
-        'www.ebay.de': EbayScraper,
-        'ebay.fr': EbayScraper,
-        'www.ebay.fr': EbayScraper,
-        'ebay.it': EbayScraper,
-        'www.ebay.it': EbayScraper,
-        'ebay.es': EbayScraper,
-        'www.ebay.es': EbayScraper,
-        'ebay.ca': EbayScraper,
-        'www.ebay.ca': EbayScraper,
-        'ebay.nl': EbayScraper,
-        'www.ebay.nl': EbayScraper,
-        'ebay.com.au': EbayScraper,
-        'www.ebay.com.au': EbayScraper,
-        'jd.com': JDScraper,
-        'www.jd.com': JDScraper,
-        'global.jd.com': JDScraper,
-        'www.global.jd.com': JDScraper,
-        'otto.de': OttoScraper,
-        'www.otto.de': OttoScraper,
-        'bol.com': BolScraper,
-        'www.bol.com': BolScraper,
-        'cdiscount.com': CDiscountScraper,
-        'www.cdiscount.com': CDiscountScraper,
-    }
+    """Factory class to create generic scrapers - platform detection handled by ScrapingService"""
     
     @classmethod
-    def create_scraper(cls, url: str, proxy: Optional[str] = None, user_agent: Optional[str] = None, block_images: bool = True) -> BaseScraper:
+    def create_generic_scraper(cls, url: str, proxy: Optional[str] = None, user_agent: Optional[str] = None, block_images: bool = True) -> BaseScraper:
         """
-        Create appropriate scraper based on URL domain
+        Create a generic scraper for unsupported platforms
         
         Args:
             url: Product URL to scrape
@@ -79,27 +20,14 @@ class ScraperFactory:
         Returns:
             BaseScraper instance
         """
+        scraper = GenericScraper(url, proxy, user_agent, block_images)
+        from app.config import settings
         domain = cls._extract_domain(url)
-        scraper_class = cls._scrapers.get(domain)
-        
-        if scraper_class:
-            scraper = scraper_class(url, proxy, user_agent, block_images)
-            # Log which browser will be used for this domain
-            from app.config import settings
-            browser_type = settings.get_browser_for_domain(domain)
-            import logging
-            logger = logging.getLogger(__name__)
-            logger.info(f"Created {scraper_class.__name__} for {domain} using {browser_type} browser")
-            return scraper
-        else:
-            # Return a generic scraper for unsupported domains
-            scraper = GenericScraper(url, proxy, user_agent, block_images)
-            from app.config import settings
-            browser_type = settings.get_browser_for_domain(domain)
-            import logging
-            logger = logging.getLogger(__name__)
-            logger.info(f"Created GenericScraper for {domain} using {browser_type} browser")
-            return scraper
+        browser_type = settings.get_browser_for_domain(domain)
+        import logging
+        logger = logging.getLogger(__name__)
+        logger.info(f"Created GenericScraper for {domain} using {browser_type} browser")
+        return scraper
     
     @classmethod
     def _extract_domain(cls, url: str) -> str:
@@ -109,17 +37,6 @@ class ScraperFactory:
             return parsed.netloc.lower()
         except Exception:
             return ""
-    
-    @classmethod
-    def is_supported_domain(cls, url: str) -> bool:
-        """Check if domain is supported"""
-        domain = cls._extract_domain(url)
-        return domain in cls._scrapers
-    
-    @classmethod
-    def get_supported_domains(cls) -> list:
-        """Get list of supported domains"""
-        return list(cls._scrapers.keys())
 
 
 class GenericScraper(BaseScraper):

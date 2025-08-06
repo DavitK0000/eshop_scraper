@@ -251,6 +251,12 @@ class Settings:
     PLAYWRIGHT_VIEWPORT_WIDTH: int = int(os.getenv("PLAYWRIGHT_VIEWPORT_WIDTH", "1920"))
     PLAYWRIGHT_VIEWPORT_HEIGHT: int = int(os.getenv("PLAYWRIGHT_VIEWPORT_HEIGHT", "1080"))
     
+    # Browser Manager Settings
+    BROWSER_NETWORK_IDLE_TIMEOUT: int = int(os.getenv("BROWSER_NETWORK_IDLE_TIMEOUT", "5000"))
+    BROWSER_DOM_LOAD_TIMEOUT: int = int(os.getenv("BROWSER_DOM_LOAD_TIMEOUT", "10000"))
+    BROWSER_ADDITIONAL_WAIT: int = int(os.getenv("BROWSER_ADDITIONAL_WAIT", "2000"))
+    BROWSER_MAX_RETRIES: int = int(os.getenv("BROWSER_MAX_RETRIES", "2"))
+    
     # Stealth Settings
     ENABLE_STEALTH_MODE: bool = os.getenv("ENABLE_STEALTH_MODE", "True").lower() == "true"
     ENABLE_HUMAN_BEHAVIOR: bool = os.getenv("ENABLE_HUMAN_BEHAVIOR", "True").lower() == "true"
