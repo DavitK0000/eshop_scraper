@@ -25,15 +25,9 @@ class ProductInfo(BaseModel):
     currency: Optional[str] = None
     description: Optional[str] = None
     images: List[str] = []
-    availability: Optional[str] = None
     rating: Optional[float] = None
     review_count: Optional[int] = None
-    seller: Optional[str] = None
-    brand: Optional[str] = None
-    sku: Optional[str] = None
-    category: Optional[str] = None
     specifications: Dict[str, Any] = {}
-    raw_data: Dict[str, Any] = {}
 
 
 class ScrapeResponse(BaseModel):

@@ -388,11 +388,7 @@ def parse_price_with_regional_format(price_text: str, domain: str = None) -> Opt
         else:
             pass  # Use domain-based decision
         
-        # Add debug logging for comma-only case
-        import logging
-        logger = logging.getLogger(__name__)
-        logger.debug(f"Comma-only format detection: '{number_str}' -> parts={comma_parts}, "
-                    f"last_part_length={len(comma_parts[-1]) if comma_parts else 0}, is_european={is_european_format}")
+
     
     # Parse the number based on format
     try:
@@ -405,17 +401,10 @@ def parse_price_with_regional_format(price_text: str, domain: str = None) -> Opt
             # Remove commas (thousands separators)
             clean_number = number_str.replace(',', '')
         
-        # Add debug logging
-        import logging
-        logger = logging.getLogger(__name__)
-        logger.debug(f"Price parsing: original='{price_text}', extracted='{number_str}', "
-                    f"is_european={is_european_format}, cleaned='{clean_number}', result={float(clean_number)}")
+
         
         return float(clean_number)
     except ValueError:
-        import logging
-        logger = logging.getLogger(__name__)
-        logger.warning(f"Failed to parse price: '{price_text}' -> '{number_str}' (is_european={is_european_format})")
         return None
 
 

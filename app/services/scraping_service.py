@@ -3,7 +3,6 @@ import re
 from typing import Optional, Dict, Any, List, Tuple
 from datetime import datetime
 from app.models import ProductInfo, ScrapeResponse, TaskStatus
-from app.scrapers.factory import ScraperFactory
 from app.utils import generate_task_id, proxy_manager, user_agent_manager, is_valid_url
 from app.config import settings
 from bs4 import BeautifulSoup
@@ -339,15 +338,6 @@ class ScrapingService:
             self._update_task_status(task_id, TaskStatus.RUNNING, "Extracting product information")
             product_info = extractor.extract_product_info()
             
-            # Add platform detection info to product info raw data
-            if not hasattr(product_info, 'raw_data'):
-                product_info.raw_data = {}
-            product_info.raw_data['platform_detection'] = {
-                'platform': platform,
-                'confidence': platform_confidence,
-                'indicators': platform_indicators
-            }
-            
             # Update task with results
             self._update_task_with_results(
                 task_id, 
@@ -468,15 +458,6 @@ class ScrapingService:
             
             logger.info(f"Platform detection for {url}: {platform} (confidence: {platform_confidence:.2f})")
             
-            # Add platform detection info to product info raw data
-            if not hasattr(product_info, 'raw_data'):
-                product_info.raw_data = {}
-            product_info.raw_data['platform_detection'] = {
-                'platform': platform,
-                'confidence': platform_confidence,
-                'indicators': platform_indicators
-            }
-            
             # Update response
             response.status = TaskStatus.COMPLETED
             response.product_info = product_info
@@ -524,7 +505,7 @@ class ScrapingService:
             logger.warning(f"Task {task_id} not found in active_tasks")
             return None
             
-        logger.debug(f"Retrieved task {task_id} status: {task_info.get('status')} - {task_info.get('message')}")
+
         return task_info
     
     def get_all_tasks(self) -> Dict[str, Dict[str, Any]]:

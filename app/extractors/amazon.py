@@ -1,6 +1,9 @@
 from typing import Optional, List
 from app.extractors.base import BaseExtractor
+from app.utils import map_currency_symbol_to_code, parse_url_domain, parse_price_with_regional_format, extract_number_from_text, sanitize_text
 from app.logging_config import get_logger
+import re
+import json
 
 logger = get_logger(__name__)
 
@@ -10,303 +13,163 @@ class AmazonExtractor(BaseExtractor):
     
     def extract_title(self) -> Optional[str]:
         """Extract product title from Amazon page"""
-        selectors = [
-            '#productTitle',
-            '.product-title',
-            'h1.a-size-large',
-            '.a-size-large.a-spacing-none',
-            '[data-automation-id="product-title"]',
-            '.a-size-large.a-color-base'
-        ]
-        
-        for selector in selectors:
-            title = self.find_element_text(selector)
-            if title:
-                logger.debug(f"Found Amazon title with selector '{selector}': {title[:50]}...")
-                return title
+        title = self.find_element_text('#productTitle')
+        if title:
+            return title
         
         logger.warning("No Amazon title found")
         return None
     
     def extract_price(self) -> Optional[float]:
         """Extract product price from Amazon page"""
-        selectors = [
-            '.a-price-whole',
-            '.a-price .a-offscreen',
-            '.a-price-current .a-offscreen',
-            '.a-price-range .a-offscreen',
-            '.a-price .a-price-whole',
-            '.a-price-current .a-price-whole',
-            '.a-price-range .a-price-whole',
-            '.a-price .a-price-symbol + .a-price-whole',
-            '.a-price-current .a-price-symbol + .a-price-whole',
-            '.a-price-range .a-price-symbol + .a-price-whole'
-        ]
-        
-        for selector in selectors:
-            price = self.extract_price_value(selector)
+        price_whole = self.find_element_text('.a-price-whole')
+        price_fraction = self.find_element_text('.a-price-fraction')
+        if price_whole:
+            price_str = price_whole + (price_fraction or '0')
+            price = parse_price_with_regional_format(price_str, parse_url_domain(self.url))
             if price:
-                logger.debug(f"Found Amazon price with selector '{selector}': {price}")
                 return price
-        
-        # Try to find price in span elements
-        price_spans = self.soup.find_all('span', class_='a-price-whole')
-        for span in price_spans:
-            price_text = span.get_text(strip=True)
-            if price_text:
-                try:
-                    # Remove commas and convert to float
-                    price = float(price_text.replace(',', ''))
-                    logger.debug(f"Found Amazon price in span: {price}")
-                    return price
-                except ValueError:
-                    continue
         
         logger.warning("No Amazon price found")
         return None
     
+    def extract_currency(self) -> Optional[str]:
+        """Extract currency from Amazon page"""
+        currency_symbol = self.find_element_text('.a-price-symbol')
+        if currency_symbol:
+            currency = map_currency_symbol_to_code(currency_symbol, parse_url_domain(self.url))
+            return currency
+        return None
+    
     def extract_description(self) -> Optional[str]:
         """Extract product description from Amazon page"""
-        selectors = [
-            '#productDescription p',
-            '.a-expander-content p',
-            '.a-section.a-spacing-medium.a-spacing-top-small p',
-            '.a-section.a-spacing-base p',
-            '.a-section.a-spacing-small p',
-            '.a-section.a-spacing-medium p',
-            '.a-section.a-spacing-large p',
-            '.a-section.a-spacing-base .a-text-left p',
-            '.a-section.a-spacing-medium .a-text-left p',
-            '.a-section.a-spacing-large .a-text-left p'
-        ]
-        
-        descriptions = []
-        for selector in selectors:
-            desc_elements = self.soup.select(selector)
-            for element in desc_elements:
-                text = element.get_text(strip=True)
-                if text and len(text) > 20:  # Ensure meaningful content
-                    descriptions.append(text)
-        
-        if descriptions:
-            # Join multiple description parts
-            full_description = ' '.join(descriptions)
-            logger.debug(f"Found Amazon description: {full_description[:100]}...")
-            return full_description
+        description = self.find_element_text('div#feature-bullets>ul.a-unordered-list')
+        if description:
+            return description
         
         logger.warning("No Amazon description found")
         return None
     
-    def extract_images(self) -> List[str]:
-        """Extract product images from Amazon page"""
-        # Amazon image selectors
-        selectors = [
-            '#landingImage',
-            '.a-dynamic-image',
-            '.a-image-stretch-vertical',
-            '.a-image-stretch-horizontal',
-            '.a-image-stretch-vertical img',
-            '.a-image-stretch-horizontal img',
-            '.a-image-stretch-vertical .a-dynamic-image',
-            '.a-image-stretch-horizontal .a-dynamic-image',
-            '.a-image-stretch-vertical .a-image-stretch-vertical',
-            '.a-image-stretch-horizontal .a-image-stretch-horizontal'
-        ]
+    def extract_rating(self) -> Optional[float]:
+        """Extract product rating from Amazon page"""
+        rating_text = self.find_element_text('.a-icon-alt')
+        if rating_text and 'out of 5 stars' in rating_text:
+            try:
+                rating = float(rating_text.split(' out of 5 stars')[0])
+                return rating
+            except ValueError:
+                pass
         
+        logger.warning("No Amazon rating found")
+        return None
+    
+    def extract_review_count(self) -> Optional[int]:
+        """Extract review count from Amazon page"""
+        review_count_text = self.find_element_text('#acrCustomerReviewText')
+        if review_count_text:
+            review_count = extract_number_from_text(review_count_text)
+            if review_count:
+                return review_count
+        
+        logger.warning("No Amazon review count found")
+        return None
+    
+    def extract_images(self) -> List[str]:
+        """Extract product images from Amazon page using the same logic as the scraper"""
         images = []
-        for selector in selectors:
-            img_elements = self.soup.select(selector)
-            for img in img_elements:
-                src = img.get('src') or img.get('data-src')
-                if src and src.startswith(('http://', 'https://')):
-                    # Convert to high-resolution version
-                    if '_SS' in src:
-                        # Replace with higher resolution
-                        src = src.replace('_SS', '_SL1500')
-                    elif '._SS' in src:
-                        src = src.replace('._SS', '._SL1500')
+        
+        # Extract images from JavaScript data (more comprehensive)
+        script_tags = self.soup.find_all('script', type='text/javascript')
+        for script in script_tags:
+            if script.string and 'colorImages' in script.string:
+                try:
+                    # Find the colorImages data in the script
+                    pattern = r"'colorImages':\s*\{[^}]*'initial':\s*(\[[^\]]*\])"
+                    match = re.search(pattern, script.string, re.DOTALL)
                     
-                    if src not in images:
+                    if match:
+                        # Extract the JSON array
+                        images_data_str = match.group(1)
+                        # Clean up the string to make it valid JSON
+                        images_data_str = re.sub(r'(\w+):', r'"\1":', images_data_str)
+                        images_data_str = re.sub(r'(\w+)\s*:', r'"\1":', images_data_str)
+                        
+                        try:
+                            images_data = json.loads(images_data_str)
+                            for img_obj in images_data:
+                                if 'hiRes' in img_obj and img_obj['hiRes']:
+                                    images.append(img_obj['hiRes'])
+                                elif 'large' in img_obj and img_obj['large']:
+                                    images.append(img_obj['large'])
+                        except json.JSONDecodeError:
+                            # Fallback to regex extraction if JSON parsing fails
+                            hi_res_pattern = r'"hiRes":"([^"]+)"'
+                            hi_res_matches = re.findall(hi_res_pattern, script.string)
+                            for url in hi_res_matches:
+                                images.append(url)
+                except Exception as e:
+                    logger.warning(f"Error parsing image script data: {e}")
+        
+        # Fallback to DOM extraction if no images found from script
+        if not images:
+            image_elements = self.soup.select('div#main-image-container ul.a-unordered-list li')
+            for img in image_elements:
+                img_tag = img.select_one('div.imgTagWrapperimg')
+                if img_tag:
+                    src = img_tag.get('data-old-hires')
+                    if src:
                         images.append(src)
         
-        # Also look for data-old-hires attribute (high-res images)
-        for img in self.soup.find_all('img', attrs={'data-old-hires': True}):
-            src = img.get('data-old-hires')
-            if src and src.startswith(('http://', 'https://')) and src not in images:
-                images.append(src)
-        
-        logger.debug(f"Found {len(images)} Amazon images")
         return images
     
-    def extract_raw_data(self) -> dict:
-        """Extract additional Amazon-specific data"""
-        raw_data = super().extract_raw_data()
+    def extract_specifications(self) -> dict:
+        """Extract specifications from Amazon page using the same logic as the scraper"""
+        specs = {}
         
-        # Amazon-specific data
-        raw_data.update({
-            'amazon_asin': self._extract_asin(),
-            'amazon_rating': self._extract_rating(),
-            'amazon_review_count': self._extract_review_count(),
-            'amazon_availability': self._extract_availability(),
-            'amazon_seller': self._extract_seller(),
-            'amazon_brand': self._extract_brand(),
-            'amazon_model': self._extract_model(),
-            'amazon_color': self._extract_color(),
-            'amazon_size': self._extract_size(),
-        })
+        # Extract specifications from all aplus-tech-spec-table elements
+        spec_tables = self.soup.select('table.aplus-tech-spec-table')
         
-        return raw_data
-    
-    def _extract_asin(self) -> Optional[str]:
-        """Extract Amazon ASIN from URL or page"""
-        # Try to extract from URL first
-        if '/dp/' in self.url:
-            parts = self.url.split('/dp/')
-            if len(parts) > 1:
-                asin = parts[1].split('/')[0].split('?')[0]
-                if len(asin) == 10:
-                    return asin
+        for table in spec_tables:
+            spec_elements = table.select('tbody>tr')
+            for element in spec_elements:
+                key_elem = element.select_one('th, td:first-child')
+                value_elem = element.select_one('td:last-child')
+                if key_elem and value_elem:
+                    key = sanitize_text(key_elem.get_text())
+                    value = sanitize_text(value_elem.get_text())
+                    if key and value:
+                        # If key already exists, append the new value
+                        if key in specs:
+                            specs[key] = specs[key] + " " + value
+                        else:
+                            specs[key] = value
         
-        # Try to find in page data
-        scripts = self.soup.find_all('script')
-        for script in scripts:
-            if script.string and 'ASIN' in script.string:
-                import re
-                asin_match = re.search(r'"ASIN":"([A-Z0-9]{10})"', script.string)
-                if asin_match:
-                    return asin_match.group(1)
+        # If no specifications found, try alternative method
+        if not specs:
+            detail_bullets = self.soup.select('div#detailBullets_feature_div>ul>li')
+            for bullet in detail_bullets:
+                key_elem = bullet.select_one('span.a-list-item>span.a-text-bold')
+                value_elem = bullet.select_one('span.a-list-item>span:not(.a-text-bold)')
+                
+                if key_elem and value_elem:
+                    key = sanitize_text(key_elem.get_text())
+                    value = sanitize_text(value_elem.get_text())
+                    if key and value:
+                        specs[key] = value
         
-        return None
-    
-    def _extract_rating(self) -> Optional[float]:
-        """Extract product rating"""
-        rating_selectors = [
-            '.a-icon-alt',
-            '.a-icon-star-small .a-icon-alt',
-            '.a-icon-star .a-icon-alt',
-            '.a-icon-star-medium .a-icon-alt',
-            '.a-icon-star-large .a-icon-alt'
-        ]
+        # Third specification extraction method
+        if not specs:
+            tech_spec_table = self.soup.select_one('table#productDetails_techSpec_section_1')
+            if tech_spec_table:
+                spec_rows = tech_spec_table.select('tbody tr')
+                for row in spec_rows:
+                    key_elem = row.select_one('th')
+                    value_elem = row.select_one('td')
+                    
+                    if key_elem and value_elem:
+                        key = sanitize_text(key_elem.get_text())
+                        value = sanitize_text(value_elem.get_text())
+                        if key and value:
+                            specs[key] = value
         
-        for selector in rating_selectors:
-            rating_text = self.find_element_text(selector)
-            if rating_text and 'out of 5 stars' in rating_text:
-                try:
-                    rating = float(rating_text.split(' out of 5 stars')[0])
-                    return rating
-                except ValueError:
-                    continue
-        
-        return None
-    
-    def _extract_review_count(self) -> Optional[int]:
-        """Extract review count"""
-        review_selectors = [
-            '#acrCustomerReviewText',
-            '.a-size-base.a-color-secondary',
-            '.a-size-small.a-color-secondary'
-        ]
-        
-        for selector in review_selectors:
-            review_text = self.find_element_text(selector)
-            if review_text and 'reviews' in review_text.lower():
-                try:
-                    import re
-                    count_match = re.search(r'(\d+(?:,\d+)*)', review_text)
-                    if count_match:
-                        count = int(count_match.group(1).replace(',', ''))
-                        return count
-                except ValueError:
-                    continue
-        
-        return None
-    
-    def _extract_availability(self) -> Optional[str]:
-        """Extract product availability"""
-        availability_selectors = [
-            '#availability',
-            '.a-size-medium.a-color-success',
-            '.a-size-medium.a-color-price',
-            '.a-size-medium.a-color-state'
-        ]
-        
-        for selector in availability_selectors:
-            availability = self.find_element_text(selector)
-            if availability:
-                return availability
-        
-        return None
-    
-    def _extract_seller(self) -> Optional[str]:
-        """Extract seller information"""
-        seller_selectors = [
-            '#merchant-info',
-            '.a-size-small.a-color-secondary',
-            '.a-size-base.a-color-secondary'
-        ]
-        
-        for selector in seller_selectors:
-            seller = self.find_element_text(selector)
-            if seller and ('sold by' in seller.lower() or 'shipped by' in seller.lower()):
-                return seller
-        
-        return None
-    
-    def _extract_brand(self) -> Optional[str]:
-        """Extract brand information"""
-        brand_selectors = [
-            '#bylineInfo',
-            '.a-size-base.a-color-secondary',
-            '.a-size-small.a-color-secondary'
-        ]
-        
-        for selector in brand_selectors:
-            brand = self.find_element_text(selector)
-            if brand and 'by' in brand.lower():
-                return brand
-        
-        return None
-    
-    def _extract_model(self) -> Optional[str]:
-        """Extract model information"""
-        # Look for model in product details
-        detail_rows = self.soup.find_all('tr', class_='a-spacing-small')
-        for row in detail_rows:
-            label = row.find('td', class_='a-span3')
-            value = row.find('td', class_='a-span9')
-            if label and value:
-                label_text = label.get_text(strip=True).lower()
-                if 'model' in label_text:
-                    return value.get_text(strip=True)
-        
-        return None
-    
-    def _extract_color(self) -> Optional[str]:
-        """Extract color information"""
-        color_selectors = [
-            '#variation_color_name .selection',
-            '.a-size-base.a-color-secondary',
-            '.a-size-small.a-color-secondary'
-        ]
-        
-        for selector in color_selectors:
-            color = self.find_element_text(selector)
-            if color and len(color) < 50:  # Color names are usually short
-                return color
-        
-        return None
-    
-    def _extract_size(self) -> Optional[str]:
-        """Extract size information"""
-        size_selectors = [
-            '#variation_size_name .selection',
-            '.a-size-base.a-color-secondary',
-            '.a-size-small.a-color-secondary'
-        ]
-        
-        for selector in size_selectors:
-            size = self.find_element_text(selector)
-            if size and len(size) < 50:  # Size names are usually short
-                return size
-        
-        return None 
+        return specs 

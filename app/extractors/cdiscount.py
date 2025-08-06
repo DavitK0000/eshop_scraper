@@ -1,257 +1,138 @@
-from typing import Optional
-from app.scrapers.base import BaseScraper
+from typing import Optional, List, Dict, Any
+from app.extractors.base import BaseExtractor
 from app.models import ProductInfo
-from app.utils import sanitize_text, extract_price_from_text, extract_price_value, parse_url_domain, parse_price_with_regional_format
-from app.logging_config import get_logger
+from app.utils import (
+    sanitize_text, 
+    extract_price_from_text, 
+    extract_price_value, 
+    parse_url_domain, 
+    parse_price_with_regional_format
+)
 import re
+from app.logging_config import get_logger
 
-logger = get_logger(__name__)
 
-
-class CDiscountScraper(BaseScraper):
-    """CDiscount.com product scraper"""
+class CDiscountExtractor(BaseExtractor):
+    """CDiscount.com product information extractor"""
     
-    async def _wait_for_site_specific_content(self):
-        """Wait for CDiscount.com specific content to load"""
-        try:
-            # Wait for CDiscount.com specific elements (updated for new structure)
-            selectors_to_wait = [
-                '.c-price.c-price--xl.c-price--promo',  # New CDiscount price structure
-                '.c-price[itemprop="price"]',  # Price with itemprop
-                '.fpProductTitle',
-                '.fpProductTitle h1',
-                '.fpProductPrice',
-                '.fpProductPrice .fpPrice',
-                '.fpProductImage',
-                '.fpProductImage img',
-                'div.MarketingLongDescription',  # New CDiscount description structure
-                '.fpProductDescription',
-                'span.c-stars-rating__text',  # New CDiscount rating structure
-                'span.c-stars-rating__label',  # New CDiscount review count structure
-                'table.table.table--fpDescTb[aria-label="Product Features"]',  # New CDiscount specifications structure
-                'div.c-productViewer__thumb',  # New CDiscount image structure
-                '.fpProductRating'
-            ]
-            
-            for selector in selectors_to_wait:
-                try:
-                    await self.page.wait_for_selector(selector, timeout=3000)
-                    logger.info(f"Found CDiscount element: {selector}")
-                    break
-                except:
-                    continue
-                    
-        except Exception as e:
-            logger.warning(f"CDiscount specific wait failed: {e}")
-    
-    async def extract_product_info(self) -> ProductInfo:
-        """
-        Extract product information from CDiscount.com product page
-        """
-        product_info = ProductInfo()
+    def extract_title(self) -> Optional[str]:
+        """Extract product title"""
+        title_selectors = [
+            '.c-fp-heading__title',
+        ]
         
-        try:
-            # Extract title - CDiscount uses various selectors for product titles
-            title_selectors = [
-                '.c-fp-heading__title',
-            ]
-            
-            for selector in title_selectors:
-                title = self.find_element_text(selector)
-                if title and len(title.strip()) > 5:
-                    product_info.title = sanitize_text(title)
-                    break
-            
-            # Extract price - CDiscount price selectors (updated for new structure)
-            price_selectors = [
-                '.c-price.c-price--xl.c-price--promo',  # New CDiscount price structure
-                '.c-price[itemprop="price"]',  # Price with itemprop
-            ]
-            
-            for selector in price_selectors:
-                price_data = self.extract_cdiscount_price_and_currency(selector)
-                if price_data and price_data.get('price'):
-                    product_info.price = price_data['price']
-                    if price_data.get('currency'):
-                        product_info.currency = price_data['currency']
-                    break
-            
-            # Set currency to Euro as fallback if not found
-            if not product_info.currency:
-                product_info.currency = "EUR"
-            
-            # Extract description
-            description_selectors = [
-                'div#MarketingLongDescription',  # New CDiscount description structure
-            ]
-            
-            for selector in description_selectors:
-                description = self.find_element_text(selector)
-                if description and len(description.strip()) > 20:
-                    product_info.description = sanitize_text(description)
-                    break
-            
-            # Extract rating from CDiscount specific structure
-            rating_selectors = [
-                'span.c-stars-rating__text',  # New CDiscount rating structure
-            ]
-            
-            for selector in rating_selectors:
-                rating = self.extract_cdiscount_rating(selector)
-                if rating:
-                    product_info.rating = rating
-                    break
-            
-            # Extract review count from CDiscount specific structure
-            review_count_selectors = [
-                'span.c-stars-rating__label',  # New CDiscount review count structure
-                '.fpProductRating .fpReviewCount',
-                '.fpProductRating .fpRatingCount',
-                '.review-count',
-                '.rating-count',
-                '.fpProductRating .fpRatingSuffix'
-            ]
-            
-            for selector in review_count_selectors:
-                review_count = self.extract_cdiscount_review_count(selector)
-                if review_count:
-                    product_info.review_count = review_count
-                    break
-            
-            # Extract availability
-            availability_selectors = [
-                '.fpProductAvailability',
-                '.availability',
-                '.stock',
-                '.product-availability',
-                '.fpProductAvailability .fpAvailabilityText',
-                '.fpProductAvailability .fpAvailabilityStatus',
-                '.fpProductDelivery',
-                '.delivery-info'
-            ]
-            
-            for selector in availability_selectors:
-                availability = self.find_element_text(selector)
-                if availability:
-                    product_info.availability = sanitize_text(availability)
-                    break
-            
-            # Extract brand
-            brand_selectors = [
-                '.fpProductBrand',
-                '.brand',
-                '.product-brand',
-                '.manufacturer',
-                '.fpProductBrand .fpBrandName',
-                '.fpProductBrand .fpBrandText'
-            ]
-            
-            for selector in brand_selectors:
-                brand = self.find_element_text(selector)
-                if brand:
-                    product_info.brand = sanitize_text(brand)
-                    break
-            
-            # Extract seller
-            seller_selectors = [
-                '.fpProductSeller',
-                '.seller',
-                '.product-seller',
-                '.vendor',
-                '.fpProductSeller .fpSellerName',
-                '.fpProductSeller .fpSellerText'
-            ]
-            
-            for selector in seller_selectors:
-                seller = self.find_element_text(selector)
-                if seller:
-                    product_info.seller = sanitize_text(seller)
-                    break
-            
-            # Extract SKU
-            sku_selectors = [
-                '.fpProductSku',
-                '.sku',
-                '.product-sku',
-                '.product-id',
-                '.fpProductSku .fpSkuValue',
-                '.fpProductSku .fpSkuText',
-                '.fpProductReference',
-                '.reference'
-            ]
-            
-            for selector in sku_selectors:
-                sku = self.find_element_text(selector)
-                if sku:
-                    product_info.sku = sanitize_text(sku)
-                    break
-            
-            # Extract category
-            category_selectors = [
-                '.fpProductCategory',
-                '.category',
-                '.product-category',
-                '.breadcrumb',
-                '.breadcrumbs',
-                '.fpBreadcrumb',
-                '.fpBreadcrumb .fpBreadcrumbItem',
-                '.nav-breadcrumb'
-            ]
-            
-            for selector in category_selectors:
-                category = self.find_element_text(selector)
-                if category:
-                    product_info.category = sanitize_text(category)
-                    break
-            
-            # Extract images from CDiscount specific structure
-            image_selectors = [
-                'div.c-productViewer__thumb',  # New CDiscount image structure
-            ]
-            
-            for selector in image_selectors:
-                if 'c-productViewer__thumb' in selector:
-                    # Use the new image extraction method for c-productViewer__thumb
-                    images = self.extract_cdiscount_images_from_thumbnails()
-                else:
-                    # Use the old method for other selectors
-                    images = self.find_elements_attr(selector, 'src')
-                    if images:
-                        # Process and filter image URLs
-                        processed_images = []
-                        for img_url in images:
-                            processed_url = self.process_cdiscount_image_url(img_url)
-                            if processed_url:
-                                processed_images.append(processed_url)
-                        images = processed_images
-                
+        for selector in title_selectors:
+            title = self.find_element_text(selector)
+            if title and len(title.strip()) > 5:
+                return sanitize_text(title)
+        return None
+    
+    def extract_price(self) -> Optional[float]:
+        """Extract product price"""
+        price_selectors = [
+            '.c-price.c-price--xl.c-price--promo',  # New CDiscount price structure
+            '.c-price[itemprop="price"]',  # Price with itemprop
+        ]
+        
+        for selector in price_selectors:
+            price_data = self.extract_cdiscount_price_and_currency(selector)
+            if price_data and price_data.get('price'):
+                return price_data['price']
+        return None
+    
+    def extract_currency(self) -> Optional[str]:
+        """Extract product currency"""
+        price_selectors = [
+            '.c-price.c-price--xl.c-price--promo',  # New CDiscount price structure
+            '.c-price[itemprop="price"]',  # Price with itemprop
+        ]
+        
+        for selector in price_selectors:
+            price_data = self.extract_cdiscount_price_and_currency(selector)
+            if price_data and price_data.get('currency'):
+                return price_data['currency']
+        
+        # Set currency to Euro as fallback if not found
+        return "EUR"
+    
+    def extract_description(self) -> Optional[str]:
+        """Extract product description"""
+        description_selectors = [
+            'div#MarketingLongDescription',  # New CDiscount description structure
+        ]
+        
+        for selector in description_selectors:
+            description = self.find_element_text(selector)
+            if description and len(description.strip()) > 20:
+                return sanitize_text(description)
+        return None
+    
+    def extract_images(self) -> List[str]:
+        """Extract product images"""
+        image_selectors = [
+            'div.c-productViewer__thumb',  # New CDiscount image structure
+        ]
+        
+        for selector in image_selectors:
+            if 'c-productViewer__thumb' in selector:
+                # Use the new image extraction method for c-productViewer__thumb
+                images = self.extract_cdiscount_images_from_thumbnails()
+            else:
+                # Use the old method for other selectors
+                images = self.find_elements_attr(selector, 'src')
                 if images:
-                    product_info.images = images
-                    break
+                    # Process and filter image URLs
+                    processed_images = []
+                    for img_url in images:
+                        processed_url = self.process_cdiscount_image_url(img_url)
+                        if processed_url:
+                            processed_images.append(processed_url)
+                    images = processed_images
             
-            # Extract specifications
-            specs_selectors = [
-                'table.table.table--fpDescTb[aria-label="Product Features"]',  # New CDiscount specifications structure
-            ]
-            
-            for selector in specs_selectors:
-                specs = self.extract_cdiscount_specifications(selector)
-                if specs:
-                    product_info.specifications = specs
-                    break
-            
-            # Store raw data
-            product_info.raw_data = {
-                'url': self.url,
-                'final_url': self.final_url,
-                'html_length': len(self.html_content) if self.html_content else 0,
-                'domain': 'cdiscount.com'
-            }
-            
-        except Exception as e:
-            logger.error(f"Error extracting CDiscount product info: {e}")
+            if images:
+                return images
+        return []
+    
+    def extract_rating(self) -> Optional[float]:
+        """Extract product rating"""
+        rating_selectors = [
+            'span.c-stars-rating__text',  # New CDiscount rating structure
+        ]
         
-        return product_info
+        for selector in rating_selectors:
+            rating = self.extract_cdiscount_rating(selector)
+            if rating:
+                return rating
+        return None
+    
+    def extract_review_count(self) -> Optional[int]:
+        """Extract review count"""
+        review_count_selectors = [
+            'span.c-stars-rating__label',  # New CDiscount review count structure
+            '.fpProductRating .fpReviewCount',
+            '.fpProductRating .fpRatingCount',
+            '.review-count',
+            '.rating-count',
+            '.fpProductRating .fpRatingSuffix'
+        ]
+        
+        for selector in review_count_selectors:
+            review_count = self.extract_cdiscount_review_count(selector)
+            if review_count:
+                return review_count
+        return None
+    
+    def extract_specifications(self) -> Dict[str, Any]:
+        """Extract product specifications"""
+        specs_selectors = [
+            'table.table.table--fpDescTb[aria-label="Product Features"]',  # New CDiscount specifications structure
+        ]
+        
+        for selector in specs_selectors:
+            specs = self.extract_cdiscount_specifications(selector)
+            if specs:
+                return specs
+        return {}
     
     def extract_cdiscount_images_from_thumbnails(self) -> list:
         """Extract images from div.c-productViewer__thumb elements"""
@@ -288,10 +169,12 @@ class CDiscountScraper(BaseScraper):
                                 images.append(processed_url)
                 
                 except Exception as e:
+                    logger = get_logger(__name__)
                     logger.warning(f"Error extracting image from thumbnail: {e}")
                     continue
             
         except Exception as e:
+            logger = get_logger(__name__)
             logger.warning(f"Error extracting CDiscount images from thumbnails: {e}")
         
         return images
@@ -317,6 +200,7 @@ class CDiscountScraper(BaseScraper):
             return image_url
                 
         except Exception as e:
+            logger = get_logger(__name__)
             logger.warning(f"Error processing CDiscount image URL {image_url}: {e}")
             return None
     
@@ -377,6 +261,7 @@ class CDiscountScraper(BaseScraper):
             return None
             
         except Exception as e:
+            logger = get_logger(__name__)
             logger.warning(f"Error extracting CDiscount rating: {e}")
             return None
     
@@ -418,6 +303,7 @@ class CDiscountScraper(BaseScraper):
             return self.extract_review_count_from_text(review_text)
             
         except Exception as e:
+            logger = get_logger(__name__)
             logger.warning(f"Error extracting CDiscount review count: {e}")
             return None
     
@@ -525,6 +411,7 @@ class CDiscountScraper(BaseScraper):
             return result
             
         except Exception as e:
+            logger = get_logger(__name__)
             logger.warning(f"Error extracting CDiscount price and currency: {e}")
             return {'price': None, 'currency': None}
     
@@ -584,10 +471,12 @@ class CDiscountScraper(BaseScraper):
                             specs[key] = value
                     
                 except Exception as e:
+                    logger = get_logger(__name__)
                     logger.warning(f"Error extracting specification row: {e}")
                     continue
             
         except Exception as e:
+            logger = get_logger(__name__)
             logger.warning(f"Error extracting CDiscount specifications: {e}")
         
         return specs 

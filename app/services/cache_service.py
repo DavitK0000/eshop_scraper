@@ -67,7 +67,7 @@ class CacheService:
             self.redis_client.ping()
             return True
         except Exception as e:
-            logger.debug(f"Redis ping failed: {e}")
+    
             self._connected = False
             return False
     

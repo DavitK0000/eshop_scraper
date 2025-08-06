@@ -3,6 +3,11 @@ from app.extractors.base import BaseExtractor
 from app.extractors.generic import GenericExtractor
 from app.extractors.amazon import AmazonExtractor
 from app.extractors.shopify import ShopifyExtractor
+from app.extractors.ebay import EbayExtractor
+from app.extractors.otto import OttoExtractor
+from app.extractors.bol import BolExtractor
+from app.extractors.jd import JDExtractor
+from app.extractors.cdiscount import CDiscountExtractor
 from app.logging_config import get_logger
 
 logger = get_logger(__name__)
@@ -15,12 +20,11 @@ class ExtractorFactory:
     _platform_extractors = {
         'amazon': AmazonExtractor,
         'shopify': ShopifyExtractor,
-        # Add other platforms here as they are implemented
-        # 'ebay': EbayExtractor,
-        # 'jd': JDExtractor,
-        # 'otto': OttoExtractor,
-        # 'bol': BolExtractor,
-        # 'cdiscount': CDiscountExtractor,
+        'ebay': EbayExtractor,
+        'otto': OttoExtractor,
+        'bol': BolExtractor,
+        'jd': JDExtractor,
+        'cdiscount': CDiscountExtractor,
     }
     
     @classmethod

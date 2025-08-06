@@ -15,7 +15,9 @@ from app.services.scraping_service import scraping_service
 from app.security import security_middleware, cleanup_security_data
 from app.logging_config import setup_logging, get_logger
 
-# Setup comprehensive logging
+# Setup comprehensive logging - this ensures logging is available
+# for all subsequent imports and operations. The setup_logging function
+# is designed to be idempotent and will only initialize once.
 setup_logging()
 logger = get_logger(__name__)
 
@@ -149,5 +151,5 @@ if __name__ == "__main__":
         host=settings.HOST,
         port=settings.PORT,
         reload=settings.DEBUG,
-        log_level=settings.LOG_LEVEL.lower()
+        access_log=False  # Disable uvicorn's access logging since we have our own
     ) 
