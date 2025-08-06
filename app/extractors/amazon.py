@@ -1,8 +1,8 @@
-import logging
 from typing import Optional, List
 from app.extractors.base import BaseExtractor
+from app.logging_config import get_logger
 
-logger = logging.getLogger(__name__)
+logger = get_logger(__name__)
 
 
 class AmazonExtractor(BaseExtractor):

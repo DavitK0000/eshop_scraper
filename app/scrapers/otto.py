@@ -31,8 +31,8 @@ class OttoScraper(BaseScraper):
                     continue
                     
         except Exception as e:
-            import logging
-            logger = logging.getLogger(__name__)
+            from app.logging_config import get_logger
+            logger = get_logger(__name__)
             logger.warning(f"Otto.de specific wait failed: {e}")
     
     async def extract_product_info(self) -> ProductInfo:
@@ -287,8 +287,8 @@ class OttoScraper(BaseScraper):
             
         except Exception as e:
             # Log error but don't fail completely
-            import logging
-            logger = logging.getLogger(__name__)
+            from app.logging_config import get_logger
+            logger = get_logger(__name__)
             logger.error(f"Error extracting Otto.de product info: {e}")
         
         return product_info

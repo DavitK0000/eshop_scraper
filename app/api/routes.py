@@ -3,7 +3,6 @@ from fastapi.responses import JSONResponse, HTMLResponse
 from fastapi.staticfiles import StaticFiles
 from fastapi.responses import FileResponse
 from typing import Optional, List
-import logging
 import asyncio
 from datetime import datetime
 import os
@@ -19,8 +18,9 @@ from app.security import (
     get_api_key, validate_request_security, validate_scrape_request,
     get_security_stats, security_manager, API_KEYS
 )
+from app.logging_config import get_logger
 
-logger = logging.getLogger(__name__)
+logger = get_logger(__name__)
 
 router = APIRouter()
 

@@ -2,6 +2,7 @@ from typing import Optional
 from app.scrapers.base import BaseScraper
 from app.models import ProductInfo
 from app.utils import map_currency_symbol_to_code, parse_url_domain, parse_price_with_regional_format, extract_number_from_text
+from app.logging_config import get_logger
 
 
 class AmazonScraper(BaseScraper):
@@ -72,8 +73,7 @@ class AmazonScraper(BaseScraper):
                                 for url in hi_res_matches:
                                     product_info.images.append(url)
                     except Exception as e:
-                        import logging
-                        logger = logging.getLogger(__name__)
+                        logger = get_logger(__name__)
                         logger.warning(f"Error parsing image script data: {e}")
             
             # Fallback to DOM extraction if no images found from script
@@ -150,8 +150,7 @@ class AmazonScraper(BaseScraper):
             
         except Exception as e:
             # Log error but don't fail completely
-            import logging
-            logger = logging.getLogger(__name__)
+            logger = get_logger(__name__)
             logger.error(f"Error extracting Amazon product info: {e}")
         
         return product_info 

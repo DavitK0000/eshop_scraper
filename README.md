@@ -145,14 +145,38 @@ BROWSER_DOM_LOAD_TIMEOUT=10000
 BROWSER_ADDITIONAL_WAIT=2000
 BROWSER_MAX_RETRIES=2
 
+# Logging Settings
+LOG_LEVEL=INFO
+LOG_TO_FILE=True
+LOG_FILE_MAX_SIZE=10485760
+LOG_FILE_BACKUP_COUNT=5
+
 # Other settings...
 HOST=0.0.0.0
 PORT=8000
-LOG_LEVEL=INFO
 ROTATE_PROXIES=True
 ROTATE_USER_AGENTS=True
 PLAYWRIGHT_HEADLESS=True
 ```
+
+### Logging System
+
+The application uses a comprehensive logging system that writes to both console and files:
+
+- **Console Output**: Less verbose, shows INFO level and above
+- **File Logs**: 
+  - `logs/app.log` - All logs with detailed formatting
+  - `logs/errors.log` - Error-level logs only
+  - `logs/security.log` - Security-related events
+
+Log files are automatically rotated when they reach the configured size limit.
+
+**Log Levels:**
+- `DEBUG` - Detailed debugging information
+- `INFO` - General application information
+- `WARNING` - Warning messages
+- `ERROR` - Error messages
+- `CRITICAL` - Critical errors
 
 ## Development
 
@@ -200,8 +224,16 @@ _platform_extractors = {
 ### Logs
 
 Check logs for detailed error information:
+
 ```bash
+# View all logs
 tail -f logs/app.log
+
+# View only errors
+tail -f logs/errors.log
+
+# View security events
+tail -f logs/security.log
 ```
 
 ## License

@@ -14,15 +14,15 @@ import base64
 import os
 import tempfile
 import uuid
-import logging
 import subprocess
 from datetime import datetime
 from typing import Dict, Any, Optional, List
 import httpx
 
 from app.models import TaskStatus, VideoProcessResponse
+from app.logging_config import get_logger
 
-logger = logging.getLogger(__name__)
+logger = get_logger(__name__)
 
 
 class VideoProcessingService:

@@ -50,6 +50,9 @@ RATE_LIMIT_PER_MINUTE=60
 
 # Logging
 LOG_LEVEL=INFO
+LOG_TO_FILE=True
+LOG_FILE_MAX_SIZE=10485760
+LOG_FILE_BACKUP_COUNT=5
 
 # Security Settings - API Keys
 # You can configure up to 10 API keys

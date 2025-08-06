@@ -1,5 +1,4 @@
 import asyncio
-import logging
 import re
 from typing import Optional, Dict, Any, List, Tuple
 from datetime import datetime
@@ -8,8 +7,9 @@ from app.scrapers.factory import ScraperFactory
 from app.utils import generate_task_id, proxy_manager, user_agent_manager, is_valid_url
 from app.config import settings
 from bs4 import BeautifulSoup
+from app.logging_config import get_logger
 
-logger = logging.getLogger(__name__)
+logger = get_logger(__name__)
 
 
 class ScrapingService:

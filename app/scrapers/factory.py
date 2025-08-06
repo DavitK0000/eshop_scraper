@@ -1,6 +1,7 @@
 from typing import Optional
 from urllib.parse import urlparse
 from app.scrapers.base import BaseScraper
+from app.logging_config import get_logger
 
 
 class ScraperFactory:
@@ -24,8 +25,7 @@ class ScraperFactory:
         from app.config import settings
         domain = cls._extract_domain(url)
         browser_type = settings.get_browser_for_domain(domain)
-        import logging
-        logger = logging.getLogger(__name__)
+        logger = get_logger(__name__)
         logger.info(f"Created GenericScraper for {domain} using {browser_type} browser")
         return scraper
     

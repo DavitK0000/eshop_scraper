@@ -2,7 +2,6 @@ from abc import ABC, abstractmethod
 from typing import Optional, Dict, Any
 from bs4 import BeautifulSoup
 from playwright.async_api import async_playwright, Browser, Page
-import logging
 import os
 import re
 import asyncio
@@ -13,8 +12,9 @@ from app.utils import sanitize_text, extract_price_from_text, extract_price_valu
 from app.config import settings
 from app.stealth_browser import StealthBrowser
 from app.browser_manager import browser_manager
+from app.logging_config import get_logger
 
-logger = logging.getLogger(__name__)
+logger = get_logger(__name__)
 
 
 class BaseScraper(ABC):

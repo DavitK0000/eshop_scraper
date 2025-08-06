@@ -1,14 +1,14 @@
 import json
-import logging
 from typing import Optional, Dict, Any
 from datetime import datetime, timedelta
 import redis
 from app.config import settings
 from app.models import ProductInfo, ScrapeResponse
 from app.utils import generate_cache_key
+from app.logging_config import get_logger
 import os
 
-logger = logging.getLogger(__name__)
+logger = get_logger(__name__)
 
 
 class CacheService:

@@ -10,14 +10,14 @@ from fastapi import HTTPException, Request, Depends
 from fastapi.security import HTTPBearer, HTTPAuthorizationCredentials
 import redis
 import json
-import logging
 from urllib.parse import urlparse
 import ipaddress
 from fastapi.responses import JSONResponse
 
 from app.config import settings
+from app.logging_config import get_logger
 
-logger = logging.getLogger(__name__)
+logger = get_logger(__name__)
 
 # Security configuration
 SECURITY_CONFIG = {

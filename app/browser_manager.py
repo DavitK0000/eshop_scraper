@@ -1,10 +1,10 @@
 import asyncio
-import logging
 from typing import Optional, Tuple
 from playwright.async_api import async_playwright, Browser, Page, BrowserContext
 from app.config import settings
+from app.logging_config import get_logger
 
-logger = logging.getLogger(__name__)
+logger = get_logger(__name__)
 
 
 class BrowserManager:

@@ -1,10 +1,11 @@
-import logging
 from typing import Optional
 from app.extractors.base import BaseExtractor
 from app.extractors.generic import GenericExtractor
 from app.extractors.amazon import AmazonExtractor
+from app.extractors.shopify import ShopifyExtractor
+from app.logging_config import get_logger
 
-logger = logging.getLogger(__name__)
+logger = get_logger(__name__)
 
 
 class ExtractorFactory:
@@ -13,13 +14,13 @@ class ExtractorFactory:
     # Platform to extractor mapping
     _platform_extractors = {
         'amazon': AmazonExtractor,
+        'shopify': ShopifyExtractor,
         # Add other platforms here as they are implemented
         # 'ebay': EbayExtractor,
         # 'jd': JDExtractor,
         # 'otto': OttoExtractor,
         # 'bol': BolExtractor,
         # 'cdiscount': CDiscountExtractor,
-        # 'shopify': ShopifyExtractor,
     }
     
     @classmethod

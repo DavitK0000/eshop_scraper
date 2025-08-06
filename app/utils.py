@@ -1,14 +1,14 @@
 import random
 import hashlib
 import json
-import logging
 import time
 import requests
 from typing import Optional, Dict, Any, List
 from fake_useragent import UserAgent
 from app.config import settings
+from app.logging_config import get_logger
 
-logger = logging.getLogger(__name__)
+logger = get_logger(__name__)
 
 # Initialize UserAgent
 try:

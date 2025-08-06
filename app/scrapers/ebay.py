@@ -38,8 +38,8 @@ class EbayScraper(BaseScraper):
                     description_html = str(description_element)
                     description_text = description_element.get_text(separator=' ', strip=True)
                     if description_text.strip():
-                        import logging
-                        logger = logging.getLogger(__name__)
+                        from app.logging_config import get_logger
+                        logger = get_logger(__name__)
                         logger.info(f"Found description using selector: {selector}")
                         break
             
@@ -51,8 +51,8 @@ class EbayScraper(BaseScraper):
             return description_text, description_html
             
         except Exception as e:
-            import logging
-            logger = logging.getLogger(__name__)
+            from app.logging_config import get_logger
+            logger = get_logger(__name__)
             logger.warning(f"Failed to extract description from HTML: {e}")
             return "", ""
     
@@ -95,8 +95,8 @@ class EbayScraper(BaseScraper):
                     
                     try:
                         import requests
-                        import logging
-                        logger = logging.getLogger(__name__)
+                        from app.logging_config import get_logger
+                        logger = get_logger(__name__)
                         
                         # Create headers similar to a real browser
                         headers = {
@@ -140,8 +140,8 @@ class EbayScraper(BaseScraper):
                             logger.warning(f"Failed to fetch iframe content: HTTP {response.status_code}")
                     
                     except Exception as request_error:
-                        import logging
-                        logger = logging.getLogger(__name__)
+                        from app.logging_config import get_logger
+                        logger = get_logger(__name__)
                         logger.warning(f"Failed to fetch iframe content with requests: {request_error}")
                 
                 # Method 2: Try JavaScript method as fallback
@@ -162,21 +162,21 @@ class EbayScraper(BaseScraper):
                             # Use the dedicated function to extract description
                             description_text, description_html = self._extract_description_from_html(iframe_content)
                             if description_text:
-                                import logging
-                                logger = logging.getLogger(__name__)
+                                from app.logging_config import get_logger
+                                logger = get_logger(__name__)
                                 logger.info("Found description using JavaScript method")
                     
                     except Exception as js_error:
-                        import logging
-                        logger = logging.getLogger(__name__)
+                        from app.logging_config import get_logger
+                        logger = get_logger(__name__)
                         logger.warning(f"JavaScript iframe access failed: {js_error}")
                 
                 # Method 3: Try httpx as another alternative
                 if not description_text and iframe and iframe.get('src'):
                     try:
                         import httpx
-                        import logging
-                        logger = logging.getLogger(__name__)
+                        from app.logging_config import get_logger
+                        logger = get_logger(__name__)
                         
                         # Create headers similar to a real browser
                         headers = {
@@ -211,8 +211,8 @@ class EbayScraper(BaseScraper):
                                 logger.warning(f"Failed to fetch iframe content with httpx: HTTP {response.status_code}")
                     
                     except Exception as httpx_error:
-                        import logging
-                        logger = logging.getLogger(__name__)
+                        from app.logging_config import get_logger
+                        logger = get_logger(__name__)
                         logger.warning(f"Failed to fetch iframe content with httpx: {httpx_error}")
                 
                 # Store description
@@ -223,8 +223,8 @@ class EbayScraper(BaseScraper):
                     product_info.raw_data['description_html'] = description_html
                     
             except Exception as e:
-                import logging
-                logger = logging.getLogger(__name__)
+                from app.logging_config import get_logger
+                logger = get_logger(__name__)
                 logger.warning(f"Failed to extract description from iframe: {e}")
                 
                 # Fallback to direct extraction
@@ -342,8 +342,8 @@ class EbayScraper(BaseScraper):
             
         except Exception as e:
             # Log error but don't fail completely
-            import logging
-            logger = logging.getLogger(__name__)
+            from app.logging_config import get_logger
+            logger = get_logger(__name__)
             logger.error(f"Error extracting eBay product info: {e}")
         
         return product_info
@@ -353,9 +353,9 @@ class EbayScraper(BaseScraper):
         Extract price and currency from text using utility functions
         Returns tuple of (price, currency)
         """
-        import logging
+        from app.logging_config import get_logger
         
-        logger = logging.getLogger(__name__)
+        logger = get_logger(__name__)
         
         if not price_text:
             return None, None
@@ -384,9 +384,9 @@ class EbayScraper(BaseScraper):
         Extract review count from text like '41 product ratings' or '123 reviews'
         """
         import re
-        import logging
+        from app.logging_config import get_logger
         
-        logger = logging.getLogger(__name__)
+        logger = get_logger(__name__)
         
         review_text = self.find_element_text(selector)
         logger.info(f"Review count selector '{selector}' returned text: '{review_text}'")

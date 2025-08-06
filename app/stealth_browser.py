@@ -1,10 +1,10 @@
 import random
 import time
-import logging
 from typing import Dict, Any, Optional
 from playwright.async_api import Page, BrowserContext
+from app.logging_config import get_logger
 
-logger = logging.getLogger(__name__)
+logger = get_logger(__name__)
 
 
 class StealthBrowser:

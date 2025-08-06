@@ -11,3 +11,7 @@
 .env.development.local
 .cursor
 __pycache__
+
+# Logs
+logs/
+*.log

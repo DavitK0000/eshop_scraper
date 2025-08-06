@@ -65,8 +65,8 @@ class JDScraper(BaseScraper):
             
         except Exception as e:
             # Log error but don't fail completely
-            import logging
-            logger = logging.getLogger(__name__)
+            from app.logging_config import get_logger
+            logger = get_logger(__name__)
             logger.error(f"Error extracting JD.com product info: {e}")
         
         return product_info 

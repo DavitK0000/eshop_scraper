@@ -2,11 +2,11 @@ from typing import Optional
 from app.scrapers.base import BaseScraper
 from app.models import ProductInfo
 from app.utils import map_currency_symbol_to_code, parse_url_domain, parse_price_with_regional_format, extract_number_from_text, sanitize_text
+from app.logging_config import get_logger
 import re
 import json
-import logging
 
-logger = logging.getLogger(__name__)
+logger = get_logger(__name__)
 
 
 class ShopifyScraper(BaseScraper):
@@ -225,8 +225,10 @@ class ShopifyScraper(BaseScraper):
         return product_info
     
     def _extract_structured_product_json(self) -> Optional[dict]:
-        """Extract product JSON data from Shopify's structured data sources"""
+        """Extract product JSON data from Shopify's structured data sources using all available methods"""
         try:
+            all_product_data = []
+            
             # Method 1: Look for Shopify's ProductJson script tags (most reliable)
             product_json_scripts = self.soup.find_all('script', id=re.compile(r'ProductJson-.*'))
             logger.info(f"Found {len(product_json_scripts)} ProductJson script tags")
@@ -236,7 +238,7 @@ class ShopifyScraper(BaseScraper):
                         data = json.loads(script.string)
                         if isinstance(data, dict) and ('title' in data or 'variants' in data):
                             logger.info("Found ProductJson script data")
-                            return data
+                            all_product_data.append(('ProductJson', data))
                     except json.JSONDecodeError:
                         continue
             
@@ -248,7 +250,7 @@ class ShopifyScraper(BaseScraper):
                     try:
                         data = json.loads(json_data)
                         logger.info("Found data-product-json attribute")
-                        return data
+                        all_product_data.append(('data-product-json', data))
                     except json.JSONDecodeError:
                         pass
             
@@ -261,7 +263,8 @@ class ShopifyScraper(BaseScraper):
                         data = json.loads(script.string)
                         if isinstance(data, dict) and data.get('@type') == 'Product':
                             logger.info("Found JSON-LD structured data")
-                            return self._convert_json_ld_to_product_data(data)
+                            converted_data = self._convert_json_ld_to_product_data(data)
+                            all_product_data.append(('JSON-LD', converted_data))
                     except json.JSONDecodeError:
                         continue
             
@@ -289,7 +292,7 @@ class ShopifyScraper(BaseScraper):
                             json_str = re.sub(r'(\w+):', r'"\1":', json_str)
                             data = json.loads(json_str)
                             logger.info("Found window.Shopify.product data")
-                            return data
+                            all_product_data.append(('window.Shopify.product', data))
                         except json.JSONDecodeError:
                             continue
             
@@ -302,10 +305,10 @@ class ShopifyScraper(BaseScraper):
                         data = json.loads(script.string)
                         if isinstance(data, dict) and 'product' in data:
                             logger.info("Found application/json script with product data")
-                            return data['product']
+                            all_product_data.append(('application/json', data['product']))
                         elif isinstance(data, dict) and ('title' in data or 'variants' in data):
                             logger.info("Found application/json script with product-like data")
-                            return data
+                            all_product_data.append(('application/json', data))
                     except json.JSONDecodeError:
                         continue
             
@@ -334,11 +337,17 @@ class ShopifyScraper(BaseScraper):
                                     data = json.loads(cleaned_json)
                                     if isinstance(data, dict) and ('title' in data or 'variants' in data):
                                         logger.info("Found product data in generic script tag")
-                                        return data
+                                        all_product_data.append(('generic_script', data))
                                 except json.JSONDecodeError:
                                     continue
                     except Exception:
                         continue
+            
+            # Combine all found data
+            if all_product_data:
+                logger.info(f"Found product data from {len(all_product_data)} different methods")
+                combined_data = self._combine_product_data(all_product_data)
+                return combined_data
             
             logger.warning("No structured product JSON data found")
             return None
@@ -346,6 +355,48 @@ class ShopifyScraper(BaseScraper):
         except Exception as e:
             logger.warning(f"Error extracting structured product JSON: {e}")
             return None
+    
+    def _combine_product_data(self, all_product_data: list) -> dict:
+        """Combine product data from multiple sources, prioritizing the most complete and reliable data"""
+        if not all_product_data:
+            return {}
+        
+        # Priority order for data sources (higher index = higher priority)
+        priority_order = {
+            'ProductJson': 5,  # Most reliable Shopify source
+            'data-product-json': 4,
+            'window.Shopify.product': 3,
+            'application/json': 2,
+            'JSON-LD': 1,
+            'generic_script': 0
+        }
+        
+        # Sort by priority
+        sorted_data = sorted(all_product_data, key=lambda x: priority_order.get(x[0], -1))
+        
+        # Start with the highest priority data
+        combined_data = sorted_data[-1][1].copy() if sorted_data else {}
+        
+        # Merge additional data from other sources
+        for source_name, data in sorted_data[:-1]:  # Skip the highest priority one as it's already used as base
+            if not isinstance(data, dict):
+                continue
+                
+            logger.info(f"Merging data from {source_name}")
+            
+            # Merge basic fields, preferring non-empty values
+            for key, value in data.items():
+                if key not in combined_data or not combined_data[key]:
+                    combined_data[key] = value
+                elif value and isinstance(value, str) and len(value) > len(str(combined_data[key])):
+                    # Prefer longer strings (more complete descriptions)
+                    combined_data[key] = value
+                elif value and isinstance(value, list) and len(value) > len(combined_data.get(key, [])):
+                    # Prefer longer lists (more images, variants, etc.)
+                    combined_data[key] = value
+        
+        logger.info(f"Combined data from {len(all_product_data)} sources")
+        return combined_data
     
     def _convert_json_ld_to_product_data(self, json_ld_data: dict) -> dict:
         """Convert JSON-LD structured data to product data format"""

@@ -2,11 +2,11 @@ from typing import Optional
 from app.scrapers.base import BaseScraper
 from app.models import ProductInfo
 from app.utils import sanitize_text, extract_price_value, parse_url_domain, parse_price_with_regional_format
-import logging
+from app.logging_config import get_logger
 import random
 import time
 
-logger = logging.getLogger(__name__)
+logger = get_logger(__name__)
 
 
 class BolScraper(BaseScraper):

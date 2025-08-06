@@ -13,14 +13,11 @@ from app.api.routes import router
 from app.services.cache_service import cache_service
 from app.services.scraping_service import scraping_service
 from app.security import security_middleware, cleanup_security_data
+from app.logging_config import setup_logging, get_logger
 
-# Configure logging
-logging.basicConfig(
-    level=getattr(logging, settings.LOG_LEVEL),
-    format='%(asctime)s - %(name)s - %(levelname)s - %(message)s'
-)
-
-logger = logging.getLogger(__name__)
+# Setup comprehensive logging
+setup_logging()
+logger = get_logger(__name__)
 
 
 @asynccontextmanager

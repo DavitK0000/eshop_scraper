@@ -1,9 +1,9 @@
-import logging
 from typing import Optional, List, Dict, Any
 from bs4 import BeautifulSoup
 from app.models import ProductInfo
+from app.logging_config import get_logger
 
-logger = logging.getLogger(__name__)
+logger = get_logger(__name__)
 
 
 class BaseExtractor:

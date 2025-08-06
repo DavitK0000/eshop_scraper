@@ -270,6 +270,9 @@ class Settings:
     
     # Logging
     LOG_LEVEL: str = os.getenv("LOG_LEVEL", "INFO")
+    LOG_TO_FILE: bool = os.getenv("LOG_TO_FILE", "True").lower() == "true"
+    LOG_FILE_MAX_SIZE: int = int(os.getenv("LOG_FILE_MAX_SIZE", "10485760"))  # 10MB
+    LOG_FILE_BACKUP_COUNT: int = int(os.getenv("LOG_FILE_BACKUP_COUNT", "5"))
     
     @classmethod
     def get_browser_for_domain(cls, domain: str) -> str:
