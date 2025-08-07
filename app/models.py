@@ -36,6 +36,7 @@ class ScrapeResponse(BaseModel):
     url: str
     product_info: Optional[ProductInfo] = None
     error: Optional[str] = None
+    message: Optional[str] = Field(None, description="Current status message (e.g., 'Detecting platform', 'Extracting product info')")
     created_at: datetime
     completed_at: Optional[datetime] = None
     cache_hit: bool = False

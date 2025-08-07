@@ -1240,14 +1240,14 @@ class ShopifyExtractor(BaseExtractor):
     
     def _filter_images_by_minimum_width(self, images: List[str], min_width: int = 1024) -> List[str]:
         """
-        Filter images to only include those with width >= min_width and exclude SVG images.
+        Filter images to only include those with width >= min_width and exclude SVG and GIF images.
         
         Args:
             images: List of image URLs to filter
             min_width: Minimum width in pixels (default: 1024)
             
         Returns:
-            Filtered list of image URLs that meet the minimum width requirement and are not SVG
+            Filtered list of image URLs that meet the minimum width requirement and are not SVG or GIF
         """
         if not images:
             return []
@@ -1261,6 +1261,11 @@ class ShopifyExtractor(BaseExtractor):
             # Skip SVG images (icons, logos, graphics)
             if self._is_svg_image(image_url):
                 logger.debug(f"Filtered out SVG image: {image_url}")
+                continue
+            
+            # Skip GIF images (animated graphics, icons)
+            if self._is_gif_image(image_url):
+                logger.debug(f"Filtered out GIF image: {image_url}")
                 continue
             
             # Check if image meets minimum width requirement
@@ -1298,6 +1303,37 @@ class ShopifyExtractor(BaseExtractor):
             # Additional checks to avoid false positives
             # Skip if it's part of a larger word or path
             if any(pattern in lower_url for pattern in ['/svg/', 'svg/', '.svg', 'svg=']):
+                return True
+        
+        return False
+    
+    def _is_gif_image(self, image_url: str) -> bool:
+        """
+        Check if an image URL is a GIF file.
+        
+        Args:
+            image_url: Image URL to check
+            
+        Returns:
+            True if the image is GIF, False otherwise
+        """
+        if not image_url:
+            return False
+        
+        # Check for GIF file extensions
+        gif_extensions = ['.gif', '.gifv']
+        lower_url = image_url.lower()
+        
+        # Check file extension
+        for ext in gif_extensions:
+            if ext in lower_url:
+                return True
+        
+        # Check for GIF in URL path or query parameters
+        if 'gif' in lower_url:
+            # Additional checks to avoid false positives
+            # Skip if it's part of a larger word or path
+            if any(pattern in lower_url for pattern in ['/gif/', 'gif/', '.gif', 'gif=']):
                 return True
         
         return False

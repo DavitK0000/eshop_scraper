@@ -270,6 +270,7 @@ class ScrapingService:
             task_id=task_id,
             status=TaskStatus.PENDING,
             url=url,
+            message="Task created, waiting to start",
             created_at=datetime.now()
         )
         
@@ -408,6 +409,7 @@ class ScrapingService:
             task_id=task_id,
             status=TaskStatus.PENDING,
             url=url,
+            message="Task created, waiting to start",
             created_at=datetime.now()
         )
         
@@ -460,6 +462,7 @@ class ScrapingService:
             
             # Update response
             response.status = TaskStatus.COMPLETED
+            response.message = "Scraping completed successfully"
             response.product_info = product_info
             response.completed_at = datetime.now()
             
@@ -480,6 +483,7 @@ class ScrapingService:
             
             # Update response with error
             response.status = TaskStatus.FAILED
+            response.message = error_msg
             response.error = error_msg
             response.completed_at = datetime.now()
             
@@ -801,11 +805,19 @@ class ScrapingService:
     def _update_task_status(self, task_id: str, status: TaskStatus, message: str = None):
         """Update task status"""
         if task_id in self.active_tasks:
-            self.active_tasks[task_id].update({
+            task_info = self.active_tasks[task_id]
+            
+            # Update task info
+            task_info.update({
                 'status': status,
                 'updated_at': datetime.now(),
                 'message': message
             })
+            
+            # Update the stored response object if it exists
+            if 'response' in task_info and message:
+                task_info['response'].message = message
+            
             logger.info(f"Updated task {task_id} status to {status}: {message}")
         else:
             logger.warning(f"Task {task_id} not found in active_tasks")
@@ -828,6 +840,7 @@ class ScrapingService:
             if 'response' in task_info:
                 response = task_info['response']
                 response.status = status
+                response.message = message
                 response.product_info = product_info
                 response.completed_at = datetime.now()
                 response.detected_platform = platform
@@ -862,6 +875,7 @@ class ScrapingService:
             if 'response' in task_info:
                 response = task_info['response']
                 response.status = status
+                response.message = error_message
                 response.error = error_message
                 response.completed_at = datetime.now()
             
