@@ -1,5 +1,7 @@
-from typing import Optional, List, Dict, Any
+from typing import Optional, List, Dict, Any, Tuple
 from bs4 import BeautifulSoup
+import re
+from urllib.parse import urlparse, parse_qs
 from app.models import ProductInfo
 from app.logging_config import get_logger
 
@@ -20,7 +22,120 @@ class BaseExtractor:
         self.html_content = html_content
         self.url = url
         self.soup = BeautifulSoup(html_content, 'html.parser')
+    
+    def _extract_image_size_from_url(self, image_url: str) -> Tuple[str, int]:
+        """
+        Extract image size information from URL and return base URL and size.
         
+        Args:
+            image_url: The image URL that may contain size parameters
+            
+        Returns:
+            Tuple of (base_url, size) where size is the pixel dimension (width or height)
+        """
+        if not image_url:
+            return image_url, 0
+        
+        # Parse the URL
+        parsed = urlparse(image_url)
+        path = parsed.path
+        query = parse_qs(parsed.query)
+        
+        # Common size patterns in URL path
+        size_patterns = [
+            r'_(\d+)x(\d+)\.',  # _800x600.jpg
+            r'_(\d+)\.',        # _800.jpg
+            r'(\d+)x(\d+)\.',   # 800x600.jpg
+            r'(\d+)\.',         # 800.jpg
+            r'_(\d+)x',         # _800x
+            r'x(\d+)\.',        # x600.jpg
+        ]
+        
+        # Check path for size patterns
+        for pattern in size_patterns:
+            match = re.search(pattern, path)
+            if match:
+                if len(match.groups()) == 2:
+                    # Width x Height format
+                    width, height = int(match.group(1)), int(match.group(2))
+                    size = max(width, height)  # Use the larger dimension
+                    # Remove size from path to get base URL
+                    base_path = re.sub(pattern, '.', path)
+                    base_url = f"{parsed.scheme}://{parsed.netloc}{base_path}{parsed.params}"
+                    if parsed.query:
+                        base_url += f"?{parsed.query}"
+                    if parsed.fragment:
+                        base_url += f"#{parsed.fragment}"
+                    return base_url, size
+                elif len(match.groups()) == 1:
+                    # Single dimension format
+                    size = int(match.group(1))
+                    # Remove size from path to get base URL
+                    base_path = re.sub(pattern, '.', path)
+                    base_url = f"{parsed.scheme}://{parsed.netloc}{base_path}{parsed.params}"
+                    if parsed.query:
+                        base_url += f"?{parsed.query}"
+                    if parsed.fragment:
+                        base_url += f"#{parsed.fragment}"
+                    return base_url, size
+        
+        # Check query parameters for size
+        size_params = ['width', 'height', 'w', 'h', 'size', 'dimension']
+        for param in size_params:
+            if param in query:
+                try:
+                    size = int(query[param][0])
+                    # Remove size parameter from query
+                    new_query = query.copy()
+                    del new_query[param]
+                    # Rebuild query string
+                    new_query_str = '&'.join([f"{k}={v[0]}" for k, v in new_query.items()])
+                    base_url = f"{parsed.scheme}://{parsed.netloc}{parsed.path}{parsed.params}"
+                    if new_query_str:
+                        base_url += f"?{new_query_str}"
+                    if parsed.fragment:
+                        base_url += f"#{parsed.fragment}"
+                    return base_url, size
+                except (ValueError, IndexError):
+                    continue
+        
+        # No size information found
+        return image_url, 0
+    
+    def _get_largest_image_variants(self, image_urls: List[str]) -> List[str]:
+        """
+        Filter image URLs to keep only the largest size variant for each unique image.
+        
+        Args:
+            image_urls: List of image URLs that may contain size variants
+            
+        Returns:
+            List of image URLs with only the largest size for each unique image
+        """
+        if not image_urls:
+            return []
+        
+        # Group images by their base URL
+        image_groups = {}
+        
+        for url in image_urls:
+            base_url, size = self._extract_image_size_from_url(url)
+            
+            if base_url not in image_groups:
+                image_groups[base_url] = []
+            
+            image_groups[base_url].append((url, size))
+        
+        # For each group, keep the URL with the largest size
+        largest_images = []
+        for base_url, variants in image_groups.items():
+            if variants:
+                # Sort by size (descending) and take the first (largest)
+                largest_variant = max(variants, key=lambda x: x[1])
+                largest_images.append(largest_variant[0])
+        
+        return largest_images
+    
     def extract_product_info(self) -> ProductInfo:
         """
         Extract product information from HTML content
