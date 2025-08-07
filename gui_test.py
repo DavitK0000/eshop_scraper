@@ -5,6 +5,11 @@ import json
 import threading
 import logging
 from datetime import datetime
+import urllib3
+import ssl
+
+# Disable SSL warnings for development
+urllib3.disable_warnings(urllib3.exceptions.InsecureRequestWarning)
 
 logger = logging.getLogger(__name__)
 
@@ -20,6 +25,10 @@ class ScraperGUI:
         # Polling state
         self.is_polling = False
         self.polling_task_id = None
+        
+        # Create session with SSL verification disabled for development
+        self.session = requests.Session()
+        self.session.verify = False
         
         self.setup_ui()
         
@@ -56,6 +65,11 @@ class ScraperGUI:
         # Test Connection Button
         ttk.Button(config_frame, text="Test Connection", 
                   command=self.test_connection).grid(row=0, column=2, padx=(10, 0))
+        
+        # SSL Verification Toggle
+        self.ssl_verify_var = tk.BooleanVar(value=False)
+        ttk.Checkbutton(config_frame, text="Verify SSL Certificates", 
+                       variable=self.ssl_verify_var).grid(row=1, column=0, sticky=tk.W, pady=5)
         
         # URL Input
         ttk.Label(main_frame, text="Product URL:").grid(row=2, column=0, sticky=tk.W, pady=5)
@@ -137,6 +151,28 @@ class ScraperGUI:
         if not self.url_var.get():
             self.url_var.set(sample_urls[0])
     
+    def validate_endpoint_url(self, url):
+        """Validate and normalize the endpoint URL"""
+        if not url:
+            return None, "Endpoint URL cannot be empty"
+        
+        # Ensure URL has proper scheme
+        if not url.startswith(('http://', 'https://')):
+            url = "http://" + url
+        
+        # Remove trailing slash if present
+        url = url.rstrip('/')
+        
+        # Basic URL validation
+        try:
+            from urllib.parse import urlparse
+            parsed = urlparse(url)
+            if not parsed.netloc:
+                return None, "Invalid URL format"
+            return url, None
+        except Exception as e:
+            return None, f"URL validation error: {str(e)}"
+    
     def scrape_product(self):
         """Start scraping process"""
         url = self.url_var.get().strip()
@@ -158,6 +194,11 @@ class ScraperGUI:
             self.root.after(0, lambda: self.status_var.set("Starting scraping..."))
             self.root.after(0, lambda: self.scrape_button.config(state=tk.DISABLED))
             
+            # Validate endpoint URL
+            endpoint_url, error = self.validate_endpoint_url(self.endpoint_var.get())
+            if error:
+                raise Exception(f"Invalid endpoint URL: {error}")
+            
             # Prepare request data
             request_data = {
                 "url": url,
@@ -172,10 +213,13 @@ class ScraperGUI:
                 request_data["user_agent"] = self.user_agent_var.get().strip()
             
             # Make API request
-            api_url = f"{self.endpoint_var.get()}/scrape"
+            api_url = f"{endpoint_url}/scrape"
             self.root.after(0, lambda: self.status_var.set("Sending request to API..."))
             
-            response = requests.post(api_url, json=request_data, timeout=30)
+            # Configure SSL verification based on checkbox
+            verify_ssl = self.ssl_verify_var.get()
+            
+            response = self.session.post(api_url, json=request_data, timeout=30, verify=verify_ssl)
             response.raise_for_status()
             
             data = response.json()
@@ -192,6 +236,14 @@ class ScraperGUI:
                 self.root.after(0, lambda: self.status_var.set("Unexpected response"))
                 self.root.after(0, lambda: self.results_text.insert(tk.END, f"Response: {json.dumps(data, indent=2)}\n"))
                 
+        except requests.exceptions.SSLError as e:
+            error_msg = f"SSL Certificate Error: {str(e)}\n\nTry unchecking 'Verify SSL Certificates' for development environments."
+            self.root.after(0, lambda: self.status_var.set("SSL Error"))
+            self.root.after(0, lambda: self.results_text.insert(tk.END, f"Error: {error_msg}\n"))
+        except requests.exceptions.ConnectionError as e:
+            error_msg = f"Connection Error: {str(e)}\n\nPlease check:\n1. The API server is running\n2. The endpoint URL is correct\n3. Network connectivity"
+            self.root.after(0, lambda: self.status_var.set("Connection Error"))
+            self.root.after(0, lambda: self.results_text.insert(tk.END, f"Error: {error_msg}\n"))
         except requests.exceptions.RequestException as e:
             error_msg = f"Request failed: {str(e)}"
             self.root.after(0, lambda: self.status_var.set("Request failed"))
@@ -224,9 +276,16 @@ class ScraperGUI:
                     self.root.after(0, self._handle_polling_timeout)
                     break
                 
+                # Validate endpoint URL
+                endpoint_url, error = self.validate_endpoint_url(self.endpoint_var.get())
+                if error:
+                    raise Exception(f"Invalid endpoint URL: {error}")
+                
                 # Get task status
-                api_url = f"{self.endpoint_var.get()}/tasks/{task_id}"
-                response = requests.get(api_url, timeout=10)
+                api_url = f"{endpoint_url}/tasks/{task_id}"
+                verify_ssl = self.ssl_verify_var.get()
+                
+                response = self.session.get(api_url, timeout=10, verify=verify_ssl)
                 response.raise_for_status()
                 
                 data = response.json()
@@ -252,6 +311,10 @@ class ScraperGUI:
                     self.root.after(0, lambda: self.status_var.set(f"Unknown status: {status}"))
                     break
                     
+            except requests.exceptions.SSLError as e:
+                error_msg = f"SSL Certificate Error during polling: {str(e)}"
+                self.root.after(0, lambda: self._handle_task_failure(error_msg))
+                break
             except requests.exceptions.RequestException as e:
                 error_msg = f"Polling request failed: {str(e)}"
                 self.root.after(0, lambda: self._handle_task_failure(error_msg))
@@ -335,8 +398,15 @@ class ScraperGUI:
         try:
             self.root.after(0, lambda: self.status_var.set("Testing connection..."))
             
-            api_url = f"{self.endpoint_var.get()}/health"
-            response = requests.get(api_url, timeout=10)
+            # Validate endpoint URL
+            endpoint_url, error = self.validate_endpoint_url(self.endpoint_var.get())
+            if error:
+                raise Exception(f"Invalid endpoint URL: {error}")
+            
+            api_url = f"{endpoint_url}/health"
+            verify_ssl = self.ssl_verify_var.get()
+            
+            response = self.session.get(api_url, timeout=10, verify=verify_ssl)
             response.raise_for_status()
             
             data = response.json()
@@ -349,6 +419,14 @@ class ScraperGUI:
                 self.root.after(0, lambda: self.status_var.set("API unhealthy"))
                 self.root.after(0, lambda: messagebox.showwarning("Warning", f"API status: {status}"))
                 
+        except requests.exceptions.SSLError as e:
+            error_msg = f"SSL Certificate Error: {str(e)}\n\nTry unchecking 'Verify SSL Certificates' for development environments."
+            self.root.after(0, lambda: self.status_var.set("SSL Error"))
+            self.root.after(0, lambda: messagebox.showerror("Error", error_msg))
+        except requests.exceptions.ConnectionError as e:
+            error_msg = f"Connection Error: {str(e)}\n\nPlease check:\n1. The API server is running\n2. The endpoint URL is correct\n3. Network connectivity"
+            self.root.after(0, lambda: self.status_var.set("Connection Error"))
+            self.root.after(0, lambda: messagebox.showerror("Error", error_msg))
         except requests.exceptions.RequestException as e:
             error_msg = f"Connection failed: {str(e)}"
             self.root.after(0, lambda: self.status_var.set("Connection failed"))

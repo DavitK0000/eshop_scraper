@@ -54,41 +54,32 @@ class ScrapingService:
             'woocommerce': {
                 'patterns': [
                     r'wp-content\/plugins\/woocommerce',
-                    r'woocommerce',
+                    r'woocommerce\.js',
                     r'wc-ajax',
-                    r'add-to-cart',
-                    r'woocommerce-cart',
-                    r'woocommerce-checkout',
                     r'wc_add_to_cart_params',
                     r'wc_single_product_params',
                     r'woocommerce_params',
                     r'wc_cart_fragments_params',
-                    r'\.woocommerce',
-                    r'WooCommerce',
                     r'wc_cart_hash',
+                    r'woocommerce-cart',
+                    r'woocommerce-checkout',
+                    r'add-to-cart',
+                    r'WooCommerce',
+                    r'woocommerce\.min\.js',
+                    r'woocommerce\.css',
+                    r'woocommerce\.min\.css',
                 ],
                 'meta_tags': [
                     'woocommerce-enabled',
                     'generator.*woocommerce',
+                    'woocommerce-version',
                 ],
                 'script_sources': [
-                    'woocommerce',
-                    'wc-',
+                    'wp-content/plugins/woocommerce',
+                    'woocommerce/assets',
+                    'woocommerce.js',
+                    'woocommerce.min.js',
                 ],
-                'css_classes': [
-                    'woocommerce',
-                    'wc-toolbar',
-                    'woocommerce-page',
-                    'single-product',
-                    'woocommerce-cart',
-                    'woocommerce-checkout',
-                    'wc-block',
-                ],
-                'body_classes': [
-                    'woocommerce',
-                    'woocommerce-page',
-                    'single-product-summary',
-                ]
             },
             'wordpress': {
                 'patterns': [
@@ -674,7 +665,7 @@ class ScrapingService:
             return None, 0.0, [f"Platform detection failed: {str(e)}"]
 
     def _analyze_content_for_platform(self, html_content: str) -> Tuple[Optional[str], float, List[str]]:
-        """Analyze HTML content for platform indicators"""
+        """Analyze HTML content for platform indicators using only reliable methods"""
         soup = BeautifulSoup(html_content, 'html.parser')
         scores = {}
         all_indicators = {}
@@ -683,16 +674,16 @@ class ScrapingService:
             score = 0
             indicators = []
             
-            # Check HTML patterns (search entire HTML content)
+            # 1. Check HTML patterns (search entire HTML content) - Most reliable
             for pattern in config.get('patterns', []):
                 matches = re.findall(pattern, html_content, re.IGNORECASE)
                 if matches:
                     match_count = len(matches)
-                    pattern_score = min(0.3 * match_count, 0.6)  # Up to 0.6 for multiple matches
+                    pattern_score = min(0.4 * match_count, 0.8)  # Increased weight for patterns
                     score += pattern_score
                     indicators.append(f"HTML pattern '{pattern}' found {match_count} time(s)")
             
-            # Check meta tags more thoroughly
+            # 2. Check meta tags - Very reliable
             meta_tags = soup.find_all('meta')
             for meta_pattern in config.get('meta_tags', []):
                 for meta in meta_tags:
@@ -704,69 +695,19 @@ class ScrapingService:
                         str(meta.get('http-equiv', ''))
                     ])
                     if re.search(meta_pattern, meta_content, re.IGNORECASE):
-                        score += 0.4
+                        score += 0.6  # Increased weight for meta tags
                         indicators.append(f"Meta tag pattern: {meta_pattern}")
                         break
             
-            # Check script sources and inline scripts
+            # 3. Check external script sources - Reliable
             scripts = soup.find_all('script')
             for script_pattern in config.get('script_sources', []):
                 for script in scripts:
-                    # Check src attribute
+                    # Check src attribute only (external scripts)
                     src = script.get('src', '')
                     if src and script_pattern in src:
-                        score += 0.3
+                        score += 0.5  # Increased weight for external scripts
                         indicators.append(f"External script: {script_pattern}")
-                    
-                    # Check inline script content
-                    script_content = script.string if script.string else ''
-                    if re.search(script_pattern, script_content, re.IGNORECASE):
-                        score += 0.25
-                        indicators.append(f"Inline script pattern: {script_pattern}")
-            
-            # Check CSS classes more comprehensively
-            for class_pattern in config.get('css_classes', []):
-                # Find all elements with matching classes
-                all_elements = soup.find_all()
-                matching_elements = 0
-                for element in all_elements:
-                    element_classes = element.get('class', [])
-                    for cls in element_classes:
-                        if re.search(class_pattern, cls, re.IGNORECASE):
-                            matching_elements += 1
-                            break
-                
-                if matching_elements > 0:
-                    class_score = min(0.2 * matching_elements, 0.4)  # Up to 0.4 for multiple matches
-                    score += class_score
-                    indicators.append(f"CSS class pattern '{class_pattern}' found on {matching_elements} element(s)")
-            
-            # Check body classes
-            body = soup.find('body')
-            if body and 'body_classes' in config:
-                body_classes = body.get('class', [])
-                body_class_str = ' '.join(body_classes) if body_classes else ''
-                for body_class_pattern in config['body_classes']:
-                    if re.search(body_class_pattern, body_class_str, re.IGNORECASE):
-                        score += 0.4
-                        indicators.append(f"Body class pattern: {body_class_pattern}")
-            
-            # Check CSS link sources
-            css_links = soup.find_all('link', rel='stylesheet')
-            for script_pattern in config.get('script_sources', []):  # Reuse patterns for CSS
-                for link in css_links:
-                    href = link.get('href', '')
-                    if href and script_pattern in href:
-                        score += 0.2
-                        indicators.append(f"CSS link: {script_pattern}")
-            
-            # Check for platform-specific comments in HTML
-            html_comments = soup.find_all(string=lambda text: isinstance(text, str) and '<!--' in text)
-            for comment in html_comments:
-                for pattern in config.get('patterns', []):
-                    if re.search(pattern, comment, re.IGNORECASE):
-                        score += 0.1
-                        indicators.append(f"HTML comment pattern: {pattern}")
             
             if score > 0:
                 scores[platform] = min(score, 1.0)  # Cap at 1.0

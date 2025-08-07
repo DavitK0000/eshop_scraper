@@ -8,6 +8,7 @@ from app.extractors.otto import OttoExtractor
 from app.extractors.bol import BolExtractor
 from app.extractors.jd import JDExtractor
 from app.extractors.cdiscount import CDiscountExtractor
+from app.extractors.woocommerce import WooCommerceExtractor
 from app.logging_config import get_logger
 
 logger = get_logger(__name__)
@@ -25,6 +26,7 @@ class ExtractorFactory:
         'bol': BolExtractor,
         'jd': JDExtractor,
         'cdiscount': CDiscountExtractor,
+        'woocommerce': WooCommerceExtractor,
     }
     
     @classmethod
