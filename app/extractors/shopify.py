@@ -99,19 +99,14 @@ class ShopifyExtractor(BaseExtractor):
                     # Image is an object with src property
                     src = image.get('src', '')
                     if src:
-                        # Convert to full URL if it's relative
-                        if src.startswith('//'):
-                            src = 'https:' + src
-                        elif src.startswith('/'):
-                            src = f"https://{parse_url_domain(self.url)}{src}"
-                        images.append(src)
+                        # Use centralized normalization method to handle Next.js URLs and relative URLs
+                        normalized_src = self._normalize_image_url(src)
+                        images.append(normalized_src)
                 elif isinstance(image, str):
                     # Image is a direct URL string
-                    if image.startswith('//'):
-                        image = 'https:' + image
-                    elif image.startswith('/'):
-                        image = f"https://{parse_url_domain(self.url)}{image}"
-                    images.append(image)
+                    # Use centralized normalization method to handle Next.js URLs and relative URLs
+                    normalized_image = self._normalize_image_url(image)
+                    images.append(normalized_image)
         
         # Filter to keep only the largest size variant for each unique image
         if images:
@@ -1788,9 +1783,61 @@ class ShopifyExtractor(BaseExtractor):
         
         return additional_images
     
+    def _extract_nextjs_image_url(self, url: str) -> Optional[str]:
+        """
+        Extract the actual image URL from Next.js image URLs.
+        
+        Next.js image URLs have the format:
+        _next/image?url=https%3A%2F%2Fcdn.shopify.com%2Fs%2Ffiles%2F...&w=3840&q=75
+        
+        Args:
+            url: Next.js image URL
+            
+        Returns:
+            Extracted actual image URL if it's a Next.js image URL, None otherwise
+        """
+        if not url:
+            return None
+        
+        try:
+            # Check if this is a Next.js image URL
+            if '_next/image' in url:
+                parsed = urlparse(url)
+                query_params = parsed.query
+                
+                # Look for the 'url' parameter which contains the encoded actual image URL
+                if 'url=' in query_params:
+                    # Extract the url parameter value
+                    url_match = re.search(r'url=([^&]+)', query_params)
+                    if url_match:
+                        encoded_url = url_match.group(1)
+                        # URL decode the parameter
+                        from urllib.parse import unquote
+                        decoded_url = unquote(encoded_url)
+                        
+                        logger.debug(f"Extracted Next.js image URL: {decoded_url}")
+                        return decoded_url
+                
+                # Alternative: check for 'src' parameter (some Next.js versions use this)
+                if 'src=' in query_params:
+                    src_match = re.search(r'src=([^&]+)', query_params)
+                    if src_match:
+                        encoded_src = src_match.group(1)
+                        from urllib.parse import unquote
+                        decoded_src = unquote(encoded_src)
+                        
+                        logger.debug(f"Extracted Next.js image URL from src: {decoded_src}")
+                        return decoded_src
+            
+            return None
+            
+        except Exception as e:
+            logger.debug(f"Error extracting Next.js image URL from {url}: {e}")
+            return None
+
     def _normalize_image_url(self, url: str) -> str:
         """
-        Convert relative image URLs to absolute URLs.
+        Convert relative image URLs to absolute URLs and handle Next.js image URLs.
         
         Args:
             url: Image URL to normalize
@@ -1800,6 +1847,11 @@ class ShopifyExtractor(BaseExtractor):
         """
         if not url:
             return url
+        
+        # First, check if this is a Next.js image URL and extract the actual URL
+        nextjs_url = self._extract_nextjs_image_url(url)
+        if nextjs_url:
+            url = nextjs_url
         
         # Convert relative URLs to absolute
         if url.startswith('//'):
