@@ -41,9 +41,6 @@ class BrowserManager:
                 '--disable-features=VizDisplayCompositor',
                 '--disable-extensions',
                 '--disable-plugins',
-                '--disable-background-timer-throttling',
-                '--disable-backgrounding-occluded-windows',
-                '--disable-renderer-backgrounding',
                 '--disable-background-networking',
                 '--disable-default-apps',
                 '--disable-sync',
@@ -57,7 +54,6 @@ class BrowserManager:
                 '--ignore-certificate-errors-spki-list',
                 '--disable-blink-features=AutomationControlled',
                 '--disable-automation',
-                '--disable-ipc-flooding-protection',
                 '--disable-webrtc-encryption',
                 '--disable-webrtc-hw-encoding',
                 '--disable-webrtc-hw-decoding',
@@ -79,14 +75,19 @@ class BrowserManager:
                 '--disable-component-extensions-with-background-pages',
                 '--disable-domain-reliability',
                 '--disable-features=TranslateUI',
-                '--disable-hang-monitor',
                 '--disable-prompt-on-repost',
                 '--force-color-profile=srgb',
                 '--metrics-recording-only',
                 '--password-store=basic',
                 '--use-mock-keychain',
-                '--disable-features=site-per-process',
-                '--disable-site-isolation-trials',
+                # Additional arguments for better JavaScript execution
+                '--enable-javascript',
+                '--enable-scripts',
+                '--allow-running-insecure-content',
+                '--disable-web-security',
+                '--disable-features=VizDisplayCompositor',
+                '--disable-background-timer-throttling=false',
+                '--disable-renderer-backgrounding=false',
             ]
             
             # Add proxy if provided
@@ -208,6 +209,13 @@ class BrowserManager:
                 except Exception:
                     pass  # Ignore timeout on this additional wait
             
+            # Wait for all JavaScript execution to complete and page to be fully ready
+            await self._wait_for_page_completion(page)
+            
+            # Scroll to bottom to trigger lazy loading of reviews/ratings
+            if settings.BROWSER_ENABLE_SCROLLING:
+                await self._scroll_to_trigger_lazy_loading(page)
+            
             # Get HTML content
             html_content = await page.content()
             
@@ -227,6 +235,139 @@ class BrowserManager:
         finally:
             if page:
                 await page.close()
+
+    async def _wait_for_page_completion(self, page: Page, timeout: int = None):
+        """
+        Wait for the page to be completely loaded and all JavaScript execution to finish.
+        Universal solution that works for all sites and dynamic content.
+        
+        Args:
+            page: Playwright page object
+            timeout: Timeout in milliseconds (uses config default if None)
+        """
+        if timeout is None:
+            timeout = settings.BROWSER_PAGE_COMPLETION_TIMEOUT
+            
+        try:
+            logger.info("Waiting for page completion and JavaScript execution...")
+            
+            # Use asyncio.create_task to prevent blocking the event loop
+            async def wait_for_ready_state():
+                await page.wait_for_function(
+                    "() => document.readyState === 'complete'",
+                    timeout=timeout
+                )
+            
+            async def wait_for_network_idle():
+                try:
+                    await page.wait_for_load_state('networkidle', timeout=5000)
+                except Exception:
+                    logger.debug("Network idle timeout, continuing anyway")
+            
+            async def wait_for_js_execution():
+                await page.wait_for_function(
+                    """
+                    () => {
+                        return new Promise((resolve) => {
+                            // Wait for any pending JavaScript execution
+                            setTimeout(() => {
+                                // Simple check: ensure page is stable and no loading indicators
+                                const isStable = !document.querySelector('[style*="animation"]') && 
+                                               !document.querySelector('[class*="loading"]') &&
+                                               !document.querySelector('[class*="spinner"]');
+                                resolve(isStable);
+                            }, 2000);
+                        });
+                    }
+                    """,
+                    timeout=timeout
+                )
+            
+            # Execute all waits concurrently to reduce total time
+            await asyncio.gather(
+                wait_for_ready_state(),
+                wait_for_network_idle(),
+                wait_for_js_execution(),
+                return_exceptions=True
+            )
+            
+            # Final wait to ensure all content is rendered
+            await asyncio.sleep(2)
+                
+            logger.info("Page completion wait finished - all content should be loaded")
+            
+        except Exception as e:
+            logger.warning(f"Error waiting for page completion: {e}")
+            # Don't fail the entire request if page completion wait fails
+            pass
+
+    async def _scroll_to_trigger_lazy_loading(self, page: Page):
+        """
+        Scroll to multiple positions to trigger lazy loading of content like reviews and ratings.
+        Different sites trigger lazy loading at different scroll positions.
+        """
+        try:
+            logger.info("Scrolling to multiple positions to trigger lazy loading...")
+            
+            # Get page height
+            page_height = await page.evaluate("document.body.scrollHeight")
+            viewport_height = await page.evaluate("window.innerHeight")
+            
+            # Scroll to multiple positions to trigger lazy loading
+            scroll_positions = [0.25, 0.5, 0.75, 0.9, 1.0]  # 25%, 50%, 75%, 90%, 100%
+            
+            for position in scroll_positions:
+                scroll_y = int(page_height * position)
+                
+                # Scroll to position with timeout
+                try:
+                    await asyncio.wait_for(
+                        page.evaluate(f"""
+                            window.scrollTo({{
+                                top: {scroll_y},
+                                behavior: 'smooth'
+                            }});
+                        """),
+                        timeout=settings.BROWSER_SCROLL_TIMEOUT / 1000.0  # Convert to seconds
+                    )
+                    
+                    # Wait for lazy loading to trigger with timeout
+                    await asyncio.wait_for(
+                        page.wait_for_timeout(1500),
+                        timeout=settings.BROWSER_SCROLL_WAIT_TIMEOUT / 1000.0  # Convert to seconds
+                    )
+                    
+                    logger.debug(f"Scrolled to {position * 100}% of page")
+                except asyncio.TimeoutError:
+                    logger.warning(f"Scroll timeout at {position * 100}% position")
+                    continue
+            
+            # Scroll back to top with timeout
+            try:
+                await asyncio.wait_for(
+                    page.evaluate("""
+                        window.scrollTo({
+                            top: 0,
+                            behavior: 'smooth'
+                        });
+                    """),
+                    timeout=settings.BROWSER_SCROLL_TIMEOUT / 1000.0  # Convert to seconds
+                )
+                
+                # Wait for any triggered content to load
+                await asyncio.wait_for(
+                    page.wait_for_timeout(1000),
+                    timeout=settings.BROWSER_SCROLL_WAIT_TIMEOUT / 1000.0  # Convert to seconds
+                )
+            except asyncio.TimeoutError:
+                logger.warning("Scroll back to top timeout")
+            
+            logger.info("Multi-position scroll completed - lazy content should be loaded")
+            
+        except Exception as e:
+            logger.warning(f"Error during scroll: {e}")
+            # Don't fail if scroll fails
+            pass
     
     async def cleanup(self):
         """Clean up browser resources"""

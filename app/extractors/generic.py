@@ -110,8 +110,16 @@ class GenericExtractor(BaseExtractor):
         for selector in common_selectors:
             images = self.find_elements_attr(selector, 'src')
             if images:
-                # Filter out empty or invalid URLs
-                valid_images = [img for img in images if img and img.startswith(('http://', 'https://'))]
+                # Filter out empty URLs and normalize protocol-relative URLs
+                valid_images = []
+                for img in images:
+                    if img:
+                        # Handle protocol-relative URLs (starting with //)
+                        if img.startswith('//'):
+                            img = 'https:' + img
+                        # Only accept URLs that start with http:// or https://
+                        if img.startswith(('http://', 'https://')):
+                            valid_images.append(img)
                 if valid_images:
                     return valid_images
         

@@ -146,6 +146,35 @@ class StructuredDataExtractor:
             logger.debug(f"Error extracting data from JSON-LD item: {e}")
             return []
     
+    def _normalize_image_url(self, image_url: str) -> str:
+        """
+        Normalize image URL by handling protocol-relative URLs and other common URL issues.
+        
+        Args:
+            image_url: Image URL to normalize
+            
+        Returns:
+            Normalized absolute URL
+        """
+        if not image_url:
+            return image_url
+        
+        # Handle protocol-relative URLs (starting with //)
+        if image_url.startswith('//'):
+            image_url = 'https:' + image_url
+        # Handle relative URLs (starting with /)
+        elif image_url.startswith('/'):
+            # Use the base URL from the page to make it absolute
+            parsed_base = urlparse(self.url)
+            image_url = f"{parsed_base.scheme}://{parsed_base.netloc}{image_url}"
+        # Handle relative URLs without leading slash
+        elif not image_url.startswith(('http://', 'https://')):
+            # Use the base URL from the page to make it absolute
+            parsed_base = urlparse(self.url)
+            image_url = f"{parsed_base.scheme}://{parsed_base.netloc}/{image_url}"
+        
+        return image_url
+
     def _convert_json_ld_to_product_data(self, json_ld_data: dict) -> dict:
         """Convert JSON-LD structured data to product data format"""
         product_data = {}
@@ -223,7 +252,7 @@ class StructuredDataExtractor:
                                 product_data['currency'] = currency
                         break
         
-        # Extract images
+        # Extract images directly from JSON-LD data
         images = json_ld_data.get('image', [])
         if isinstance(images, str):
             images = [images]
@@ -232,27 +261,22 @@ class StructuredDataExtractor:
             processed_images = []
             img_url = images.get('url', '') or images.get('src', '') or images.get('image', '')
             if img_url:
-                processed_images.append(img_url)
+                processed_images.append(self._normalize_image_url(img_url))
             images = processed_images
         elif isinstance(images, list):
             # Handle array of images (both strings and objects)
             processed_images = []
             for img in images:
                 if isinstance(img, str):
-                    processed_images.append(img)
+                    processed_images.append(self._normalize_image_url(img))
                 elif isinstance(img, dict):
                     # Image object with url property
                     img_url = img.get('url', '') or img.get('src', '') or img.get('image', '')
                     if img_url:
-                        processed_images.append(img_url)
+                        processed_images.append(self._normalize_image_url(img_url))
             images = processed_images
         
-        # Enhanced image extraction: Use JSON-LD images as clues to find additional images
-        if images:
-            enhanced_images = self._enhance_images_from_json_ld_clues(images)
-            product_data['images'] = enhanced_images
-        else:
-            product_data['images'] = images
+        product_data['images'] = images
         
         # Extract rating information from various possible locations
         rating_data = {}
@@ -574,507 +598,4 @@ class StructuredDataExtractor:
         if worst_ratings:
             merged_rating['worst_rating'] = worst_ratings[0]
         
-        return merged_rating
-    
-    def _enhance_images_from_json_ld_clues(self, json_ld_images: List[str]) -> List[str]:
-        """
-        Enhance image extraction by using JSON-LD image URLs as clues to find additional images
-        from img tags that share the same top-level folder path.
-        
-        Args:
-            json_ld_images: List of image URLs extracted from JSON-LD structured data
-            
-        Returns:
-            Enhanced list of image URLs including both JSON-LD images and related img tag images
-        """
-        if not json_ld_images:
-            return []
-        
-        enhanced_images = list(json_ld_images)  # Start with JSON-LD images
-        found_folder_patterns = set()
-        
-        # Extract folder patterns from JSON-LD images
-        for image_url in json_ld_images:
-            if not image_url:
-                continue
-            
-            # Parse the URL to extract the top-level folder
-            folder_pattern = self._extract_top_level_folder_from_url(image_url)
-            if folder_pattern:
-                found_folder_patterns.add(folder_pattern)
-                # Log the type of pattern found
-                if self._is_image_subdomain(folder_pattern):
-                    logger.debug(f"Found image subdomain pattern: {folder_pattern}")
-                else:
-                    logger.debug(f"Found folder pattern from JSON-LD image: {folder_pattern}")
-        
-        # If we found folder patterns, search for additional images in img tags
-        if found_folder_patterns:
-            additional_images = self._find_images_by_folder_patterns(found_folder_patterns)
-            if additional_images:
-                logger.info(f"Enhanced image extraction: Found {len(additional_images)} additional images using folder patterns")
-                enhanced_images.extend(additional_images)
-        
-        # Remove duplicates while preserving order
-        seen = set()
-        unique_images = []
-        for img in enhanced_images:
-            if img and img not in seen:
-                seen.add(img)
-                unique_images.append(img)
-        
-        if len(unique_images) > len(json_ld_images):
-            logger.info(f"Image extraction enhanced: {len(json_ld_images)} JSON-LD images + {len(unique_images) - len(json_ld_images)} additional images = {len(unique_images)} total")
-        
-        # Deduplicate images with same base URL path (different parameters)
-        deduplicated_images = self._deduplicate_images_by_base_url(unique_images)
-        
-        if len(deduplicated_images) < len(unique_images):
-            dedup_count = len(unique_images) - len(deduplicated_images)
-            logger.info(f"Image deduplication: {len(unique_images)} images -> {len(deduplicated_images)} images (removed {dedup_count} duplicates)")
-        
-        # Filter images by minimum width (1024px)
-        filtered_images = self._filter_images_by_minimum_width(deduplicated_images, min_width=1024)
-        
-        if len(filtered_images) < len(unique_images):
-            filtered_count = len(unique_images) - len(filtered_images)
-            logger.info(f"Image filtering: {len(unique_images)} images -> {len(filtered_images)} images (filtered out {filtered_count} images)")
-        
-        return filtered_images
-    
-    def _filter_images_by_minimum_width(self, images: List[str], min_width: int = 1024) -> List[str]:
-        """
-        Filter images to only include those with width >= min_width and exclude SVG and GIF images.
-        
-        Args:
-            images: List of image URLs to filter
-            min_width: Minimum width in pixels (default: 1024)
-            
-        Returns:
-            Filtered list of image URLs that meet the minimum width requirement and are not SVG or GIF
-        """
-        if not images:
-            return []
-        
-        filtered_images = []
-        
-        for image_url in images:
-            if not image_url:
-                continue
-            
-            # Skip SVG images (icons, logos, graphics)
-            if self._is_svg_image(image_url):
-                logger.debug(f"Filtered out SVG image: {image_url}")
-                continue
-            
-            # Skip GIF images (usually animations)
-            if self._is_gif_image(image_url):
-                logger.debug(f"Filtered out GIF image: {image_url}")
-                continue
-            
-            # Check if image meets minimum width requirement
-            if self._check_image_width(image_url, min_width):
-                filtered_images.append(image_url)
-            else:
-                logger.info(f"Filtered out image below minimum width ({min_width}px): {image_url}")
-        
-        return filtered_images
-    
-    def _is_svg_image(self, image_url: str) -> bool:
-        """Check if image URL points to an SVG file"""
-        if not image_url:
-            return False
-        
-        # Check file extension
-        if image_url.lower().endswith('.svg'):
-            return True
-        
-        # Check for SVG in URL path
-        if '.svg' in image_url.lower():
-            return True
-        
-        # Check for SVG in query parameters
-        if 'svg' in image_url.lower():
-            return True
-        
-        return False
-    
-    def _is_gif_image(self, image_url: str) -> bool:
-        """Check if image URL points to a GIF file"""
-        if not image_url:
-            return False
-        
-        # Check file extension
-        if image_url.lower().endswith('.gif'):
-            return True
-        
-        # Check for GIF in URL path
-        if '.gif' in image_url.lower():
-            return True
-        
-        # Check for GIF in query parameters
-        if 'gif' in image_url.lower():
-            return True
-        
-        return False
-    
-    def _deduplicate_images_by_base_url(self, images: List[str]) -> List[str]:
-        """
-        Remove duplicate images that have the same base URL but different parameters.
-        
-        Args:
-            images: List of image URLs to deduplicate
-            
-        Returns:
-            Deduplicated list of image URLs
-        """
-        if not images:
-            return []
-        
-        # Group images by base URL
-        image_groups = {}
-        for image_url in images:
-            if not image_url:
-                continue
-            
-            base_url = self._get_base_url_without_params(image_url)
-            if base_url not in image_groups:
-                image_groups[base_url] = []
-            image_groups[base_url].append(image_url)
-        
-        # Select the best image from each group
-        deduplicated_images = []
-        for base_url, url_list in image_groups.items():
-            if len(url_list) == 1:
-                # Only one image in group, use it directly
-                deduplicated_images.append(url_list[0])
-            else:
-                # Multiple images in group, select the best one
-                best_image = self._select_best_image_from_group(url_list)
-                deduplicated_images.append(best_image)
-        
-        return deduplicated_images
-    
-    def _select_best_image_from_group(self, url_list: List[str]) -> str:
-        """
-        Select the best image from a group of URLs that share the same base URL.
-        
-        Args:
-            url_list: List of image URLs to choose from
-            
-        Returns:
-            The best image URL from the group
-        """
-        if not url_list:
-            return ""
-        
-        if len(url_list) == 1:
-            return url_list[0]
-        
-        # Priority order for image selection
-        priority_patterns = [
-            r'large', r'big', r'high', r'full', r'original',  # Large images
-            r'2048', r'1920', r'1600', r'1440', r'1200',      # High resolution
-            r'1024', r'800', r'600',                          # Medium resolution
-            r'thumb', r'small', r'mini', r'tiny'              # Small images (avoid)
-        ]
-        
-        best_score = -1
-        best_url = url_list[0]  # Default to first URL
-        
-        for url in url_list:
-            url_lower = url.lower()
-            score = 0
-            
-            # Check for priority patterns
-            for i, pattern in enumerate(priority_patterns):
-                if re.search(pattern, url_lower):
-                    # Higher priority for earlier patterns (larger images)
-                    score += len(priority_patterns) - i
-                    break
-            
-            # Bonus for URLs with size parameters
-            if re.search(r'[?&](w|width|h|height)=\d+', url_lower):
-                score += 5
-            
-            # Penalty for URLs with 'thumb' or 'small' in the path
-            if re.search(r'thumb|small|mini|tiny', url_lower):
-                score -= 10
-            
-            # Bonus for URLs without many parameters (cleaner URLs)
-            param_count = url.count('&') + url.count('?')
-            score -= param_count
-            
-            if score > best_score:
-                best_score = score
-                best_url = url
-        
-        return best_url
-    
-    def _check_image_width(self, image_url: str, min_width: int) -> bool:
-        """
-        Check if image meets minimum width requirement.
-        
-        Args:
-            image_url: Image URL to check
-            min_width: Minimum width in pixels
-            
-        Returns:
-            True if image meets minimum width requirement, False otherwise
-        """
-        if not image_url:
-            return False
-        
-        # First try to extract width from URL
-        width = self._extract_width_from_url(image_url)
-        if width:
-            logger.debug(f"Extracted width {width}px from URL: {image_url}")
-            if width >= min_width:
-                return True
-            else:
-                logger.info(f"Image width {width}px is below minimum {min_width}px: {image_url}")
-                return False
-        
-        # If no width in URL, try to extract from img tag attributes
-        width = self._extract_width_from_img_tag(image_url)
-        if width:
-            logger.debug(f"Extracted width {width}px from img tag: {image_url}")
-            if width >= min_width:
-                return True
-            else:
-                logger.info(f"Image width {width}px is below minimum {min_width}px: {image_url}")
-                return False
-        
-        # If we can't determine width, assume it's acceptable
-        # (better to include than exclude)
-        logger.debug(f"Could not determine width for image, assuming acceptable: {image_url}")
-        return True
-    
-    def _extract_width_from_url(self, image_url: str) -> Optional[int]:
-        """Extract width from image URL parameters"""
-        if not image_url:
-            return None
-        
-        # Look for width parameters in URL
-        width_patterns = [
-            r'[?&]w=(\d+)',
-            r'[?&]width=(\d+)',
-            r'[?&]x=(\d+)',
-            r'_(\d+)x\d+\.',  # _800x600.jpg
-            r'(\d+)x\d+\.',   # 800x600.jpg
-            r'_(\d+)\.',      # _800.jpg
-            r'(\d+)\.',       # 800.jpg
-            # Handle widthxheight format in URL path (e.g., 300x300, 800x600)
-            r'(\d+)x\d+',     # 300x300, 800x600, etc.
-        ]
-        
-        for pattern in width_patterns:
-            match = re.search(pattern, image_url)
-            if match:
-                try:
-                    return int(match.group(1))
-                except (ValueError, IndexError):
-                    continue
-        
-        return None
-    
-    def _extract_width_from_img_tag(self, image_url: str) -> Optional[int]:
-        """
-        Extract width from img tag attributes in the HTML.
-        
-        Args:
-            image_url: Image URL to find in img tags
-            
-        Returns:
-            Width in pixels if found, None otherwise
-        """
-        if not image_url:
-            return None
-        
-        # Find img tags with this URL
-        img_tags = self.soup.find_all('img', src=image_url)
-        if not img_tags:
-            # Try with different URL variations
-            base_url = self._get_base_url_without_params(image_url)
-            img_tags = self.soup.find_all('img')
-            img_tags = [img for img in img_tags if self._urls_match(img.get('src', ''), base_url)]
-        
-        for img_tag in img_tags:
-            width = self._extract_width_from_img_tag_attributes(img_tag)
-            if width:
-                return width
-        
-        return None
-    
-    def _extract_width_from_img_tag_attributes(self, img_tag) -> Optional[int]:
-        """
-        Extract width from img tag attributes.
-        
-        Args:
-            img_tag: BeautifulSoup img tag element
-            
-        Returns:
-            Width in pixels if found, None otherwise
-        """
-        if not img_tag:
-            return None
-        
-        # Check width attribute
-        width_attr = img_tag.get('width')
-        if width_attr:
-            try:
-                return int(width_attr)
-            except (ValueError, TypeError):
-                pass
-        
-        # Check style attribute for width
-        style_attr = img_tag.get('style', '')
-        if style_attr:
-            width_match = re.search(r'width:\s*(\d+)px', style_attr)
-            if width_match:
-                try:
-                    return int(width_match.group(1))
-                except (ValueError, IndexError):
-                    pass
-        
-        # Check data attributes
-        for attr_name in ['data-width', 'data-original-width', 'data-src-width']:
-            width_attr = img_tag.get(attr_name)
-            if width_attr:
-                try:
-                    return int(width_attr)
-                except (ValueError, TypeError):
-                    pass
-        
-        return None
-    
-    def _extract_top_level_folder_from_url(self, url: str) -> Optional[str]:
-        """
-        Extract top-level folder pattern from image URL.
-        
-        Args:
-            url: Image URL
-            
-        Returns:
-            Folder pattern if found, None otherwise
-        """
-        if not url:
-            return None
-        
-        try:
-            parsed = urlparse(url)
-            path_parts = parsed.path.strip('/').split('/')
-            
-            if len(path_parts) >= 2:
-                # Return first two parts of path (e.g., "images/products")
-                return '/'.join(path_parts[:2])
-            elif len(path_parts) == 1:
-                # Return single path part
-                return path_parts[0]
-            else:
-                # Check if it's a subdomain
-                if self._is_image_subdomain(parsed.netloc):
-                    return parsed.netloc
-            
-            return None
-            
-        except Exception as e:
-            logger.debug(f"Error extracting folder pattern from URL {url}: {e}")
-            return None
-    
-    def _is_image_subdomain(self, netloc: str) -> bool:
-        """
-        Check if netloc is an image subdomain.
-        
-        Args:
-            netloc: Network location (domain)
-            
-        Returns:
-            True if it's an image subdomain, False otherwise
-        """
-        if not netloc:
-            return False
-        
-        netloc_lower = netloc.lower()
-        
-        # Common image subdomain patterns
-        image_subdomains = [
-            'images', 'img', 'cdn', 'static', 'assets', 'media',
-            'photos', 'pics', 'pictures', 'uploads', 'files'
-        ]
-        
-        # Check if any part of the domain contains image-related keywords
-        for subdomain in image_subdomains:
-            if subdomain in netloc_lower:
-                return True
-        
-        return False
-    
-    def _find_images_by_folder_patterns(self, folder_patterns: set) -> List[str]:
-        """
-        Find additional images in img tags that match the given folder patterns.
-        
-        Args:
-            folder_patterns: Set of folder patterns to search for
-            
-        Returns:
-            List of additional image URLs found
-        """
-        if not folder_patterns:
-            return []
-        
-        additional_images = []
-        img_tags = self.soup.find_all('img')
-        
-        for img_tag in img_tags:
-            src = img_tag.get('src', '')
-            if not src:
-                continue
-            
-            # Check if this image matches any of our folder patterns
-            for pattern in folder_patterns:
-                if pattern in src:
-                    additional_images.append(src)
-                    break
-        
-        return additional_images
-    
-    def _urls_match(self, url1: str, url2: str) -> bool:
-        """
-        Check if two URLs match (ignoring parameters).
-        
-        Args:
-            url1: First URL
-            url2: Second URL
-            
-        Returns:
-            True if URLs match, False otherwise
-        """
-        if not url1 or not url2:
-            return False
-        
-        # Get base URLs without parameters
-        base1 = self._get_base_url_without_params(url1)
-        base2 = self._get_base_url_without_params(url2)
-        
-        return base1 == base2
-    
-    def _get_base_url_without_params(self, url: str) -> str:
-        """
-        Get base URL without query parameters and fragments.
-        
-        Args:
-            url: URL to process
-            
-        Returns:
-            Base URL without parameters
-        """
-        if not url:
-            return ""
-        
-        try:
-            parsed = urlparse(url)
-            base_url = f"{parsed.scheme}://{parsed.netloc}{parsed.path}"
-            return base_url
-        except Exception:
-            return url 
+        return merged_rating 

@@ -315,7 +315,15 @@ class ScrapingService:
             # First, get HTML content using browser manager with retry logic
             self._update_task_status(task_id, TaskStatus.RUNNING, "Fetching page content")
             from app.browser_manager import browser_manager
-            html_content = await browser_manager.get_page_content_with_retry(url, proxy, user_agent, block_images)
+            
+            # Use asyncio.create_task with timeout to prevent blocking
+            try:
+                html_content = await asyncio.wait_for(
+                    browser_manager.get_page_content_with_retry(url, proxy, user_agent, block_images),
+                    timeout=settings.BROWSER_PAGE_FETCH_TIMEOUT / 1000.0  # Convert to seconds
+                )
+            except asyncio.TimeoutError:
+                raise Exception(f"Page content fetching timed out after {settings.BROWSER_PAGE_FETCH_TIMEOUT / 1000.0} seconds")
             
             # Detect platform based on URL and content
             self._update_task_status(task_id, TaskStatus.RUNNING, "Detecting e-commerce platform")
@@ -354,7 +362,12 @@ class ScrapingService:
             
             # Clean up browser resources
             try:
-                await browser_manager.cleanup()
+                await asyncio.wait_for(
+                    browser_manager.cleanup(),
+                    timeout=settings.BROWSER_CLEANUP_TIMEOUT / 1000.0  # Convert to seconds
+                )
+            except asyncio.TimeoutError:
+                logger.warning("Browser cleanup timed out")
             except Exception as cleanup_error:
                 logger.warning(f"Cleanup failed: {cleanup_error}")
             
@@ -367,7 +380,12 @@ class ScrapingService:
             
             # Clean up browser resources on error
             try:
-                await browser_manager.cleanup()
+                await asyncio.wait_for(
+                    browser_manager.cleanup(),
+                    timeout=settings.BROWSER_CLEANUP_TIMEOUT / 1000.0  # Convert to seconds
+                )
+            except asyncio.TimeoutError:
+                logger.warning("Browser cleanup timed out on error")
             except Exception as cleanup_error:
                 logger.warning(f"Cleanup failed on error: {cleanup_error}")
         

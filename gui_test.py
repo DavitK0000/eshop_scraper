@@ -219,7 +219,7 @@ class ScraperGUI:
             # Configure SSL verification based on checkbox
             verify_ssl = self.ssl_verify_var.get()
             
-            response = self.session.post(api_url, json=request_data, timeout=30, verify=verify_ssl)
+            response = self.session.post(api_url, json=request_data, timeout=60, verify=verify_ssl)
             response.raise_for_status()
             
             data = response.json()
@@ -265,9 +265,9 @@ class ScraperGUI:
         threading.Thread(target=self._poll_task_status, args=(task_id,), daemon=True).start()
     
     def _poll_task_status(self, task_id):
-        """Poll task status in background thread"""
+        """Poll for task status in a separate thread"""
         start_time = datetime.now()
-        max_wait_time = 300  # 5 minutes
+        max_wait_time = 600  # 10 minutes (increased from 5 minutes)
         
         while self.is_polling:
             try:
@@ -281,11 +281,11 @@ class ScraperGUI:
                 if error:
                     raise Exception(f"Invalid endpoint URL: {error}")
                 
-                # Get task status
+                # Get task status with increased timeout
                 api_url = f"{endpoint_url}/tasks/{task_id}"
                 verify_ssl = self.ssl_verify_var.get()
                 
-                response = self.session.get(api_url, timeout=10, verify=verify_ssl)
+                response = self.session.get(api_url, timeout=60, verify=verify_ssl)  # Increased from 30s to 60s
                 response.raise_for_status()
                 
                 data = response.json()
@@ -305,7 +305,7 @@ class ScraperGUI:
                 elif status in ['pending', 'running']:
                     # Task still in progress, wait and try again
                     import time
-                    time.sleep(2)
+                    time.sleep(3)  # Increased from 2s to 3s to reduce server load
                 else:
                     # Unknown status
                     self.root.after(0, lambda: self.status_var.set(f"Unknown status: {status}"))
@@ -315,6 +315,13 @@ class ScraperGUI:
                 error_msg = f"SSL Certificate Error during polling: {str(e)}"
                 self.root.after(0, lambda: self._handle_task_failure(error_msg))
                 break
+            except requests.exceptions.Timeout as e:
+                # Handle timeout specifically - don't fail immediately
+                logger.warning(f"Polling timeout for task {task_id}: {str(e)}")
+                self.root.after(0, lambda: self.status_var.set(f"Task {task_id}: Polling timeout, retrying..."))
+                import time
+                time.sleep(5)  # Wait longer before retrying after timeout
+                continue
             except requests.exceptions.RequestException as e:
                 error_msg = f"Polling request failed: {str(e)}"
                 self.root.after(0, lambda: self._handle_task_failure(error_msg))

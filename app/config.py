@@ -256,6 +256,14 @@ class Settings:
     BROWSER_DOM_LOAD_TIMEOUT: int = int(os.getenv("BROWSER_DOM_LOAD_TIMEOUT", "10000"))
     BROWSER_ADDITIONAL_WAIT: int = int(os.getenv("BROWSER_ADDITIONAL_WAIT", "2000"))
     BROWSER_MAX_RETRIES: int = int(os.getenv("BROWSER_MAX_RETRIES", "2"))
+    BROWSER_PAGE_COMPLETION_TIMEOUT: int = int(os.getenv("BROWSER_PAGE_COMPLETION_TIMEOUT", "15000"))
+    
+    # Browser Operation Timeouts (new settings to prevent blocking)
+    BROWSER_SCROLL_TIMEOUT: int = int(os.getenv("BROWSER_SCROLL_TIMEOUT", "5000"))  # 5 seconds per scroll
+    BROWSER_SCROLL_WAIT_TIMEOUT: int = int(os.getenv("BROWSER_SCROLL_WAIT_TIMEOUT", "2000"))  # 2 seconds wait after scroll
+    BROWSER_CLEANUP_TIMEOUT: int = int(os.getenv("BROWSER_CLEANUP_TIMEOUT", "10000"))  # 10 seconds for cleanup
+    BROWSER_PAGE_FETCH_TIMEOUT: int = int(os.getenv("BROWSER_PAGE_FETCH_TIMEOUT", "120000"))  # 2 minutes for page fetch
+    BROWSER_ENABLE_SCROLLING: bool = os.getenv("BROWSER_ENABLE_SCROLLING", "True").lower() == "true"  # Enable/disable scrolling
     
     # Stealth Settings
     ENABLE_STEALTH_MODE: bool = os.getenv("ENABLE_STEALTH_MODE", "True").lower() == "true"
