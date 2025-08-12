@@ -9,12 +9,12 @@ This module provides video processing capabilities including:
 - Converting to base64 format
 """
 
-import asyncio
 import base64
 import os
 import tempfile
 import uuid
 import subprocess
+import threading
 from datetime import datetime
 from typing import Dict, Any, Optional, List
 import httpx
@@ -30,12 +30,13 @@ class VideoProcessingService:
     
     def __init__(self):
         self.tasks: Dict[str, Dict[str, Any]] = {}
+        self._active_threads: Dict[str, threading.Thread] = {}
     
     # ============================================================================
     # Public API Methods
     # ============================================================================
     
-    async def process_video(
+    def process_video(
         self,
         video_urls: List[str],
         audio_data: str,
@@ -60,10 +61,16 @@ class VideoProcessingService:
         # Create task entry
         self._create_task(task_id)
         
-        # Start processing in background
-        asyncio.create_task(self._process_video_task(
-            task_id, video_urls, audio_data, subtitle_text, output_resolution, watermark
-        ))
+        # Start processing in background thread
+        thread = threading.Thread(
+            target=self._process_video_task,
+            args=(task_id, video_urls, audio_data, subtitle_text, output_resolution, watermark),
+            daemon=True
+        )
+        thread.start()
+        
+        # Store the thread reference
+        self._active_threads[task_id] = thread
         
         return VideoProcessResponse(
             task_id=task_id,
@@ -79,11 +86,37 @@ class VideoProcessingService:
         """Get all tasks."""
         return self.tasks.copy()
     
+    def cleanup(self):
+        """Clean up all active threads and resources"""
+        try:
+            # Wait for all active threads to complete
+            for task_id, thread in self._active_threads.items():
+                if thread.is_alive():
+                    logger.info(f"Waiting for task {task_id} to complete...")
+                    thread.join(timeout=5.0)  # Wait up to 5 seconds
+            
+            # Clear the threads dictionary
+            self._active_threads.clear()
+            
+            # Clear all tasks
+            self.tasks.clear()
+            
+            logger.info("Video service cleanup completed")
+        except Exception as e:
+            logger.error(f"Error during video service cleanup: {e}")
+    
+    def __del__(self):
+        """Destructor to ensure cleanup"""
+        try:
+            self.cleanup()
+        except:
+            pass
+    
     # ============================================================================
     # Main Processing Pipeline
     # ============================================================================
     
-    async def _process_video_task(
+    def _process_video_task(
         self,
         task_id: str,
         video_urls: List[str],
@@ -99,7 +132,7 @@ class VideoProcessingService:
             with tempfile.TemporaryDirectory() as temp_dir:
                 # Step 1: Download videos
                 self._update_task_status(task_id, TaskStatus.RUNNING, "Downloading videos")
-                video_files = await self._download_videos(video_urls, temp_dir)
+                video_files = self._download_videos(video_urls, temp_dir)
                 
                 # Step 2: Save audio data
                 self._update_task_status(task_id, TaskStatus.RUNNING, "Processing audio")
@@ -145,7 +178,7 @@ class VideoProcessingService:
     # Video Download Methods
     # ============================================================================
     
-    async def _download_videos(self, video_urls: List[str], temp_dir: str) -> List[str]:
+    def _download_videos(self, video_urls: List[str], temp_dir: str) -> List[str]:
         """Download videos from URLs."""
         
         # Remove duplicate URLs
@@ -156,17 +189,17 @@ class VideoProcessingService:
         logger.info(f"Downloading {len(unique_urls)} videos from URLs")
         
         video_files = []
-        async with httpx.AsyncClient() as client:
+        with httpx.Client() as client:
             for i, url in enumerate(unique_urls):
-                video_file = await self._download_single_video(client, url, temp_dir, i)
+                video_file = self._download_single_video(client, url, temp_dir, i)
                 video_files.append(video_file)
         
         logger.info(f"Successfully downloaded {len(video_files)} videos")
         return video_files
     
-    async def _download_single_video(
+    def _download_single_video(
         self, 
-        client: httpx.AsyncClient, 
+        client: httpx.Client, 
         url: str, 
         temp_dir: str, 
         index: int
@@ -174,7 +207,7 @@ class VideoProcessingService:
         """Download a single video from URL."""
         try:
             logger.info(f"Downloading video {index+1}: {url}")
-            response = await client.get(url)
+            response = client.get(url)
             response.raise_for_status()
             
             video_file = os.path.join(temp_dir, f"video_{index}.mp4")

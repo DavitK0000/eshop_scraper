@@ -144,6 +144,55 @@ class AmazonExtractor(BaseExtractor):
                         else:
                             specs[key] = value
         
+        # Additional table selectors for specifications
+        additional_table_selectors = [
+            'table#productDetails_techSpec_section_1',
+            'table#productDetails_techSpec_section_2',
+            'table#productDetails_techSpec_section_3',
+            'table#productDetails_detailBullets_sections1',
+            'table#productDetails_detailBullets_sections2',
+            'table#productDetails_detailBullets_sections3',
+            'table.aplus-v2',
+            'table.aplus',
+            'table.prodDetTable',
+            'table#prodDetails',
+            'table#technicalSpecifications_section_1',
+            'table#technicalSpecifications_section_2',
+            'table#technicalSpecifications_section_3',
+            'table#productDetailsTable',
+            'table#specs-table',
+            'table.specs-table',
+            'table.tech-specs',
+            'table.product-specs',
+            'table#asinDetailBullets_feature_div table',
+            'table#detail-bullets table',
+            'table#feature-bullets table',
+            'table.a-expander-content table',
+            'table.a-expander-partial table',
+            'table#aplus table',
+            'table#aplus-3p table',
+            'table#aplus-3p-content table'
+        ]
+        
+        # Extract from additional table selectors
+        for selector in additional_table_selectors:
+            tables = self.soup.select(selector)
+            for table in tables:
+                spec_rows = table.select('tbody tr, tr')
+                for row in spec_rows:
+                    key_elem = row.select_one('th, td:first-child, .a-text-bold, .a-list-item .a-text-bold')
+                    value_elem = row.select_one('td:last-child, .a-list-item span:not(.a-text-bold), .a-list-item')
+                    
+                    if key_elem and value_elem:
+                        key = sanitize_text(key_elem.get_text())
+                        value = sanitize_text(value_elem.get_text())
+                        if key and value and key != value:  # Avoid duplicate key-value pairs
+                            # If key already exists, append the new value
+                            if key in specs:
+                                specs[key] = specs[key] + " " + value
+                            else:
+                                specs[key] = value
+        
         # If no specifications found, try alternative method
         if not specs:
             detail_bullets = self.soup.select('div#detailBullets_feature_div>ul>li')
@@ -157,19 +206,34 @@ class AmazonExtractor(BaseExtractor):
                     if key and value:
                         specs[key] = value
         
-        # Third specification extraction method
-        if not specs:
-            tech_spec_table = self.soup.select_one('table#productDetails_techSpec_section_1')
-            if tech_spec_table:
-                spec_rows = tech_spec_table.select('tbody tr')
-                for row in spec_rows:
-                    key_elem = row.select_one('th')
-                    value_elem = row.select_one('td')
-                    
-                    if key_elem and value_elem:
-                        key = sanitize_text(key_elem.get_text())
-                        value = sanitize_text(value_elem.get_text())
-                        if key and value:
-                            specs[key] = value
+        # Additional bullet point selectors
+        additional_bullet_selectors = [
+            'div#feature-bullets ul li',
+            'div#feature-bullets_feature_div ul li',
+            'div#feature-bullets_feature_div ul.a-unordered-list li',
+            'div#feature-bullets_feature_div ul.a-list-unordered li',
+            'div#feature-bullets_feature_div ul.a-list-ordered li',
+            'div#feature-bullets_feature_div ul.a-vertical-stack li',
+            'div#feature-bullets_feature_div ul.a-spacing-base li',
+            'div#feature-bullets_feature_div ul.a-spacing-mini li',
+            'div#feature-bullets_feature_div ul.a-spacing-none li',
+            'div#feature-bullets_feature_div ul.a-spacing-small li',
+            'div#feature-bullets_feature_div ul.a-spacing-medium li',
+            'div#feature-bullets_feature_div ul.a-spacing-large li',
+            'div#feature-bullets_feature_div ul.a-spacing-extra-large li'
+        ]
+        
+        # Extract from additional bullet point selectors
+        for selector in additional_bullet_selectors:
+            bullets = self.soup.select(selector)
+            for bullet in bullets:
+                key_elem = bullet.select_one('span.a-text-bold, .a-text-bold, strong, b')
+                value_elem = bullet.select_one('span:not(.a-text-bold), :not(.a-text-bold)')
+                
+                if key_elem and value_elem:
+                    key = sanitize_text(key_elem.get_text())
+                    value = sanitize_text(value_elem.get_text())
+                    if key and value and key != value:
+                        specs[key] = value
         
         return specs 
