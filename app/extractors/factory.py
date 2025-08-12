@@ -9,6 +9,8 @@ from app.extractors.bol import BolExtractor
 from app.extractors.jd import JDExtractor
 from app.extractors.cdiscount import CDiscountExtractor
 from app.extractors.woocommerce import WooCommerceExtractor
+from app.extractors.bigcommerce import BigcommerceExtractor
+from app.extractors.squarespace import SquarespaceExtractor
 from app.logging_config import get_logger
 
 logger = get_logger(__name__)
@@ -27,6 +29,8 @@ class ExtractorFactory:
         'jd': JDExtractor,
         'cdiscount': CDiscountExtractor,
         'woocommerce': WooCommerceExtractor,
+        'bigcommerce': BigcommerceExtractor,
+        'squarespace': SquarespaceExtractor,
     }
     
     @classmethod

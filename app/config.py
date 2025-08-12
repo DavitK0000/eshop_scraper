@@ -68,6 +68,10 @@ class Settings:
         "otto.de": "firefox",
         "bol.com": "chrome",
         "cdiscount.com": "firefox",
+        
+        # Bigcommerce and Squarespace - use Chrome for better compatibility
+        "bigcommerce.com": "chrome",
+        "squarespace.com": "chrome",
     }
     
     # Browser-specific configurations

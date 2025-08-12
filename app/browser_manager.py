@@ -1,6 +1,6 @@
-import asyncio
+import time
 from typing import Optional, Tuple
-from playwright.async_api import async_playwright, Browser, Page, BrowserContext
+from playwright.sync_api import sync_playwright, Browser, Page, BrowserContext
 from app.config import settings
 from app.logging_config import get_logger
 
@@ -15,7 +15,7 @@ class BrowserManager:
         self.context: Optional[BrowserContext] = None
         self.playwright = None
         
-    async def setup_browser(self, proxy: Optional[str] = None, user_agent: Optional[str] = None) -> Tuple[Browser, BrowserContext, Page]:
+    def setup_browser(self, proxy: Optional[str] = None, user_agent: Optional[str] = None) -> Tuple[Browser, BrowserContext, Page]:
         """
         Setup Chrome browser with optional proxy and user agent
         
@@ -28,9 +28,9 @@ class BrowserManager:
         """
         try:
             # Clean up existing browser if any
-            await self.cleanup()
+            self.cleanup()
             
-            self.playwright = await async_playwright().start()
+            self.playwright = sync_playwright().start()
             
             # Chrome launch arguments for stealth and performance
             launch_args = [
@@ -95,7 +95,7 @@ class BrowserManager:
                 launch_args.append(f'--proxy-server={proxy}')
             
             # Launch Chrome browser with configurable headless setting
-            self.browser = await self.playwright.chromium.launch(
+            self.browser = self.playwright.chromium.launch(
                 headless=settings.PLAYWRIGHT_HEADLESS,
                 args=launch_args
             )
@@ -117,10 +117,10 @@ class BrowserManager:
                 'color_scheme': 'light',
             }
             
-            self.context = await self.browser.new_context(**context_options)
+            self.context = self.browser.new_context(**context_options)
             
             # Create page
-            page = await self.context.new_page()
+            page = self.context.new_page()
             
             # Set timeouts
             page.set_default_timeout(settings.PLAYWRIGHT_TIMEOUT)
@@ -131,10 +131,10 @@ class BrowserManager:
             
         except Exception as e:
             logger.error(f"Failed to setup Chrome browser: {e}")
-            await self.cleanup()
+            self.cleanup()
             raise
     
-    async def create_page(self, user_agent: Optional[str] = None, block_images: bool = True) -> Page:
+    def create_page(self, user_agent: Optional[str] = None, block_images: bool = True) -> Page:
         """
         Create a new page with configured settings
         
@@ -146,26 +146,26 @@ class BrowserManager:
             Page instance
         """
         if not self.browser or not self.context:
-            await self.setup_browser()
-            return self.context.pages[0] if self.context.pages else await self.context.new_page()
+            self.setup_browser()
+            return self.context.pages[0] if self.context.pages else self.context.new_page()
         
-        page = await self.context.new_page()
+        page = self.context.new_page()
         
         # Block images and videos if requested
         if block_images:
-            await page.route("**/*", self._block_resources)
+            page.route("**/*", self._block_resources)
         
         return page
     
-    async def _block_resources(self, route):
+    def _block_resources(self, route):
         """Block image and video resources"""
         resource_type = route.request.resource_type
         if resource_type in ['image', 'media', 'font']:
-            await route.abort()
+            route.abort()
         else:
-            await route.continue_()
+            route.continue_()
     
-    async def get_page_content(self, url: str, proxy: Optional[str] = None, user_agent: Optional[str] = None, block_images: bool = True) -> str:
+    def get_page_content(self, url: str, proxy: Optional[str] = None, user_agent: Optional[str] = None, block_images: bool = True) -> str:
         """
         Get HTML content from a URL
         
@@ -182,14 +182,14 @@ class BrowserManager:
         try:
             # Setup browser if needed
             if not self.browser:
-                await self.setup_browser(proxy=proxy, user_agent=user_agent)
+                self.setup_browser(proxy=proxy, user_agent=user_agent)
             
             # Create page
-            page = await self.create_page(user_agent, block_images)
+            page = self.create_page(user_agent, block_images)
             
             # Navigate to URL
             logger.info(f"Navigating to: {url}")
-            response = await page.goto(url, wait_until='domcontentloaded')
+            response = page.goto(url, wait_until='domcontentloaded')
             
             if not response or response.status >= 400:
                 raise Exception(f"Failed to load page: {response.status if response else 'No response'}")
@@ -197,27 +197,27 @@ class BrowserManager:
             # Wait for page to load with more robust approach
             try:
                 # First try to wait for network idle with shorter timeout
-                await page.wait_for_load_state('networkidle', timeout=settings.BROWSER_NETWORK_IDLE_TIMEOUT)
+                page.wait_for_load_state('networkidle', timeout=settings.BROWSER_NETWORK_IDLE_TIMEOUT)
             except Exception:
                 # If network idle fails, wait for DOM content to be ready
                 logger.info("Network idle timeout, waiting for DOM content instead")
-                await page.wait_for_load_state('domcontentloaded', timeout=settings.BROWSER_DOM_LOAD_TIMEOUT)
+                page.wait_for_load_state('domcontentloaded', timeout=settings.BROWSER_DOM_LOAD_TIMEOUT)
                 
                 # Additional wait for any critical elements to load
                 try:
-                    await page.wait_for_timeout(settings.BROWSER_ADDITIONAL_WAIT)
+                    page.wait_for_timeout(settings.BROWSER_ADDITIONAL_WAIT)
                 except Exception:
                     pass  # Ignore timeout on this additional wait
             
             # Wait for all JavaScript execution to complete and page to be fully ready
-            await self._wait_for_page_completion(page)
+            self._wait_for_page_completion(page)
             
             # Scroll to bottom to trigger lazy loading of reviews/ratings
             if settings.BROWSER_ENABLE_SCROLLING:
-                await self._scroll_to_trigger_lazy_loading(page)
+                self._scroll_to_trigger_lazy_loading(page)
             
             # Get HTML content
-            html_content = await page.content()
+            html_content = page.content()
             
             logger.info(f"Successfully fetched content from {url} (length: {len(html_content)})")
             return html_content
@@ -234,9 +234,9 @@ class BrowserManager:
             raise
         finally:
             if page:
-                await page.close()
+                page.close()
 
-    async def _wait_for_page_completion(self, page: Page, timeout: int = None):
+    def _wait_for_page_completion(self, page: Page, timeout: int = None):
         """
         Wait for the page to be completely loaded and all JavaScript execution to finish.
         Universal solution that works for all sites and dynamic content.
@@ -251,48 +251,39 @@ class BrowserManager:
         try:
             logger.info("Waiting for page completion and JavaScript execution...")
             
-            # Use asyncio.create_task to prevent blocking the event loop
-            async def wait_for_ready_state():
-                await page.wait_for_function(
-                    "() => document.readyState === 'complete'",
-                    timeout=timeout
-                )
+            # Wait for ready state
+            page.wait_for_function(
+                "() => document.readyState === 'complete'",
+                timeout=timeout
+            )
             
-            async def wait_for_network_idle():
-                try:
-                    await page.wait_for_load_state('networkidle', timeout=5000)
-                except Exception:
-                    logger.debug("Network idle timeout, continuing anyway")
+            # Wait for network idle
+            try:
+                page.wait_for_load_state('networkidle', timeout=5000)
+            except Exception:
+                logger.debug("Network idle timeout, continuing anyway")
             
-            async def wait_for_js_execution():
-                await page.wait_for_function(
-                    """
-                    () => {
-                        return new Promise((resolve) => {
-                            // Wait for any pending JavaScript execution
-                            setTimeout(() => {
-                                // Simple check: ensure page is stable and no loading indicators
-                                const isStable = !document.querySelector('[style*="animation"]') && 
-                                               !document.querySelector('[class*="loading"]') &&
-                                               !document.querySelector('[class*="spinner"]');
-                                resolve(isStable);
-                            }, 2000);
-                        });
-                    }
-                    """,
-                    timeout=timeout
-                )
-            
-            # Execute all waits concurrently to reduce total time
-            await asyncio.gather(
-                wait_for_ready_state(),
-                wait_for_network_idle(),
-                wait_for_js_execution(),
-                return_exceptions=True
+            # Wait for JavaScript execution
+            page.wait_for_function(
+                """
+                () => {
+                    return new Promise((resolve) => {
+                        // Wait for any pending JavaScript execution
+                        setTimeout(() => {
+                            // Simple check: ensure page is stable and no loading indicators
+                            const isStable = !document.querySelector('[style*="animation"]') && 
+                                           !document.querySelector('[class*="loading"]') &&
+                                           !document.querySelector('[class*="spinner"]');
+                            resolve(isStable);
+                        }, 2000);
+                    });
+                }
+                """,
+                timeout=timeout
             )
             
             # Final wait to ensure all content is rendered
-            await asyncio.sleep(2)
+            time.sleep(2)
                 
             logger.info("Page completion wait finished - all content should be loaded")
             
@@ -301,7 +292,7 @@ class BrowserManager:
             # Don't fail the entire request if page completion wait fails
             pass
 
-    async def _scroll_to_trigger_lazy_loading(self, page: Page):
+    def _scroll_to_trigger_lazy_loading(self, page: Page):
         """
         Scroll to multiple positions to trigger lazy loading of content like reviews and ratings.
         Different sites trigger lazy loading at different scroll positions.
@@ -310,8 +301,8 @@ class BrowserManager:
             logger.info("Scrolling to multiple positions to trigger lazy loading...")
             
             # Get page height
-            page_height = await page.evaluate("document.body.scrollHeight")
-            viewport_height = await page.evaluate("window.innerHeight")
+            page_height = page.evaluate("document.body.scrollHeight")
+            viewport_height = page.evaluate("window.innerHeight")
             
             # Scroll to multiple positions to trigger lazy loading
             scroll_positions = [0.25, 0.5, 0.75, 0.9, 1.0]  # 25%, 50%, 75%, 90%, 100%
@@ -321,45 +312,33 @@ class BrowserManager:
                 
                 # Scroll to position with timeout
                 try:
-                    await asyncio.wait_for(
-                        page.evaluate(f"""
-                            window.scrollTo({{
-                                top: {scroll_y},
-                                behavior: 'smooth'
-                            }});
-                        """),
-                        timeout=settings.BROWSER_SCROLL_TIMEOUT / 1000.0  # Convert to seconds
-                    )
+                    page.evaluate(f"""
+                        window.scrollTo({{
+                            top: {scroll_y},
+                            behavior: 'smooth'
+                        }});
+                    """)
                     
-                    # Wait for lazy loading to trigger with timeout
-                    await asyncio.wait_for(
-                        page.wait_for_timeout(1500),
-                        timeout=settings.BROWSER_SCROLL_WAIT_TIMEOUT / 1000.0  # Convert to seconds
-                    )
+                    # Wait for lazy loading to trigger
+                    page.wait_for_timeout(1500)
                     
                     logger.debug(f"Scrolled to {position * 100}% of page")
-                except asyncio.TimeoutError:
+                except Exception:
                     logger.warning(f"Scroll timeout at {position * 100}% position")
                     continue
             
-            # Scroll back to top with timeout
+            # Scroll back to top
             try:
-                await asyncio.wait_for(
-                    page.evaluate("""
-                        window.scrollTo({
-                            top: 0,
-                            behavior: 'smooth'
-                        });
-                    """),
-                    timeout=settings.BROWSER_SCROLL_TIMEOUT / 1000.0  # Convert to seconds
-                )
+                page.evaluate("""
+                    window.scrollTo({
+                        top: 0,
+                        behavior: 'smooth'
+                    });
+                """)
                 
                 # Wait for any triggered content to load
-                await asyncio.wait_for(
-                    page.wait_for_timeout(1000),
-                    timeout=settings.BROWSER_SCROLL_WAIT_TIMEOUT / 1000.0  # Convert to seconds
-                )
-            except asyncio.TimeoutError:
+                page.wait_for_timeout(1000)
+            except Exception:
                 logger.warning("Scroll back to top timeout")
             
             logger.info("Multi-position scroll completed - lazy content should be loaded")
@@ -369,26 +348,26 @@ class BrowserManager:
             # Don't fail if scroll fails
             pass
     
-    async def cleanup(self):
+    def cleanup(self):
         """Clean up browser resources"""
         try:
             if self.context:
-                await self.context.close()
+                self.context.close()
                 self.context = None
             
             if self.browser:
-                await self.browser.close()
+                self.browser.close()
                 self.browser = None
             
             if self.playwright:
-                await self.playwright.stop()
+                self.playwright.stop()
                 self.playwright = None
                 
             logger.info("Chrome browser cleanup completed")
         except Exception as e:
             logger.error(f"Error during browser cleanup: {e}")
 
-    async def get_page_content_with_retry(self, url: str, proxy: Optional[str] = None, user_agent: Optional[str] = None, block_images: bool = True, max_retries: int = None) -> str:
+    def get_page_content_with_retry(self, url: str, proxy: Optional[str] = None, user_agent: Optional[str] = None, block_images: bool = True, max_retries: int = None) -> str:
         """
         Get HTML content with retry logic for better reliability
         
@@ -410,18 +389,18 @@ class BrowserManager:
         for attempt in range(max_retries + 1):
             try:
                 logger.info(f"Attempt {attempt + 1}/{max_retries + 1} to fetch content from {url}")
-                return await self.get_page_content(url, proxy, user_agent, block_images)
+                return self.get_page_content(url, proxy, user_agent, block_images)
             except Exception as e:
                 last_error = e
                 logger.warning(f"Attempt {attempt + 1} failed: {e}")
                 
                 if attempt < max_retries:
                     # Wait before retrying
-                    await asyncio.sleep(2 ** attempt)  # Exponential backoff
+                    time.sleep(2 ** attempt)  # Exponential backoff
                     
                     # Clean up and recreate browser for retry
                     try:
-                        await self.cleanup()
+                        self.cleanup()
                     except:
                         pass
                 else:

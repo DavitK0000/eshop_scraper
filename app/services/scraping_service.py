@@ -1,4 +1,5 @@
-import asyncio
+import threading
+import time
 import re
 from typing import Optional, Dict, Any, List, Tuple
 from datetime import datetime
@@ -19,38 +20,91 @@ class ScrapingService:
         
         # Platform detection indicators for HTML analysis
         self.platform_indicators = {
-            'shopify': {
-                'patterns': [
-                    r'Shopify\.theme',
-                    r'shopify-section',
-                    r'shopify\.analytics',
-                    r'shopify\.checkout',
-                    r'Shopify\.routes',
-                    r'Shopify\.locale',
-                    r'shop\.myshopify\.com',
-                    r'window\.Shopify',
-                    r'Shopify\.money_format',
-                    r'Shopify\.country',
-                    r'ShopifyAnalytics',
-                    r'cdn\.shopify\.com',
-                    r'shopifycloud\.com',
-                ],
-                'meta_tags': [
-                    'shopify-digital-wallet',
-                    'shopify-checkout-api-token',
-                    'shopify-platform',
-                ],
-                'script_sources': [
-                    'cdn.shopify.com',
-                    'shopifycloud.com',
-                    'monorail-edge.shopifysvc.com',
-                ],
-                'css_classes': [
-                    'shopify-section',
-                    'shopify-block',
-                    'shopify-payment-button',
-                ],
-            },
+                            'shopify': {
+                    'patterns': [
+                        r'Shopify\.theme',
+                        r'shopify-section',
+                        r'shopify\.analytics',
+                        r'shopify\.checkout',
+                        r'Shopify\.routes',
+                        r'Shopify\.locale',
+                        r'shop\.myshopify\.com',
+                        r'window\.Shopify',
+                        r'Shopify\.money_format',
+                        r'Shopify\.country',
+                        r'ShopifyAnalytics',
+                        r'cdn\.shopify\.com',
+                        r'shopifycloud\.com',
+                    ],
+                    'meta_tags': [
+                        'shopify-digital-wallet',
+                        'shopify-checkout-api-token',
+                        'shopify-platform',
+                    ],
+                    'script_sources': [
+                        'cdn.shopify.com',
+                        'shopifycloud.com',
+                        'monorail-edge.shopifysvc.com',
+                    ],
+                    'css_classes': [
+                        'shopify-section',
+                        'shopify-block',
+                        'shopify-payment-button',
+                    ],
+                },
+                'bigcommerce': {
+                    'patterns': [
+                        r'window\.product_attributes',
+                        r'window\.BCData',
+                        r'window\.product',
+                        r'BigCommerce',
+                        r'bigcommerce',
+                        r'BC\.',
+                        r'bc\.',
+                    ],
+                    'meta_tags': [
+                        'bigcommerce-platform',
+                        'bc-platform',
+                    ],
+                    'script_sources': [
+                        'cdn.bigcommerce.com',
+                        'bigcommerce.com',
+                        'api.bigcommerce.com',
+                    ],
+                    'css_classes': [
+                        'productView',
+                        'productView-title',
+                        'productView-price',
+                        'productView-description',
+                        'productView-image',
+                    ],
+                },
+                'squarespace': {
+                    'patterns': [
+                        r'window\.Squarespace',
+                        r'window\.SQ',
+                        r'window\.SQUARESpace_CONTEXT',
+                        r'Squarespace',
+                        r'SQ\.',
+                        r'sq\.',
+                    ],
+                    'meta_tags': [
+                        'squarespace-platform',
+                        'sq-platform',
+                    ],
+                    'script_sources': [
+                        'cdn.squarespace.com',
+                        'squarespace.com',
+                        'api.squarespace.com',
+                    ],
+                    'css_classes': [
+                        'sqs-product',
+                        'product-title',
+                        'product-price',
+                        'product-description',
+                        'product-image',
+                    ],
+                },
             'woocommerce': {
                 'patterns': [
                     r'wp-content\/plugins\/woocommerce',
@@ -233,7 +287,7 @@ class ScrapingService:
     # PUBLIC API METHODS
     # ============================================================================
     
-    async def start_scraping_task(
+    def start_scraping_task(
         self,
         url: str,
         force_refresh: bool = False,
@@ -242,7 +296,7 @@ class ScrapingService:
         block_images: bool = True
     ) -> ScrapeResponse:
         """
-        Start a scraping task asynchronously
+        Start a scraping task asynchronously using threads
         
         Args:
             url: Product URL to scrape
@@ -273,10 +327,18 @@ class ScrapingService:
             'response': response
         }
         
-        logger.info(f"Started scraping task {task_id} for {url}")
+        # Start scraping in a separate thread
+        thread = threading.Thread(
+            target=self._execute_scraping_task_thread,
+            args=(task_id, url, force_refresh, proxy, user_agent, block_images),
+            daemon=True
+        )
+        thread.start()
+        
+        logger.info(f"Started scraping task {task_id} for {url} in thread")
         return response
 
-    async def execute_scraping_task(
+    def _execute_scraping_task_thread(
         self,
         task_id: str,
         url: str,
@@ -286,7 +348,7 @@ class ScrapingService:
         block_images: bool = True
     ):
         """
-        Execute the actual scraping task in the background
+        Execute the actual scraping task in a separate thread
         
         Args:
             task_id: The task ID to execute
@@ -316,14 +378,22 @@ class ScrapingService:
             self._update_task_status(task_id, TaskStatus.RUNNING, "Fetching page content")
             from app.browser_manager import browser_manager
             
-            # Use asyncio.create_task with timeout to prevent blocking
+            # Use timeout logic to prevent blocking
+            start_time = time.time()
+            timeout_seconds = settings.BROWSER_PAGE_FETCH_TIMEOUT / 1000.0
+            
             try:
-                html_content = await asyncio.wait_for(
-                    browser_manager.get_page_content_with_retry(url, proxy, user_agent, block_images),
-                    timeout=settings.BROWSER_PAGE_FETCH_TIMEOUT / 1000.0  # Convert to seconds
-                )
-            except asyncio.TimeoutError:
-                raise Exception(f"Page content fetching timed out after {settings.BROWSER_PAGE_FETCH_TIMEOUT / 1000.0} seconds")
+                html_content = browser_manager.get_page_content_with_retry(url, proxy, user_agent, block_images)
+                
+                # Check if we exceeded timeout
+                if time.time() - start_time > timeout_seconds:
+                    raise Exception(f"Page content fetching timed out after {timeout_seconds} seconds")
+                    
+            except Exception as e:
+                if time.time() - start_time > timeout_seconds:
+                    raise Exception(f"Page content fetching timed out after {timeout_seconds} seconds")
+                else:
+                    raise e
             
             # Detect platform based on URL and content
             self._update_task_status(task_id, TaskStatus.RUNNING, "Detecting e-commerce platform")
@@ -362,12 +432,15 @@ class ScrapingService:
             
             # Clean up browser resources
             try:
-                await asyncio.wait_for(
-                    browser_manager.cleanup(),
-                    timeout=settings.BROWSER_CLEANUP_TIMEOUT / 1000.0  # Convert to seconds
-                )
-            except asyncio.TimeoutError:
-                logger.warning("Browser cleanup timed out")
+                start_cleanup_time = time.time()
+                cleanup_timeout = settings.BROWSER_CLEANUP_TIMEOUT / 1000.0
+                
+                browser_manager.cleanup()
+                
+                # Check if cleanup exceeded timeout
+                if time.time() - start_cleanup_time > cleanup_timeout:
+                    logger.warning("Browser cleanup timed out")
+                    
             except Exception as cleanup_error:
                 logger.warning(f"Cleanup failed: {cleanup_error}")
             
@@ -380,18 +453,21 @@ class ScrapingService:
             
             # Clean up browser resources on error
             try:
-                await asyncio.wait_for(
-                    browser_manager.cleanup(),
-                    timeout=settings.BROWSER_CLEANUP_TIMEOUT / 1000.0  # Convert to seconds
-                )
-            except asyncio.TimeoutError:
-                logger.warning("Browser cleanup timed out on error")
+                start_cleanup_time = time.time()
+                cleanup_timeout = settings.BROWSER_CLEANUP_TIMEOUT / 1000.0
+                
+                browser_manager.cleanup()
+                
+                # Check if cleanup exceeded timeout
+                if time.time() - start_cleanup_time > cleanup_timeout:
+                    logger.warning("Browser cleanup timed out on error")
+                    
             except Exception as cleanup_error:
                 logger.warning(f"Cleanup failed on error: {cleanup_error}")
         
         logger.info(f"Completed execute_scraping_task for task_id: {task_id}")
 
-    async def scrape_product(
+    def scrape_product(
         self,
         url: str,
         force_refresh: bool = False,
@@ -447,7 +523,7 @@ class ScrapingService:
             # First, get HTML content using browser manager
             self._update_task_status(task_id, TaskStatus.RUNNING, "Fetching page content")
             from app.browser_manager import browser_manager
-            html_content = await browser_manager.get_page_content_with_retry(url, proxy, user_agent, block_images)
+            html_content = browser_manager.get_page_content_with_retry(url, proxy, user_agent, block_images)
             
             # Detect platform based on URL and content
             self._update_task_status(task_id, TaskStatus.RUNNING, "Detecting e-commerce platform")
@@ -482,7 +558,7 @@ class ScrapingService:
             
             # Clean up browser resources
             try:
-                await browser_manager.cleanup()
+                browser_manager.cleanup()
             except Exception as cleanup_error:
                 logger.warning(f"Cleanup failed: {cleanup_error}")
             
@@ -501,7 +577,7 @@ class ScrapingService:
             
             # Clean up browser resources on error
             try:
-                await browser_manager.cleanup()
+                browser_manager.cleanup()
             except Exception as cleanup_error:
                 logger.warning(f"Cleanup failed on error: {cleanup_error}")
         
@@ -646,6 +722,16 @@ class ScrapingService:
                     'domains': ['myshopify.com', '*.myshopify.com', 'shop.myshopify.com'],
                     'confidence': 0.95,
                     'indicators': [f"Shopify domain detected: {domain}"]
+                },
+                'bigcommerce': {
+                    'domains': ['bigcommerce.com', '*.bigcommerce.com', 'api.bigcommerce.com'],
+                    'confidence': 0.95,
+                    'indicators': [f"Bigcommerce domain detected: {domain}"]
+                },
+                'squarespace': {
+                    'domains': ['squarespace.com', '*.squarespace.com', 'api.squarespace.com'],
+                    'confidence': 0.95,
+                    'indicators': [f"Squarespace domain detected: {domain}"]
                 }
             }
             

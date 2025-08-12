@@ -63,6 +63,10 @@ class ShopifyExtractor(BaseExtractor):
         if self.trustpilot_detected:
             logger.info("Trustpilot detected during initialization")
         self.trustpilot_data = None  # Will be populated when needed
+        
+        # Custom CSS selectors for element-based extraction
+        self.custom_rating_selectors = []
+        self.custom_review_count_selectors = []
     
     def _get_yotpo_data(self) -> Optional[Dict[str, Any]]:
         """
@@ -480,6 +484,32 @@ class ShopifyExtractor(BaseExtractor):
         except Exception as e:
             logger.warning(f"Error extracting Yotpo rating data: {e}")
             return {}
+    
+    def set_custom_rating_selectors(self, selectors: List[str]):
+        """
+        Set custom CSS selectors for rating extraction.
+        
+        Args:
+            selectors: List of CSS selectors to use for rating extraction
+        """
+        if isinstance(selectors, list):
+            self.custom_rating_selectors = selectors
+            logger.info(f"Set custom rating selectors: {selectors}")
+        else:
+            logger.warning("Custom rating selectors must be a list")
+    
+    def set_custom_review_count_selectors(self, selectors: List[str]):
+        """
+        Set custom CSS selectors for review count extraction.
+        
+        Args:
+            selectors: List of CSS selectors to use for review count extraction
+        """
+        if isinstance(selectors, list):
+            self.custom_review_count_selectors = selectors
+            logger.info(f"Set custom review count selectors: {selectors}")
+        else:
+            logger.warning("Custom review count selectors must be a list")
     
     def _detect_trustpilot(self) -> bool:
         """
@@ -1006,7 +1036,15 @@ class ShopifyExtractor(BaseExtractor):
         else:
             logger.info("No Trustpilot rating data available")
         
-        logger.warning("No Shopify rating found")
+        # Fallback to element-based extraction if all else fails
+        logger.info("Attempting element-based rating fallback")
+        rating = self._extract_rating_from_elements()
+        if rating:
+            logger.info(f"Successfully extracted rating {rating} using element-based fallback")
+            return rating
+        else:
+            logger.warning("No rating found from any source")
+        
         return None
     
     def extract_review_count(self) -> Optional[int]:
@@ -1050,7 +1088,15 @@ class ShopifyExtractor(BaseExtractor):
         else:
             logger.info("No Trustpilot review count data available")
         
-        logger.warning("No Shopify review count found")
+        # Fallback to element-based extraction if all else fails
+        logger.info("Attempting element-based review count fallback")
+        review_count = self._extract_review_count_from_elements()
+        if review_count:
+            logger.info(f"Successfully extracted review count {review_count} using element-based fallback")
+            return review_count
+        else:
+            logger.warning("No review count found from any source")
+        
         return None
     
     def extract_rating_details(self) -> Dict[str, Any]:
@@ -1082,6 +1128,17 @@ class ShopifyExtractor(BaseExtractor):
                 'value': trustpilot_data.get('value'),
                 'review_count': trustpilot_data.get('review_count'),
                 'source': 'trustpilot'
+            }
+        
+        # Final fallback to element-based extraction
+        element_rating = self._extract_rating_from_elements()
+        element_review_count = self._extract_review_count_from_elements()
+        
+        if element_rating or element_review_count:
+            return {
+                'value': element_rating,
+                'review_count': element_review_count,
+                'source': 'element_extraction'
             }
         
         return {}
@@ -1283,27 +1340,180 @@ class ShopifyExtractor(BaseExtractor):
         
         return 'unknown'
     
-    def _extract_price_from_variant(self, variant: dict) -> Optional[str]:
-        """Extract price from a variant object"""
+    def _extract_rating_from_elements(self) -> Optional[float]:
+        """
+        Fallback method to extract rating from DOM elements when structured data and
+        third-party widgets (Yotpo, Trustpilot) fail.
+        
+        Returns:
+            Rating value as float or None if not found
+        """
         try:
-            # Try different price fields in variant
-            price = variant.get('price', '')
-            if not price:
-                price = variant.get('priceAmount', '')
-            if not price:
-                price = variant.get('value', '')
+            soup = BeautifulSoup(self.html_content, 'html.parser')
+            rating = None
             
-            if price:
-                # Clean up price string
-                if isinstance(price, str):
-                    # Remove currency symbols and extra whitespace
-                    price = re.sub(r'[^\d.,]', '', price)
-                    # Replace comma with dot for decimal
-                    price = price.replace(',', '.')
-                return str(price)
+            # Combine default and custom selectors
+            selectors_to_try = self.custom_rating_selectors + [
+                # Star rating patterns
+                '[class*="rating"]',
+                '[class*="stars"]',
+                '[class*="score"]',
+                '[class*="review"]',
+                # Data attributes
+                '[data-rating]',
+                '[data-score]',
+                '[data-review-rating]',
+                # ARIA labels
+                '[aria-label*="rating"]',
+                '[aria-label*="stars"]',
+                # Common rating classes
+                '.rating',
+                '.stars',
+                '.score',
+                '.review-rating',
+                '.product-rating'
+            ]
             
-            return None
+            for selector in selectors_to_try:
+                elements = soup.select(selector)
+                for element in elements:
+                    # Try to extract rating from text content
+                    text = element.get_text().strip()
+                    if text:
+                        # Look for patterns like "4.5", "4.5/5", "4.5 out of 5", etc.
+                        rating_patterns = [
+                            r'(\d+(?:\.\d+)?)\s*/\s*(\d+(?:\.\d+)?)',  # 4.5/5
+                            r'(\d+(?:\.\d+)?)\s*out\s*of\s*(\d+(?:\.\d+)?)',  # 4.5 out of 5
+                            r'(\d+(?:\.\d+)?)\s*stars?',  # 4.5 stars
+                            r'(\d+(?:\.\d+)?)',  # Just 4.5
+                        ]
+                        
+                        for pattern in rating_patterns:
+                            match = re.search(pattern, text, re.IGNORECASE)
+                            if match:
+                                try:
+                                    rating_value = float(match.group(1))
+                                    # If it's a ratio (like 4.5/5), normalize to 5-star scale
+                                    if len(match.groups()) > 1 and match.group(2):
+                                        max_rating = float(match.group(2))
+                                        if max_rating != 5.0:
+                                            rating_value = (rating_value / max_rating) * 5.0
+                                    
+                                    # Validate rating is in reasonable range
+                                    if 0.0 <= rating_value <= 5.0:
+                                        rating = rating_value
+                                        logger.info(f"Found rating {rating} from element with selector '{selector}'")
+                                        break
+                                except (ValueError, TypeError):
+                                    continue
+                    
+                    # Try to extract from data attributes
+                    if not rating:
+                        data_rating = element.get('data-rating') or element.get('data-score')
+                        if data_rating:
+                            try:
+                                rating_value = float(data_rating)
+                                if 0.0 <= rating_value <= 5.0:
+                                    rating = rating_value
+                                    logger.info(f"Found rating {rating} from data attribute in element with selector '{selector}'")
+                                    break
+                            except (ValueError, TypeError):
+                                continue
+                
+                if rating:
+                    break
+            
+            if rating:
+                logger.info(f"Successfully extracted rating {rating} using element-based fallback")
+            else:
+                logger.debug("No rating found using element-based fallback")
+            
+            return rating
             
         except Exception as e:
-            logger.debug(f"Error extracting price from variant: {e}")
+            logger.warning(f"Error in element-based rating extraction: {e}")
+            return None
+    
+    def _extract_review_count_from_elements(self) -> Optional[int]:
+        """
+        Fallback method to extract review count from DOM elements when structured data and
+        third-party widgets (Yotpo, Trustpilot) fail.
+        
+        Returns:
+            Review count as integer or None if not found
+        """
+        try:
+            soup = BeautifulSoup(self.html_content, 'html.parser')
+            review_count = None
+            
+            # Combine default and custom selectors
+            selectors_to_try = self.custom_review_count_selectors + [
+                # Review count patterns
+                '[class*="review"]',
+                '[class*="reviews"]',
+                '[class*="count"]',
+                '[class*="total"]',
+                # Data attributes
+                '[data-review-count]',
+                '[data-count]',
+                '[data-total]',
+                # Common review classes
+                '.review-count',
+                '.reviews-count',
+                '.total-reviews',
+                '.review-total'
+            ]
+            
+            for selector in selectors_to_try:
+                elements = soup.select(selector)
+                for element in elements:
+                    # Try to extract review count from text content
+                    text = element.get_text().strip()
+                    if text:
+                        # Look for patterns like "123 reviews", "123", "(123)", etc.
+                        count_patterns = [
+                            r'(\d+(?:,\d+)*)\s*reviews?',  # 123 reviews
+                            r'(\d+(?:,\d+)*)\s*ratings?',  # 123 ratings
+                            r'(\d+(?:,\d+)*)',  # Just 123
+                            r'\((\d+(?:,\d+)*)\)',  # (123)
+                        ]
+                        
+                        for pattern in count_patterns:
+                            match = re.search(pattern, text, re.IGNORECASE)
+                            if match:
+                                try:
+                                    count_str = match.group(1).replace(',', '')
+                                    count_value = int(count_str)
+                                    if count_value > 0:
+                                        review_count = count_value
+                                        logger.info(f"Found review count {review_count} from element with selector '{selector}'")
+                                        break
+                                except (ValueError, TypeError):
+                                    continue
+                    
+                    # Try to extract from data attributes
+                    if not review_count:
+                        data_count = element.get('data-review-count') or element.get('data-count')
+                        if data_count:
+                            try:
+                                count_value = int(data_count)
+                                if count_value > 0:
+                                    review_count = count_value
+                                    logger.info(f"Found review count {review_count} from data attribute in element with selector '{selector}'")
+                                    break
+                            except (ValueError, TypeError):
+                                continue
+                
+                if review_count:
+                    break
+            
+            if review_count:
+                logger.info(f"Successfully extracted review count {review_count} using element-based fallback")
+            else:
+                logger.debug("No review count found using element-based fallback")
+            
+            return review_count
+            
+        except Exception as e:
+            logger.warning(f"Error in element-based review count extraction: {e}")
             return None 
