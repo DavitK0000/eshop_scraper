@@ -8,10 +8,11 @@ import os
 
 from app.models import (
     ScrapeRequest, ScrapeResponse, TaskStatusResponse, HealthResponse,
-    TaskStatus
+    TaskStatus, VideoProcessRequest, VideoProcessResponse
 )
 from app.services.scraping_service import scraping_service
 from app.services.cache_service import cache_service
+from app.services.video_service import VideoProcessingService
 from app.config import settings
 from app.security import (
     get_api_key, validate_request_security, validate_scrape_request,
@@ -22,6 +23,9 @@ from app.logging_config import get_logger
 logger = get_logger(__name__)
 
 router = APIRouter()
+
+# Initialize video processing service
+video_service = VideoProcessingService()
 
 
 @router.post("/scrape", response_model=ScrapeResponse)
@@ -441,4 +445,129 @@ def cleanup_tasks():
         
     except Exception as e:
         logger.error(f"Error cleaning up tasks: {e}", exc_info=True)
-        raise HTTPException(status_code=500, detail=f"Failed to cleanup tasks: {str(e)}") 
+        raise HTTPException(status_code=500, detail=f"Failed to cleanup tasks: {str(e)}")
+
+
+# ============================================================================
+# Video Processing Endpoints
+# ============================================================================
+
+@router.post("/video/process", response_model=VideoProcessResponse)
+def process_video(
+    request: VideoProcessRequest,
+    api_key: Optional[str] = Depends(get_api_key)
+) -> VideoProcessResponse:
+    """
+    Process video by merging multiple videos, adding audio, and embedding subtitles.
+    
+    This endpoint accepts video URLs, audio data, and optional subtitle text.
+    Returns immediately with a task ID for polling.
+    
+    Authentication: Optional API key via Bearer token
+    """
+    try:
+        # Security validation - DISABLED FOR DEVELOPMENT
+        # TODO: Re-enable security checks for production
+        # validate_request_security(http_request, api_key)
+        
+        logger.info(f"Starting video processing task with {len(request.video_urls)} videos")
+        
+        response = video_service.process_video(
+            video_urls=request.video_urls,
+            audio_data=request.audio_data,
+            subtitle_text=request.subtitle_text,
+            output_resolution=request.output_resolution,
+            watermark=request.watermark
+        )
+        
+        logger.info(f"Started video processing task {response.task_id}")
+        
+        return response
+        
+    except Exception as e:
+        logger.error(f"Error in video processing endpoint: {e}", exc_info=True)
+        raise HTTPException(status_code=500, detail=f"Video processing failed: {str(e)}")
+
+
+@router.get("/video/tasks/{task_id}", response_model=VideoProcessResponse)
+def get_video_task_status(task_id: str) -> VideoProcessResponse:
+    """
+    Get the status of a video processing task.
+    Returns full VideoProcessResponse when completed.
+    """
+    try:
+        task_info = video_service.get_task_status(task_id)
+        
+        if not task_info:
+            raise HTTPException(status_code=404, detail="Video task not found")
+        
+        # Convert task info to VideoProcessResponse
+        return VideoProcessResponse(
+            task_id=task_id,
+            status=task_info['status'],
+            video_data=task_info.get('video_data'),
+            thumbnail_data=task_info.get('thumbnail_data'),
+            error=task_info.get('error'),
+            created_at=task_info['created_at'],
+            completed_at=task_info.get('completed_at')
+        )
+        
+    except HTTPException:
+        raise
+    except Exception as e:
+        logger.error(f"Error getting video task status {task_id}: {e}", exc_info=True)
+        raise HTTPException(status_code=500, detail=f"Failed to get video task status: {str(e)}")
+
+
+@router.get("/video/tasks")
+def get_all_video_tasks():
+    """
+    Get all video processing tasks
+    """
+    try:
+        tasks = video_service.get_all_tasks()
+        return tasks
+        
+    except Exception as e:
+        logger.error(f"Error getting all video tasks: {e}", exc_info=True)
+        raise HTTPException(status_code=500, detail=f"Failed to get video tasks: {str(e)}")
+
+
+@router.delete("/video/tasks/{task_id}")
+def cancel_video_task(task_id: str):
+    """
+    Cancel a running video processing task
+    """
+    try:
+        task_info = video_service.get_task_status(task_id)
+        
+        if not task_info:
+            raise HTTPException(status_code=404, detail="Video task not found")
+        
+        if task_info['status'] not in [TaskStatus.PENDING, TaskStatus.RUNNING]:
+            raise HTTPException(status_code=400, detail="Cannot cancel completed or failed video task")
+        
+        # Update task status to cancelled
+        video_service._update_task_status(task_id, TaskStatus.FAILED, "Video task cancelled by user")
+        
+        return {"message": f"Video task {task_id} cancelled successfully"}
+        
+    except HTTPException:
+        raise
+    except Exception as e:
+        logger.error(f"Error cancelling video task {task_id}: {e}", exc_info=True)
+        raise HTTPException(status_code=500, detail=f"Failed to cancel video task: {str(e)}")
+
+
+@router.delete("/video/tasks")
+def cleanup_video_tasks():
+    """
+    Clean up old completed/failed video processing tasks
+    """
+    try:
+        video_service.cleanup()
+        return {"message": "Video task cleanup completed"}
+        
+    except Exception as e:
+        logger.error(f"Error cleaning up video tasks: {e}", exc_info=True)
+        raise HTTPException(status_code=500, detail=f"Failed to cleanup video tasks: {str(e)}") 
