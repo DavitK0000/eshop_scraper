@@ -55,3 +55,28 @@ __all__ = [
     'map_currency_symbol_to_code',
     '_get_default_currency_by_domain',
 ] 
+
+def cleanup_windows_asyncio():
+    """Windows-specific cleanup for asyncio overlapped objects"""
+    import platform
+    if platform.system() == "Windows":
+        try:
+            import asyncio
+            import gc
+            
+            # Get the current event loop if it exists
+            try:
+                loop = asyncio.get_running_loop()
+                # Cancel all pending tasks
+                for task in asyncio.all_tasks(loop):
+                    if not task.done():
+                        task.cancel()
+            except RuntimeError:
+                # No running loop
+                pass
+            
+            # Force garbage collection
+            gc.collect()
+            
+        except Exception:
+            pass 

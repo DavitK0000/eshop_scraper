@@ -14,6 +14,7 @@ from app.services.cache_service import cache_service
 from app.services.scraping_service import scraping_service
 from app.security import security_middleware, cleanup_security_data
 from app.logging_config import setup_logging, get_logger
+from app.utils import cleanup_windows_asyncio
 
 # Setup comprehensive logging - this ensures logging is available
 # for all subsequent imports and operations. The setup_logging function
@@ -41,6 +42,9 @@ async def lifespan(app: FastAPI):
     
     # Shutdown
     logger.info("Shutting down E-commerce Scraper API...")
+    
+    # Clean up Windows asyncio resources
+    cleanup_windows_asyncio()
 
 
 # Create FastAPI app with custom JSON encoder

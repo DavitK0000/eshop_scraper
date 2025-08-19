@@ -430,40 +430,27 @@ class ScrapingService:
             except Exception as cache_error:
                 logger.warning(f"Failed to cache result: {cache_error}")
             
-            # Clean up browser resources
+            # Clean up browser resources in the same thread where they were created
             try:
-                start_cleanup_time = time.time()
-                cleanup_timeout = settings.BROWSER_CLEANUP_TIMEOUT / 1000.0
-                
+                from app.browser_manager import browser_manager
                 browser_manager.cleanup()
-                
-                # Check if cleanup exceeded timeout
-                if time.time() - start_cleanup_time > cleanup_timeout:
-                    logger.warning("Browser cleanup timed out")
-                    
+                logger.info(f"Browser cleanup completed for task {task_id}")
             except Exception as cleanup_error:
-                logger.warning(f"Cleanup failed: {cleanup_error}")
+                logger.warning(f"Browser cleanup failed for task {task_id}: {cleanup_error}")
             
         except Exception as e:
-            error_msg = f"Scraping failed: {str(e)}"
-            logger.error(f"Error scraping {url}: {e}", exc_info=True)
+            logger.error(f"Error in execute_scraping_task for task_id: {task_id}: {e}", exc_info=True)
             
             # Update task with error
-            self._update_task_with_error(task_id, TaskStatus.FAILED, error_msg)
+            self._update_task_with_error(task_id, TaskStatus.FAILED, str(e))
             
-            # Clean up browser resources on error
+            # Clean up browser resources even on error
             try:
-                start_cleanup_time = time.time()
-                cleanup_timeout = settings.BROWSER_CLEANUP_TIMEOUT / 1000.0
-                
+                from app.browser_manager import browser_manager
                 browser_manager.cleanup()
-                
-                # Check if cleanup exceeded timeout
-                if time.time() - start_cleanup_time > cleanup_timeout:
-                    logger.warning("Browser cleanup timed out on error")
-                    
+                logger.info(f"Browser cleanup completed for failed task {task_id}")
             except Exception as cleanup_error:
-                logger.warning(f"Cleanup failed on error: {cleanup_error}")
+                logger.warning(f"Browser cleanup failed for failed task {task_id}: {cleanup_error}")
         
         logger.info(f"Completed execute_scraping_task for task_id: {task_id}")
 
@@ -556,11 +543,7 @@ class ScrapingService:
             
             logger.info(f"Successfully scraped product from {url}")
             
-            # Clean up browser resources
-            try:
-                browser_manager.cleanup()
-            except Exception as cleanup_error:
-                logger.warning(f"Cleanup failed: {cleanup_error}")
+
             
         except Exception as e:
             error_msg = f"Scraping failed: {str(e)}"
@@ -575,11 +558,7 @@ class ScrapingService:
             # Update task status
             self._update_task_status(task_id, TaskStatus.FAILED, error_msg)
             
-            # Clean up browser resources on error
-            try:
-                browser_manager.cleanup()
-            except Exception as cleanup_error:
-                logger.warning(f"Cleanup failed on error: {cleanup_error}")
+
         
         return response
 
@@ -931,7 +910,6 @@ class ScrapingService:
                 'message': error_message,
                 'error': error_message
             })
-
-
+    
 # Global scraping service instance
 scraping_service = ScrapingService() 

@@ -366,6 +366,11 @@ class BrowserManager:
             logger.info("Chrome browser cleanup completed")
         except Exception as e:
             logger.error(f"Error during browser cleanup: {e}")
+        finally:
+            # Force cleanup of any remaining references
+            self.context = None
+            self.browser = None
+            self.playwright = None
 
     def get_page_content_with_retry(self, url: str, proxy: Optional[str] = None, user_agent: Optional[str] = None, block_images: bool = True, max_retries: int = None) -> str:
         """
