@@ -293,7 +293,8 @@ class ScrapingService:
         force_refresh: bool = False,
         proxy: Optional[str] = None,
         user_agent: Optional[str] = None,
-        block_images: bool = True
+        block_images: bool = True,
+        target_language: Optional[str] = None
     ) -> ScrapeResponse:
         """
         Start a scraping task asynchronously using threads
@@ -304,6 +305,7 @@ class ScrapingService:
             proxy: Custom proxy to use
             user_agent: Custom user agent to use
             block_images: Whether to block images
+            target_language: Target language for content extraction
             
         Returns:
             ScrapeResponse with task_id and PENDING status
@@ -316,7 +318,8 @@ class ScrapingService:
             status=TaskStatus.PENDING,
             url=url,
             message="Task created, waiting to start",
-            created_at=datetime.now()
+            created_at=datetime.now(),
+            target_language=target_language
         )
         
         # Store task info
@@ -324,13 +327,14 @@ class ScrapingService:
             'status': TaskStatus.PENDING,
             'created_at': datetime.now(),
             'url': url,
-            'response': response
+            'response': response,
+            'target_language': target_language
         }
         
         # Start scraping in a separate thread
         thread = threading.Thread(
             target=self._execute_scraping_task_thread,
-            args=(task_id, url, force_refresh, proxy, user_agent, block_images),
+            args=(task_id, url, force_refresh, proxy, user_agent, block_images, target_language),
             daemon=True
         )
         thread.start()
@@ -345,7 +349,8 @@ class ScrapingService:
         force_refresh: bool = False,
         proxy: Optional[str] = None,
         user_agent: Optional[str] = None,
-        block_images: bool = True
+        block_images: bool = True,
+        target_language: Optional[str] = None
     ):
         """
         Execute the actual scraping task in a separate thread
@@ -357,6 +362,7 @@ class ScrapingService:
             proxy: Custom proxy to use
             user_agent: Custom user agent to use
             block_images: Whether to block images
+            target_language: Target language for content extraction
         """
         logger.info(f"Starting execute_scraping_task for task_id: {task_id}, url: {url}")
         try:

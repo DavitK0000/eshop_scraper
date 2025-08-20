@@ -66,7 +66,8 @@ def scrape_product(
             force_refresh=request.force_refresh,
             proxy=request.proxy,
             user_agent=request.user_agent,
-            block_images=request.block_images
+            block_images=request.block_images,
+            target_language=request.target_language
         )
         
         logger.info(f"Started scraping task {response.task_id} for {request.url}")
@@ -110,7 +111,8 @@ def get_all_tasks() -> List[TaskStatusResponse]:
                 message=task_info.get('message', ''),
                 has_product_info=bool(task_info.get('product_info')),
                 platform=task_info.get('platform'),
-                platform_confidence=task_info.get('platform_confidence')
+                platform_confidence=task_info.get('platform_confidence'),
+                target_language=task_info.get('target_language')
             )
             task_responses.append(task_response)
         
@@ -167,6 +169,11 @@ def serve_test_page():
                 </div>
                 
                 <div class="form-group">
+                    <label for="targetLanguage">Target Language (optional):</label>
+                    <input type="text" id="targetLanguage" name="targetLanguage" placeholder="en, es, fr, de, etc.">
+                </div>
+                
+                <div class="form-group">
                     <label>
                         <input type="checkbox" id="blockImages" name="blockImages" checked>
                         Block images for faster scraping
@@ -196,6 +203,7 @@ def serve_test_page():
                 const url = document.getElementById('url').value;
                 const proxy = document.getElementById('proxy').value;
                 const userAgent = document.getElementById('userAgent').value;
+                const targetLanguage = document.getElementById('targetLanguage').value;
                 const blockImages = document.getElementById('blockImages').checked;
                 const forceRefresh = document.getElementById('forceRefresh').checked;
                 
@@ -216,6 +224,7 @@ def serve_test_page():
                             url: url,
                             proxy: proxy || null,
                             user_agent: userAgent || null,
+                            target_language: targetLanguage || null,
                             block_images: blockImages,
                             force_refresh: forceRefresh
                         })

@@ -17,6 +17,7 @@ class ScrapeRequest(BaseModel):
     proxy: Optional[str] = Field(None, description="Custom proxy to use")
     user_agent: Optional[str] = Field(None, description="Custom user agent to use")
     block_images: bool = Field(True, description="Block image downloads to save bandwidth")
+    target_language: Optional[str] = Field(None, description="Target language for content extraction (e.g., 'en', 'es', 'fr')")
 
 
 class ProductInfo(BaseModel):
@@ -44,6 +45,7 @@ class ScrapeResponse(BaseModel):
     detected_platform: Optional[str] = Field(None, description="Detected e-commerce platform")
     platform_confidence: Optional[float] = Field(None, description="Platform detection confidence (0.0 to 1.0)")
     platform_indicators: List[str] = Field(default_factory=list, description="Platform detection indicators")
+    target_language: Optional[str] = Field(None, description="Target language for content extraction")
 
 
 class TaskStatusResponse(BaseModel):
@@ -53,6 +55,7 @@ class TaskStatusResponse(BaseModel):
     message: Optional[str] = None
     created_at: datetime
     updated_at: datetime
+    target_language: Optional[str] = Field(None, description="Target language for content extraction")
 
 
 class HealthResponse(BaseModel):

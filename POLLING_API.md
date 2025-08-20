@@ -19,7 +19,8 @@ Starts a scraping task asynchronously and returns immediately with a task ID.
   "force_refresh": false,
   "proxy": null,
   "user_agent": null,
-  "block_images": true
+  "block_images": true,
+  "target_language": "en"
 }
 ```
 
@@ -36,7 +37,8 @@ Starts a scraping task asynchronously and returns immediately with a task ID.
   "cache_hit": false,
   "detected_platform": null,
   "platform_confidence": null,
-  "platform_indicators": []
+  "platform_indicators": [],
+  "target_language": "en"
 }
 ```
 
@@ -54,7 +56,8 @@ Returns the current status of a scraping task.
   "progress": null,
   "message": "Scraping product information",
   "created_at": "2024-01-01T12:00:00Z",
-  "updated_at": "2024-01-01T12:00:05Z"
+  "updated_at": "2024-01-01T12:00:05Z",
+  "target_language": "en"
 }
 ```
 
@@ -92,7 +95,8 @@ Returns the complete result of a scraping task, including product information wh
   "cache_hit": false,
   "detected_platform": "shopify",
   "platform_confidence": 0.85,
-  "platform_indicators": ["Shopify pattern found", "shopify-section class detected"]
+  "platform_indicators": ["Shopify pattern found", "shopify-section class detected"],
+  "target_language": "en"
 }
 ```
 
@@ -109,7 +113,8 @@ Returns the complete result of a scraping task, including product information wh
   "cache_hit": false,
   "detected_platform": null,
   "platform_confidence": null,
-  "platform_indicators": []
+  "platform_indicators": [],
+  "target_language": "en"
 }
 ```
 
@@ -132,7 +137,8 @@ async def scrape_with_polling():
     async with aiohttp.ClientSession() as session:
         # Start scraping task
         async with session.post("http://localhost:8000/scrape", json={
-            "url": "https://example.com/product"
+            "url": "https://example.com/product",
+            "target_language": "en"
         }) as response:
             task_data = await response.json()
             task_id = task_data["task_id"]
@@ -165,7 +171,8 @@ async function scrapeWithPolling() {
         method: 'POST',
         headers: { 'Content-Type': 'application/json' },
         body: JSON.stringify({
-            url: 'https://example.com/product'
+            url: 'https://example.com/product',
+            target_language: 'en'
         })
     });
     
