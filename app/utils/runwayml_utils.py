@@ -282,7 +282,6 @@ class RunwayMLManager:
     async def upscale_video(
         self,
         video_path: Union[str, Path],
-        target_resolution: str = "1920:1080",
         model: str = "upscale_v1",
         **kwargs
     ) -> Dict[str, Any]:
@@ -291,8 +290,7 @@ class RunwayMLManager:
         
         Args:
             video_path: Path to video file
-            target_resolution: Target resolution (default: 1920:1080)
-            model: Model to use for upscaling (default: video_upscaler)
+            model: Model to use for upscaling (default: upscale_v1)
             **kwargs: Additional parameters for video upscaling
             
         Returns:
@@ -305,13 +303,12 @@ class RunwayMLManager:
             # Convert video to data URI if it's a local file
             video_uri = self._get_video_from_url_or_path(video_path)
             
-            logger.info(f"Starting video upscaling with model {model} to {target_resolution}")
+            logger.info(f"Starting video upscaling with model {model}")
             
             # Create video upscaling task
             task = self.client.video_upscale.create(
                 model=model,
                 video_uri=video_uri,
-                target_resolution=target_resolution,
                 **kwargs
             )
             
@@ -323,7 +320,6 @@ class RunwayMLManager:
             return {
                 "success": True,
                 "model": model,
-                "target_resolution": target_resolution,
                 "output": result.output,
                 "task_id": result.id,
                 "status": "completed"
@@ -348,7 +344,6 @@ class RunwayMLManager:
     def upscale_video_sync(
         self,
         video_path: Union[str, Path],
-        target_resolution: str = "1920:1080",
         model: str = "upscale_v1",
         **kwargs
     ) -> Dict[str, Any]:
@@ -357,8 +352,7 @@ class RunwayMLManager:
         
         Args:
             video_path: Path to video file
-            target_resolution: Target resolution (default: 1920:1080)
-            model: Model to use for upscaling (default: video_upscaler)
+            model: Model to use for upscaling (default: upscale_v1)
             **kwargs: Additional parameters for video upscaling
             
         Returns:
@@ -371,13 +365,12 @@ class RunwayMLManager:
             # Convert video to data URI if it's a local file
             video_uri = self._get_video_from_url_or_path(video_path)
             
-            logger.info(f"Starting video upscaling with model {model} to {target_resolution}")
+            logger.info(f"Starting video upscaling with model {model}")
             
             # Create video upscaling task
             task = self.client.video_upscale.create(
                 model=model,
                 video_uri=video_uri,
-                target_resolution=target_resolution,
                 **kwargs
             )
             
