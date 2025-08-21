@@ -1163,7 +1163,7 @@ class MergingService:
                 '-i', audio_path,
                 '-c:v', 'copy',  # Copy video codec
                 '-c:a', 'aac',   # Convert audio to AAC
-                '-shortest',      # End when shortest stream ends
+                '-longest',       # Use the longer duration between video and audio
                 merged_path
             ]
 
