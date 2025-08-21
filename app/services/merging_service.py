@@ -15,6 +15,7 @@ import threading
 import tempfile
 import httpx
 import subprocess
+import json
 from datetime import datetime
 from typing import Dict, Any, Optional, List
 from pathlib import Path
@@ -377,32 +378,112 @@ class MergingService:
             
             # Create storage path
             filename = f"thumbnail_images/{user_id}/{uuid.uuid4()}.png"
+            logger.info(f"Attempting to upload thumbnail to path: {filename}")
+            
+            # Validate Supabase connection and bucket
+            if not supabase_manager.is_connected():
+                raise Exception("Supabase connection not available")
+            
+            # Validate Supabase client
+            if not hasattr(supabase_manager, 'client') or not supabase_manager.client:
+                raise Exception("Supabase client not available")
+            
+            if not hasattr(supabase_manager.client, 'storage'):
+                raise Exception("Supabase storage not available")
+            
+            # Check if storage bucket exists and is accessible
+            try:
+                buckets = supabase_manager.client.storage.list_buckets()
+                bucket_names = [bucket.name for bucket in buckets]
+                logger.info(f"Available storage buckets: {bucket_names}")
+                
+                if 'generated-content' not in bucket_names:
+                    raise Exception("Storage bucket 'generated-content' not found")
+                
+                # Test bucket permissions
+                try:
+                    # Try to list files in the bucket (this tests read permissions)
+                    files = supabase_manager.client.storage.from_('generated-content').list(path='')
+                    logger.info(f"Successfully listed files in bucket, found {len(files)} items")
+                except Exception as list_error:
+                    logger.warning(f"Could not list files in bucket (may be permission issue): {list_error}")
+                    
+            except Exception as bucket_error:
+                logger.error(f"Failed to check storage buckets: {bucket_error}")
+                raise Exception(f"Storage bucket check failed: {bucket_error}")
             
             # Download image data directly from URL and upload to Supabase
             with httpx.Client(timeout=DOWNLOAD_TIMEOUT) as client:
+                logger.info(f"Downloading image from URL: {image_url}")
                 response = client.get(image_url)
                 response.raise_for_status()
                 
+                # Log response details for debugging
+                logger.info(f"Downloaded image: {len(response.content)} bytes, content-type: {response.headers.get('content-type', 'unknown')}")
+                
+                # Validate image content
+                if len(response.content) == 0:
+                    raise Exception("Downloaded image content is empty")
+                
+                # Validate content size (reasonable limits)
+                if len(response.content) > 10 * 1024 * 1024:  # 10MB limit
+                    raise Exception(f"Image file too large: {len(response.content)} bytes")
+                
                 # Upload the image data directly to Supabase storage
-                result = supabase_manager.client.storage.from_('generated-content').upload(
-                    path=filename,
-                    file=response.content,  # Use the response content directly
-                    file_options={"content-type": "image/png"}
-                )
+                logger.info(f"Uploading to Supabase storage bucket: generated-content")
+                try:
+                    result = supabase_manager.client.storage.from_('generated-content').upload(
+                        path=filename,
+                        file=response.content,  # Use the response content directly
+                        file_options={"content-type": "image/png"}
+                    )
+                    logger.info(f"Supabase upload result: {result}")
+                except json.JSONDecodeError as json_error:
+                    logger.error(f"Supabase upload failed with JSON decode error: {json_error}")
+                    logger.error(f"This usually indicates an empty or invalid response from Supabase")
+                    raise Exception(f"Supabase upload failed with JSON decode error: {json_error}")
+                except Exception as upload_error:
+                    logger.error(f"Supabase upload failed with error: {upload_error}")
+                    logger.error(f"Upload error type: {type(upload_error)}")
+                    logger.error(f"Upload error details: {str(upload_error)}")
+                    raise Exception(f"Supabase upload failed: {upload_error}")
             
             # Check for upload errors
             if hasattr(result, 'error') and result.error:
                 raise Exception(f"Failed to upload thumbnail: {result.error}")
             
+            # Validate upload result
+            if not result:
+                raise Exception("Upload result is empty or None")
+            
+            logger.info(f"Upload completed successfully, result: {result}")
+            
             # Get public URL
-            thumbnail_url = supabase_manager.client.storage.from_('generated-content').get_public_url(filename)
+            try:
+                thumbnail_url = supabase_manager.client.storage.from_('generated-content').get_public_url(filename)
+                logger.info(f"Generated public URL: {thumbnail_url}")
+            except Exception as url_error:
+                logger.error(f"Failed to generate public URL: {url_error}")
+                raise Exception(f"Public URL generation failed: {url_error}")
+            
+            if not thumbnail_url:
+                raise Exception("Generated thumbnail URL is empty")
             
             logger.info(f"Successfully uploaded thumbnail to {thumbnail_url}")
             return thumbnail_url
             
         except Exception as e:
             logger.error(f"Failed to upload thumbnail from URL: {e}")
-            raise
+            logger.error(f"Error type: {type(e)}")
+            logger.error(f"Full error details: {str(e)}")
+            
+            # Try fallback method: save to temp file first
+            logger.info("Attempting fallback upload method (save to temp file first)")
+            try:
+                return self._upload_thumbnail_fallback(image_url, user_id, task_id)
+            except Exception as fallback_error:
+                logger.error(f"Fallback upload method also failed: {fallback_error}")
+                raise Exception(f"Both upload methods failed. Original: {e}, Fallback: {fallback_error}")
 
     def _upload_thumbnail(self, thumbnail_path: str, user_id: str, task_id: str) -> str:
         """Upload thumbnail from local file to Supabase storage."""
@@ -433,6 +514,40 @@ class MergingService:
             
         except Exception as e:
             logger.error(f"Failed to upload thumbnail: {e}")
+            raise
+
+    def _upload_thumbnail_fallback(self, image_url: str, user_id: str, task_id: str) -> str:
+        """Fallback method: download image to temp file first, then upload."""
+        try:
+            logger.info("Using fallback upload method: downloading to temp file first")
+            
+            # Download image to temporary file
+            temp_path = self._download_image(image_url, task_id)
+            
+            # Validate downloaded file
+            if not os.path.exists(temp_path):
+                raise Exception(f"Downloaded file not found at {temp_path}")
+            
+            file_size = os.path.getsize(temp_path)
+            if file_size == 0:
+                raise Exception(f"Downloaded file is empty (0 bytes)")
+            
+            logger.info(f"Downloaded file: {temp_path}, size: {file_size} bytes")
+            
+            # Upload using the existing method
+            thumbnail_url = self._upload_thumbnail(temp_path, user_id, task_id)
+            
+            # Clean up temp file
+            try:
+                os.remove(temp_path)
+                logger.debug(f"Cleaned up temporary file: {temp_path}")
+            except Exception as cleanup_error:
+                logger.warning(f"Failed to cleanup temporary file {temp_path}: {cleanup_error}")
+            
+            return thumbnail_url
+            
+        except Exception as e:
+            logger.error(f"Fallback upload method failed: {e}")
             raise
 
     def _update_shorts_thumbnail(self, short_id: str, thumbnail_url: str):
@@ -821,6 +936,44 @@ class MergingService:
             
         except Exception as e:
             logger.error(f"Error during cleanup: {e}")
+
+    def test_supabase_connection(self) -> Dict[str, Any]:
+        """Test Supabase connection and storage access."""
+        try:
+            logger.info("Testing Supabase connection...")
+            
+            if not supabase_manager.is_connected():
+                return {"success": False, "error": "Supabase not connected"}
+            
+            # Test basic connection
+            try:
+                # Test a simple query
+                result = supabase_manager.client.table('shorts').select('id').limit(1).execute()
+                logger.info("Basic Supabase connection test passed")
+            except Exception as e:
+                logger.error(f"Basic connection test failed: {e}")
+                return {"success": False, "error": f"Basic connection failed: {e}"}
+            
+            # Test storage access
+            try:
+                buckets = supabase_manager.client.storage.list_buckets()
+                bucket_names = [bucket.name for bucket in buckets]
+                logger.info(f"Available storage buckets: {bucket_names}")
+                
+                if 'generated-content' not in bucket_names:
+                    return {"success": False, "error": "Storage bucket 'generated-content' not found"}
+                
+                logger.info("Storage access test passed")
+                
+            except Exception as e:
+                logger.error(f"Storage access test failed: {e}")
+                return {"success": False, "error": f"Storage access failed: {e}"}
+            
+            return {"success": True, "message": "All tests passed"}
+            
+        except Exception as e:
+            logger.error(f"Supabase connection test failed: {e}")
+            return {"success": False, "error": str(e)}
 
 
 # Global instance
