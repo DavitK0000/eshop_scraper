@@ -1059,9 +1059,13 @@ class MergingService:
             if not runwayml_manager.is_available():
                 raise Exception("RunwayML is not available for upscaling")
 
+            # Convert local video path to data URI for RunwayML
+            video_uri = self._convert_video_to_data_uri(video_path)
+            logger.info(f"Converted video to data URI for upscaling")
+
             # Use RunwayML for video upscaling (synchronous)
             upscale_result = runwayml_manager.upscale_video_sync(
-                video_path=video_path
+                video_path=video_uri
             )
 
             if not upscale_result.get("success", False):
@@ -1071,9 +1075,12 @@ class MergingService:
             # Download the upscaled video
             # Handle case where output might be a list of URLs
             video_url = upscale_result["output"]
+            logger.info(f"RunwayML upscale output type: {type(video_url)}, value: {video_url}")
+            
             if isinstance(video_url, list):
                 if len(video_url) > 0:
                     video_url = video_url[0]  # Take the first URL
+                    logger.info(f"Extracted first URL from list: {video_url}")
                 else:
                     raise Exception("No video URLs returned from RunwayML")
             
@@ -1155,6 +1162,42 @@ class MergingService:
             logger.warning(
                 f"Failed to get video duration: {e}, defaulting to 30 seconds")
             return 30
+
+    def _convert_video_to_data_uri(self, video_path: str) -> str:
+        """Convert local video file to data URI for RunwayML API."""
+        try:
+            # Check if file exists
+            if not os.path.exists(video_path):
+                raise Exception(f"Video file not found: {video_path}")
+            
+            # Read the video file and convert to base64
+            import base64
+            
+            with open(video_path, 'rb') as video_file:
+                video_data = video_file.read()
+            
+            # Encode to base64
+            video_base64 = base64.b64encode(video_data).decode('utf-8')
+            
+            # Create data URI
+            # Get MIME type based on file extension
+            file_ext = os.path.splitext(video_path)[1].lower()
+            mime_type = {
+                '.mp4': 'video/mp4',
+                '.avi': 'video/x-msvideo',
+                '.mov': 'video/quicktime',
+                '.mkv': 'video/x-matroska',
+                '.webm': 'video/webm'
+            }.get(file_ext, 'video/mp4')
+            
+            data_uri = f"data:{mime_type};base64,{video_base64}"
+            logger.info(f"Converted video to data URI with MIME type: {mime_type}")
+            
+            return data_uri
+            
+        except Exception as e:
+            logger.error(f"Failed to convert video to data URI: {e}")
+            raise
 
     def _merge_audio_with_video(self, video_path: str, audio_path: str, task_id: str) -> str:
         """Merge audio with video using FFmpeg."""
