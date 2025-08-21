@@ -127,7 +127,7 @@ class MergingService:
             update_task_progress(task_id, 0.2, "Generating thumbnail")
             
             # Step 2: Generate thumbnail
-            thumbnail_url = self._generate_thumbnail(user_id, product_info, task_id)
+            thumbnail_url = self._generate_thumbnail(user_id, product_info, task_id, short_id)
             if not thumbnail_url:
                 raise Exception("Failed to generate thumbnail")
             
@@ -268,7 +268,7 @@ class MergingService:
             logger.error(f"Failed to fetch product info: {e}")
             raise
 
-    def _generate_thumbnail(self, user_id: str, product_info: Dict[str, Any], task_id: str) -> str:
+    def _generate_thumbnail(self, user_id: str, product_info: Dict[str, Any], task_id: str, short_id: str) -> str:
         """Generate thumbnail using RunwayML."""
         try:
             # Check credits for image generation
