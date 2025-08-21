@@ -45,8 +45,9 @@ class CreditManager:
             else:
                 logger.warning(f"No credit info found for user {user_id}")
                 return {
-                    "credits_total": 0,
-                    "credits_remaining": 0,
+                    "total_credits": 0,
+                    "used_credits": 0,
+                    "available_credits": 0,
                     "subscription_status": "no_subscription",
                     "plan_name": "no_plan",
                     "plan_display_name": "No Plan"

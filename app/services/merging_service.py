@@ -170,17 +170,6 @@ class MergingService:
                     merged_video_path, audio_file, task_id
                 )
 
-            # Step 6: Add subtitles if available
-            if audio_data and audio_data.get('subtitles'):
-                try:
-                    merged_video_path = self._embed_subtitles(
-                        merged_video_path, audio_data['subtitles'], task_id
-                    )
-                except Exception as subtitle_error:
-                    logger.warning(
-                        f"Failed to embed subtitles, continuing without them: {subtitle_error}")
-                    # Continue with the video without subtitles
-
             update_task_progress(task_id, 0.7, "Processing final video")
 
             # Step 7: Add watermark if free plan
@@ -188,16 +177,27 @@ class MergingService:
                 merged_video_path, user_id, task_id
             )
 
-            # Step 8: Upscale if requested
+            # Step 8: Upscale if requested (before subtitles for better quality)
             if upscale:
                 update_task_progress(task_id, 0.8, "Upscaling video")
                 final_video_path = self._upscale_video(
                     final_video_path, user_id, task_id, short_id
                 )
 
-            update_task_progress(task_id, 0.9, "Uploading final video")
+            # Step 9: Add subtitles if available (after upscaling for better quality)
+            if audio_data and audio_data.get('subtitles'):
+                try:
+                    final_video_path = self._embed_subtitles(
+                        final_video_path, audio_data['subtitles'], task_id
+                    )
+                except Exception as subtitle_error:
+                    logger.warning(
+                        f"Failed to embed subtitles, continuing without them: {subtitle_error}")
+                    # Continue with the video without subtitles
 
-            # Step 9: Upload final video
+            update_task_progress(task_id, 0.9, "Adding subtitles and finalizing")
+
+            # Step 10: Upload final video
             final_video_url = self._upload_final_video(
                 final_video_path, short_id, task_id)
             if not final_video_url:
@@ -1035,7 +1035,10 @@ class MergingService:
             # Get video duration for credit calculation
             duration = self._get_video_duration(video_path)
 
-            # Check credits for upscaling
+            # Calculate required credits (5 per second)
+            required_credits = duration * 5
+
+            # Check credits for upscaling with the calculated requirement
             credit_check = credit_manager.can_perform_action(
                 user_id, "upscale_video")
             if credit_check.get("error"):
@@ -1046,14 +1049,11 @@ class MergingService:
                 raise Exception(
                     f"Insufficient credits for upscaling: {credit_check.get('reason', 'Unknown')}")
 
-            # Calculate required credits (5 per second)
-            required_credits = duration * 5
-
-            # Check if user has enough credits
-            user_credits = credit_manager.check_user_credits(user_id)
-            if user_credits.get("credits_remaining", 0) < required_credits:
+            # Double-check available credits match the credit check
+            available_credits = credit_check.get("available_credits", credit_check.get("current_credits", 0))
+            if available_credits < required_credits:
                 raise Exception(
-                    f"Insufficient credits for upscaling. Required: {required_credits}, Available: {user_credits.get('credits_remaining', 0)}")
+                    f"Insufficient credits for upscaling. Required: {required_credits}, Available: {available_credits}")
 
             # Upscale video using RunwayML
             if not runwayml_manager.is_available():
