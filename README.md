@@ -58,7 +58,7 @@ The system has been simplified and restructured for better separation of concern
 ### Removed Endpoints
 
 The following endpoints have been removed to simplify the system:
-- Video processing endpoints
+- Video generation endpoints
 - Security statistics endpoints
 - Cache management endpoints
 - In-memory cache status endpoints

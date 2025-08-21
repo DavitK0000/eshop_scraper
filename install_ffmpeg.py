@@ -96,8 +96,8 @@ def main():
     print("=" * 50)
     
     if check_ffmpeg():
-        print("\n🎉 FFmpeg is ready for video processing!")
-        print("\nYou can now use the video processing API endpoints:")
+        print("\n🎉 FFmpeg is ready for video generation and merging!")
+        print("\nYou can now use the video generation and merging API endpoints:")
         print("- POST /api/v1/video/process")
         print("- GET /api/v1/video/tasks/{task_id}")
         print("- GET /api/v1/video/tasks")

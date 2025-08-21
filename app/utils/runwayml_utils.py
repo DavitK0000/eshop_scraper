@@ -168,6 +168,166 @@ class RunwayMLManager:
                 "error": str(e),
                 "status": "error"
             }
+
+    async def upscale_video(
+        self,
+        video_path: Union[str, Path],
+        target_resolution: str = "1920:1080",
+        model: str = "video_upscaler",
+        **kwargs
+    ) -> Dict[str, Any]:
+        """
+        Upscale video using RunwayML's video upscaling model.
+        
+        Args:
+            video_path: Path to video file
+            target_resolution: Target resolution (default: 1920:1080)
+            model: Model to use for upscaling (default: video_upscaler)
+            **kwargs: Additional parameters for video upscaling
+            
+        Returns:
+            Dictionary containing task results and upscaled video URL
+        """
+        if not self.is_available():
+            raise RuntimeError("RunwayML is not available or properly configured")
+        
+        try:
+            # Convert video to data URI if it's a local file
+            video_uri = self._get_video_from_url_or_path(video_path)
+            
+            logger.info(f"Starting video upscaling with model {model} to {target_resolution}")
+            
+            # Create video upscaling task
+            task = self.client.video_upscaler.create(
+                model=model,
+                video=video_uri,
+                target_resolution=target_resolution,
+                **kwargs
+            )
+            
+            # Wait for task completion
+            result = task.wait_for_task_output()
+            
+            logger.info("Video upscaling completed successfully")
+            
+            return {
+                "success": True,
+                "model": model,
+                "target_resolution": target_resolution,
+                "output": result.output,
+                "task_id": result.id,
+                "status": "completed"
+            }
+            
+        except TaskFailedError as e:
+            logger.error(f"Video upscaling failed: {e}")
+            return {
+                "success": False,
+                "error": "Video upscaling failed",
+                "task_details": e.task_details,
+                "status": "failed"
+            }
+        except Exception as e:
+            logger.error(f"Unexpected error during video upscaling: {e}")
+            return {
+                "success": False,
+                "error": str(e),
+                "status": "error"
+            }
+
+    def upscale_video_sync(
+        self,
+        video_path: Union[str, Path],
+        target_resolution: str = "1920:1080",
+        model: str = "video_upscaler",
+        **kwargs
+    ) -> Dict[str, Any]:
+        """
+        Upscale video using RunwayML's video upscaling model (synchronous version).
+        
+        Args:
+            video_path: Path to video file
+            target_resolution: Target resolution (default: 1920:1080)
+            model: Model to use for upscaling (default: video_upscaler)
+            **kwargs: Additional parameters for video upscaling
+            
+        Returns:
+            Dictionary containing task results and upscaled video URL
+        """
+        if not self.is_available():
+            raise RuntimeError("RunwayML is not available or properly configured")
+        
+        try:
+            # Convert video to data URI if it's a local file
+            video_uri = self._get_video_from_url_or_path(video_path)
+            
+            logger.info(f"Starting video upscaling with model {model} to {target_resolution}")
+            
+            # Create video upscaling task
+            task = self.client.video_upscaler.create(
+                model=model,
+                video=video_uri,
+                target_resolution=target_resolution,
+                **kwargs
+            )
+            
+            # Wait for task completion
+            result = task.wait_for_task_output()
+            
+            logger.info("Video upscaling completed successfully")
+            
+            return {
+                "success": True,
+                "model": model,
+                "target_resolution": target_resolution,
+                "output": result.output,
+                "task_id": result.id,
+                "status": "completed"
+            }
+            
+        except TaskFailedError as e:
+            logger.error(f"Video upscaling failed: {e}")
+            return {
+                "success": False,
+                "error": "Video upscaling failed",
+                "task_details": e.task_details,
+                "status": "failed"
+            }
+        except Exception as e:
+            logger.error(f"Unexpected error during video upscaling: {e}")
+            return {
+                "success": False,
+                "error": str(e),
+                "status": "error"
+            }
+
+    def _get_video_from_url_or_path(self, video_source: Union[str, Path]) -> str:
+        """Get video as data URI from either a file path or URL."""
+        if isinstance(video_source, (str, Path)):
+            # Check if it's a file path
+            if os.path.exists(str(video_source)) or Path(video_source).exists():
+                return self._get_video_as_data_uri(video_source)
+            # Assume it's a URL
+            return str(video_source)
+        return str(video_source)
+    
+    def _get_video_as_data_uri(self, video_path: Union[str, Path]) -> str:
+        """Convert a video file to a data URI."""
+        try:
+            video_path = Path(video_path)
+            if not video_path.exists():
+                raise FileNotFoundError(f"Video file not found: {video_path}")
+            
+            with open(video_path, "rb") as f:
+                base64_video = base64.b64encode(f.read()).decode("utf-8")
+            
+            # Get MIME type
+            content_type = mimetypes.guess_type(str(video_path))[0] or "video/mp4"
+            return f"data:{content_type};base64,{base64_video}"
+            
+        except Exception as e:
+            logger.error(f"Failed to convert video to data URI: {e}")
+            raise
     
     async def generate_image_from_text(
         self,
@@ -404,6 +564,28 @@ async def generate_image_with_reference_style(
     """Convenience function to generate styled image with reference."""
     return await runwayml_manager.generate_image_with_reference_style(
         prompt_text, reference_image, style_image, **kwargs
+    )
+
+
+async def upscale_video(
+    video_path: Union[str, Path],
+    target_resolution: str = "1920:1080",
+    **kwargs
+) -> Dict[str, Any]:
+    """Convenience function to upscale video."""
+    return await runwayml_manager.upscale_video(
+        video_path, target_resolution, **kwargs
+    )
+
+
+def upscale_video_sync(
+    video_path: Union[str, Path],
+    target_resolution: str = "1920:1080",
+    **kwargs
+) -> Dict[str, Any]:
+    """Convenience function to upscale video (synchronous)."""
+    return runwayml_manager.upscale_video_sync(
+        video_path, target_resolution, **kwargs
     )
 
 

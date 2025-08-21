@@ -39,6 +39,7 @@ CREATE TABLE IF NOT EXISTS public.user_activities (
 CREATE TABLE IF NOT EXISTS public.products (
     id UUID DEFAULT uuid_generate_v4() PRIMARY KEY,
     user_id UUID REFERENCES auth.users(id) ON DELETE CASCADE NOT NULL,
+    short_id UUID REFERENCES public.shorts(id) ON DELETE CASCADE,
     title TEXT NOT NULL,
     description TEXT,
     price DECIMAL(10,2),
@@ -61,7 +62,6 @@ CREATE TABLE IF NOT EXISTS public.products (
 CREATE TABLE IF NOT EXISTS public.shorts (
     id UUID DEFAULT uuid_generate_v4() PRIMARY KEY,
     user_id UUID REFERENCES auth.users(id) ON DELETE CASCADE NOT NULL,
-    product_id UUID REFERENCES public.products(id) ON DELETE SET NULL,
     title TEXT NOT NULL,
     description TEXT,
     status TEXT NOT NULL DEFAULT 'draft' CHECK (status IN ('draft', 'processing', 'completed', 'failed', 'published')),
@@ -135,12 +135,12 @@ CREATE INDEX IF NOT EXISTS idx_user_activities_created_at ON public.user_activit
 CREATE INDEX IF NOT EXISTS idx_user_activities_action ON public.user_activities(action);
 
 CREATE INDEX IF NOT EXISTS idx_products_user_id ON public.products(user_id);
+CREATE INDEX IF NOT EXISTS idx_products_short_id ON public.products(short_id);
 CREATE INDEX IF NOT EXISTS idx_products_created_at ON public.products(created_at);
 
 CREATE INDEX IF NOT EXISTS idx_shorts_user_id ON public.shorts(user_id);
 CREATE INDEX IF NOT EXISTS idx_shorts_status ON public.shorts(status);
 CREATE INDEX IF NOT EXISTS idx_shorts_created_at ON public.shorts(created_at);
-CREATE INDEX IF NOT EXISTS idx_shorts_product_id ON public.shorts(product_id);
 CREATE INDEX IF NOT EXISTS idx_shorts_target_language ON public.shorts(target_language);
 
 CREATE INDEX IF NOT EXISTS idx_video_scenarios_short_id ON public.video_scenarios(short_id);

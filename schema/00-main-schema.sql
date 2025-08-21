@@ -26,4 +26,7 @@
 \i schema/07-views.sql
 
 -- Import initial data last
-\i schema/08-initial-data.sql 
+\i schema/08-initial-data.sql
+
+-- Import migration scripts
+\i schema/09-migration-short-id-update.sql 

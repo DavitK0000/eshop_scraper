@@ -234,7 +234,7 @@ class VideoGenerationService:
             logger.info(
                 f"Creating video generation task for scene {scene_id} and user {user_id}")
             task_id = create_task(
-                task_type=TaskType.VIDEO_PROCESSING,
+                task_type=TaskType.MEDIA_PROCESSING,
                 user_id=user_id,
                 scene_id=scene_id,
                 task_name="Video Generation",

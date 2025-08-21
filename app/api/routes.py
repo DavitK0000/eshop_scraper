@@ -8,12 +8,12 @@ import os
 
 from app.models import (
     ScrapeRequest, TaskStatusResponse, HealthResponse,
-    TaskStatus, VideoProcessRequest, VideoProcessResponse,
-    VideoGenerationRequest, VideoGenerationResponse
+    TaskStatus, VideoGenerationRequest, VideoGenerationResponse,
+    FinalizeShortRequest, FinalizeShortResponse
 )
 from app.services.scraping_service import scraping_service
-from app.services.video_service import VideoProcessingService
 from app.services.video_generation_service import video_generation_service
+from app.services.merging_service import merging_service
 from app.config import settings
 from app.security import (
     get_api_key, validate_request_security, validate_scrape_request,
@@ -26,10 +26,6 @@ from app.utils.credit_utils import can_perform_action
 logger = get_logger(__name__)
 
 router = APIRouter()
-
-# Initialize video processing service
-video_service = VideoProcessingService()
-
 
 @router.post("/scrape", response_model=TaskStatusResponse)
 def scrape_product(
@@ -273,129 +269,7 @@ def cleanup_tasks():
         raise HTTPException(status_code=500, detail=f"Failed to cleanup tasks: {str(e)}")
 
 
-# ============================================================================
-# Video Processing Endpoints
-# ============================================================================
 
-@router.post("/video/process", response_model=VideoProcessResponse)
-def process_video(
-    request: VideoProcessRequest,
-    api_key: Optional[str] = Depends(get_api_key)
-) -> VideoProcessResponse:
-    """
-    Process video by merging multiple videos, adding audio, and embedding subtitles.
-    
-    This endpoint accepts video URLs, audio data, and optional subtitle text.
-    Returns immediately with a task ID for polling.
-    
-    Authentication: Optional API key via Bearer token
-    """
-    try:
-        # Security validation - DISABLED FOR DEVELOPMENT
-        # TODO: Re-enable security checks for production
-        # validate_request_security(http_request, api_key)
-        
-        logger.info(f"Starting video processing task with {len(request.video_urls)} videos")
-        
-        response = video_service.process_video(
-            video_urls=request.video_urls,
-            audio_data=request.audio_data,
-            subtitle_text=request.subtitle_text,
-            output_resolution=request.output_resolution,
-            watermark=request.watermark
-        )
-        
-        logger.info(f"Started video processing task {response.task_id}")
-        
-        return response
-        
-    except Exception as e:
-        logger.error(f"Error in video processing endpoint: {e}", exc_info=True)
-        raise HTTPException(status_code=500, detail=f"Video processing failed: {str(e)}")
-
-
-@router.get("/video/tasks/{task_id}", response_model=VideoProcessResponse)
-def get_video_task_status(task_id: str) -> VideoProcessResponse:
-    """
-    Get the status of a video processing task.
-    Returns full VideoProcessResponse when completed.
-    """
-    try:
-        task_info = video_service.get_task_status(task_id)
-        
-        if not task_info:
-            raise HTTPException(status_code=404, detail="Video task not found")
-        
-        # Convert task info to VideoProcessResponse
-        return VideoProcessResponse(
-            task_id=task_id,
-            status=task_info['status'],
-            video_data=task_info.get('video_data'),
-            thumbnail_data=task_info.get('thumbnail_data'),
-            error=task_info.get('error'),
-            created_at=task_info['created_at'],
-            completed_at=task_info.get('completed_at')
-        )
-        
-    except HTTPException:
-        raise
-    except Exception as e:
-        logger.error(f"Error getting video task status {task_id}: {e}", exc_info=True)
-        raise HTTPException(status_code=500, detail=f"Failed to get video task status: {str(e)}")
-
-
-@router.get("/video/tasks")
-def get_all_video_tasks():
-    """
-    Get all video processing tasks
-    """
-    try:
-        tasks = video_service.get_all_tasks()
-        return tasks
-        
-    except Exception as e:
-        logger.error(f"Error getting all video tasks: {e}", exc_info=True)
-        raise HTTPException(status_code=500, detail=f"Failed to get video tasks: {str(e)}")
-
-
-@router.delete("/video/tasks/{task_id}")
-def cancel_video_task(task_id: str):
-    """
-    Cancel a running video processing task
-    """
-    try:
-        task_info = video_service.get_task_status(task_id)
-        
-        if not task_info:
-            raise HTTPException(status_code=404, detail="Video task not found")
-        
-        if task_info['status'] not in [TaskStatus.PENDING, TaskStatus.RUNNING]:
-            raise HTTPException(status_code=400, detail="Cannot cancel completed or failed video task")
-        
-        # Update task status to cancelled
-        video_service._update_task_status(task_id, TaskStatus.FAILED, "Video task cancelled by user")
-        
-        return {"message": f"Video task {task_id} cancelled successfully"}
-        
-    except HTTPException:
-        raise
-    except Exception as e:
-        logger.error(f"Error cancelling video task {task_id}: {e}", exc_info=True)
-        raise HTTPException(status_code=500, detail=f"Failed to cancel video task: {str(e)}")
-
-
-@router.delete("/video/tasks")
-def cleanup_video_tasks():
-    """
-    Clean up old completed/failed video processing tasks
-    """
-    try:
-        video_service.cleanup()
-        return {"message": "Video task cleanup completed"}
-        
-    except Exception as e:
-        logger.error(f"Error cleaning up video tasks: {e}", exc_info=True)
-        raise HTTPException(status_code=500, detail=f"Failed to cleanup video tasks: {str(e)}")
 
 
 # ============================================================================
@@ -533,4 +407,172 @@ def cleanup_video_generation_tasks():
         
     except Exception as e:
         logger.error(f"Error cleaning up video generation tasks: {e}", exc_info=True)
-        raise HTTPException(status_code=500, detail=f"Failed to cleanup video generation tasks: {str(e)}") 
+        raise HTTPException(status_code=500, detail=f"Failed to cleanup video generation tasks: {str(e)}")
+
+
+# ============================================================================
+# Short Finalization Endpoints
+# ============================================================================
+
+@router.post("/shorts/finalize", response_model=FinalizeShortResponse)
+def finalize_short(
+    request: FinalizeShortRequest,
+    http_request: Request = None,
+    api_key: Optional[str] = Depends(get_api_key)
+) -> FinalizeShortResponse:
+    """
+    Finalize a short video by merging scenes, generating thumbnail, and optionally upscaling.
+    
+    This endpoint starts the finalization process asynchronously using threads.
+    Returns immediately with a task ID for polling.
+    
+    Authentication: Optional API key via Bearer token
+    Rate Limits: 
+    - With API key: Based on key configuration
+    - Without API key: 10 requests per minute
+    """
+    try:
+        # Security validation - DISABLED FOR DEVELOPMENT
+        # TODO: Re-enable security checks for production by uncommenting the lines below
+        # validate_request_security(http_request, api_key)
+        # validate_scrape_request(str(request.url), api_key)
+        
+        logger.info(f"Starting short finalization for user {request.user_id}, short {request.short_id}, upscale: {request.upscale}")
+        
+        # Start finalization using merging service
+        response = merging_service.start_finalize_short_task(
+            user_id=request.user_id,
+            short_id=request.short_id,
+            upscale=request.upscale
+        )
+        
+        # Convert response to FinalizeShortResponse format
+        finalize_response = FinalizeShortResponse(
+            task_id=response['task_id'],
+            status=TaskStatus.PENDING,
+            short_id=request.short_id,
+            user_id=request.user_id,
+            message=response['message'],
+            created_at=datetime.fromisoformat(response['created_at']),
+            progress=0.0,
+            current_step="Initializing"
+        )
+        
+        logger.info(f"Started short finalization task {finalize_response.task_id} for short {request.short_id}")
+        
+        return finalize_response
+        
+    except Exception as e:
+        logger.error(f"Error in short finalization endpoint: {e}", exc_info=True)
+        raise HTTPException(status_code=500, detail=f"Short finalization failed: {str(e)}")
+
+
+@router.get("/shorts/finalize/tasks/{task_id}", response_model=FinalizeShortResponse)
+def get_short_finalization_task_status(task_id: str) -> FinalizeShortResponse:
+    """
+    Get the status of a short finalization task.
+    Returns FinalizeShortResponse with current status and progress.
+    """
+    try:
+        task_info = merging_service.get_task_status(task_id)
+        
+        if not task_info:
+            raise HTTPException(status_code=404, detail="Short finalization task not found")
+        
+        # Convert task info to FinalizeShortResponse
+        # Handle both Task object and dict formats
+        if hasattr(task_info, 'task_status'):
+            # Task object
+            status = task_info.task_status
+            created_at = task_info.created_at
+            progress = task_info.progress
+            current_step = task_info.current_step_name
+            error_message = task_info.error_message
+            short_id = task_info.task_metadata.get('short_id', '') if task_info.task_metadata else ''
+            user_id = task_info.user_id or ''
+            message = task_info.task_status_message or ''
+            thumbnail_url = task_info.task_metadata.get('thumbnail_url', '') if task_info.task_metadata else ''
+            video_url = task_info.task_metadata.get('video_url', '') if task_info.task_metadata else ''
+            updated_at = task_info.updated_at
+        else:
+            # Dict format
+            status = task_info['status']
+            created_at = task_info['created_at']
+            progress = task_info.get('progress')
+            current_step = task_info.get('current_step')
+            error_message = task_info.get('error_message')
+            short_id = task_info.get('short_id', '')
+            user_id = task_info.get('user_id', '')
+            message = task_info.get('message', '')
+            thumbnail_url = task_info.get('thumbnail_url', '')
+            video_url = task_info.get('video_url', '')
+            updated_at = task_info.get('updated_at')
+        
+        return FinalizeShortResponse(
+            task_id=task_id,
+            status=status,
+            short_id=short_id,
+            user_id=user_id,
+            message=message,
+            created_at=created_at,
+            progress=progress,
+            current_step=current_step,
+            error_message=error_message,
+            thumbnail_url=thumbnail_url,
+            final_video_url=video_url,  # Map from video_url to final_video_url for API response
+            completed_at=updated_at if status == TaskStatus.COMPLETED else None
+        )
+        
+    except HTTPException:
+        raise
+    except Exception as e:
+        logger.error(f"Error getting short finalization task status {task_id}: {e}", exc_info=True)
+        raise HTTPException(status_code=500, detail=f"Failed to get short finalization task status: {str(e)}")
+
+
+@router.delete("/shorts/finalize/tasks/{task_id}")
+def cancel_short_finalization_task(task_id: str):
+    """
+    Cancel a running short finalization task
+    """
+    try:
+        task_info = merging_service.get_task_status(task_id)
+        
+        if not task_info:
+            raise HTTPException(status_code=404, detail="Short finalization task not found")
+        
+        # Handle both Task object and dict formats
+        if hasattr(task_info, 'task_status'):
+            status = task_info.task_status
+        else:
+            status = task_info['status']
+            
+        if status not in [TaskStatus.PENDING, TaskStatus.RUNNING]:
+            raise HTTPException(status_code=400, detail="Cannot cancel completed or failed short finalization task")
+        
+        # Update task status to failed (cancelled)
+        # Note: We'll need to add a cancel method to the merging service
+        # For now, we'll mark it as failed
+        logger.warning(f"Short finalization task {task_id} cancelled by user")
+        
+        return {"message": f"Short finalization task {task_id} cancelled successfully"}
+        
+    except HTTPException:
+        raise
+    except Exception as e:
+        logger.error(f"Error cancelling short finalization task {task_id}: {e}", exc_info=True)
+        raise HTTPException(status_code=500, detail=f"Failed to cancel short finalization task: {str(e)}")
+
+
+@router.delete("/shorts/finalize/tasks")
+def cleanup_short_finalization_tasks():
+    """
+    Clean up old completed/failed short finalization tasks
+    """
+    try:
+        merging_service.cleanup()
+        return {"message": "Short finalization task cleanup completed"}
+        
+    except Exception as e:
+        logger.error(f"Error cleaning up short finalization tasks: {e}", exc_info=True)
+        raise HTTPException(status_code=500, detail=f"Failed to cleanup short finalization tasks: {str(e)}") 

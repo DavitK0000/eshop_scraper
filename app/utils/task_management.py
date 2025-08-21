@@ -30,10 +30,10 @@ logger = logging.getLogger(__name__)
 class TaskType(str, Enum):
     """Task type enumeration"""
     SCRAPING = "scraping"
-    VIDEO_PROCESSING = "video_processing"
     CONTENT_ANALYSIS = "content_analysis"
     DATA_EXTRACTION = "data_extraction"
     MEDIA_PROCESSING = "media_processing"
+    FINALIZE_SHORT = "finalize_short"
 
 
 class TaskStatus(str, Enum):
@@ -382,16 +382,7 @@ class TaskManager:
                 "Extracting product information",
                 "Finalizing results"
             ],
-            TaskType.VIDEO_PROCESSING: [
-                "Initializing",
-                "Downloading video files",
-                "Processing video content",
-                "Merging videos",
-                "Adding audio/subtitles",
-                "Applying effects/watermarks",
-                "Encoding final video",
-                "Finalizing results"
-            ],
+
             TaskType.CONTENT_ANALYSIS: [
                 "Initializing",
                 "Processing content",
@@ -413,6 +404,17 @@ class TaskManager:
                 "Processing media content",
                 "Applying transformations",
                 "Encoding output",
+                "Finalizing results"
+            ],
+            TaskType.FINALIZE_SHORT: [
+                "Initializing",
+                "Fetching video scenes",
+                "Generating thumbnail",
+                "Downloading videos",
+                "Merging videos",
+                "Adding watermark (if needed)",
+                "Upscaling video (if requested)",
+                "Uploading final video",
                 "Finalizing results"
             ]
         }
@@ -823,12 +825,7 @@ def create_task(
             block_images=False
         )
         
-        # Create video processing task
-        task_id = create_task(
-            TaskType.VIDEO_PROCESSING,
-            video_urls=["url1", "url2"],
-            output_resolution="1920x1080"
-        )
+
         
         # Create content analysis task
         task_id = create_task(

@@ -1157,20 +1157,33 @@ class ScrapingService:
             # Remove None values to avoid database errors
             product_data = {k: v for k, v in product_data.items() if v is not None}
             
+            # Create a shorts entry first
+            short_id = self._create_shorts_entry(user_id, product_info, target_language)
+            
+            if not short_id:
+                logger.warning("Failed to create shorts entry, skipping product save")
+                return None, None
+            
+            # Add short_id to product data
+            product_data["short_id"] = short_id
+            
             # Insert into products table
             result = supabase_manager.insert_record_sync("products", product_data)
             
             if result:
                 product_id = result.get('id')
-                logger.info(f"Successfully saved product to Supabase for user {user_id}: {product_data['title']} (ID: {product_id})")
+                logger.info(f"Successfully saved product to Supabase for user {user_id}: {product_data['title']} (ID: {product_id}) linked to short {short_id}")
                 logger.debug(f"Product data saved: {product_data}")
-                
-                # Create a shorts entry for this product
-                short_id = self._create_shorts_entry(user_id, product_id, product_info, target_language)
                 
                 return product_id, short_id
             else:
                 logger.error(f"Failed to save product to Supabase for user {user_id}")
+                # Try to clean up the created short
+                try:
+                    supabase_manager.client.table('shorts').delete().eq('id', short_id).execute()
+                    logger.info(f"Cleaned up orphaned short {short_id} after product creation failed")
+                except Exception as cleanup_error:
+                    logger.warning(f"Failed to clean up orphaned short {short_id}: {cleanup_error}")
                 return None, None
                 
         except ImportError:
@@ -1181,13 +1194,12 @@ class ScrapingService:
             # Don't raise the exception to avoid breaking the scraping flow
             return None, None
 
-    def _create_shorts_entry(self, user_id: str, product_id: str, product_info, target_language: Optional[str] = None):
+    def _create_shorts_entry(self, user_id: str, product_info, target_language: Optional[str] = None):
         """
         Create a shorts entry in the shorts table for a newly scraped product
         
         Args:
             user_id: User ID who owns the product
-            product_id: The ID of the newly created product
             product_info: The extracted product information
             target_language: Target language for content generation (defaults to 'en-US')
         """
@@ -1205,7 +1217,6 @@ class ScrapingService:
             # Prepare shorts data
             shorts_data = {
                 "user_id": user_id,
-                "product_id": product_id,
                 "title": f"Short for {product_info.title}",
                 "description": f"Auto-generated short video project for {product_info.title}",
                 "status": "draft",
@@ -1224,15 +1235,15 @@ class ScrapingService:
             
             if result:
                 short_id = result.get('id')
-                logger.info(f"Successfully created shorts entry for product {product_id}: Short ID {short_id}")
+                logger.info(f"Successfully created shorts entry: Short ID {short_id}")
                 logger.debug(f"Shorts data created: {shorts_data}")
                 return short_id
             else:
-                logger.warning(f"Failed to create shorts entry for product {product_id}")
+                logger.warning(f"Failed to create shorts entry")
                 return None
                 
         except Exception as e:
-            logger.error(f"Error creating shorts entry for product {product_id}: {e}", exc_info=True)
+            logger.error(f"Error creating shorts entry: {e}", exc_info=True)
             # Don't raise the exception to avoid breaking the main flow
             return None
 
