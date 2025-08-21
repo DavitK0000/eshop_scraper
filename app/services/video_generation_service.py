@@ -408,36 +408,36 @@ class VideoGenerationService:
     
     def _generate_image_if_needed(self, scene_data: Dict[str, Any], user_id: str, task_id: str) -> str:
         """Generate image if it doesn't exist, otherwise return existing image URL."""
+        # Check if image already exists
+        if scene_data.get('image_url'):
+            logger.info(f"Image already exists for scene {scene_data['id']}: {scene_data['image_url']}")
+            return scene_data['image_url']
+        
+        # Get required data for image generation
+        image_prompt = scene_data.get('image_prompt')
+        product_reference_image_url = scene_data.get('product_reference_image_url')
+        
+        if not image_prompt:
+            raise Exception("Image prompt is required for image generation")
+        
+        # Check credits before generation
+        credit_check = credit_manager.can_perform_action(user_id, "generate_image")
+        if credit_check.get("error") or not credit_check.get("can_perform", False):
+            raise Exception(f"Insufficient credits for image generation: {credit_check.get('reason', 'Unknown error')}")
+        
+        # Get resolution mapping for image generation
+        scene_id = scene_data['id']
+        video_resolution = self._get_scenario_resolution(scene_id)
+        resolution_mapping = self._get_resolution_mapping(video_resolution)
+        image_ratio = resolution_mapping['image_ratio']
+        
+        logger.info(f"Using image ratio {image_ratio} for scene {scene_id} (video resolution: {video_resolution})")
+        
+        # Update progress - starting AI image generation
+        update_task_progress(task_id, 2, 'Generating scene image with AI', 35.0)
+        
+        # Generate image using RunwayML
         try:
-            # Check if image already exists
-            if scene_data.get('image_url'):
-                logger.info(f"Image already exists for scene {scene_data['id']}: {scene_data['image_url']}")
-                return scene_data['image_url']
-            
-            # Check if we have the required data
-            image_prompt = scene_data.get('image_prompt')
-            product_reference_image_url = scene_data.get('product_reference_image_url')
-            
-            if not image_prompt:
-                raise Exception("Image prompt is required for image generation")
-            
-            # Check credits before generation
-            credit_check = credit_manager.can_perform_action(user_id, "generate_image")
-            if credit_check.get("error") or not credit_check.get("can_perform", False):
-                raise Exception(f"Insufficient credits for image generation: {credit_check.get('reason', 'Unknown error')}")
-            
-            # Get resolution mapping for image generation
-            scene_id = scene_data['id']
-            video_resolution = self._get_scenario_resolution(scene_id)
-            resolution_mapping = self._get_resolution_mapping(video_resolution)
-            image_ratio = resolution_mapping['image_ratio']
-            
-            logger.info(f"Using image ratio {image_ratio} for scene {scene_id} (video resolution: {video_resolution})")
-            
-            # Update progress - starting AI image generation
-            update_task_progress(task_id, 2, 'Generating scene image with AI', 35.0)
-            
-            # Generate image using RunwayML
             if product_reference_image_url:
                 # Use reference image for style
                 result = self._run_sync(runwayml_manager.generate_image_with_reference_style(
@@ -448,7 +448,7 @@ class VideoGenerationService:
             else:
                 # Generate from text only
                 result = self._run_sync(runwayml_manager.generate_image_from_text(
-                    prompt=image_prompt,
+                    prompt_text=image_prompt,
                     ratio=image_ratio,
                     model="gen4_image_turbo"
                 ))
@@ -459,26 +459,32 @@ class VideoGenerationService:
             # Extract image URL from the output
             image_url = result['output'][0] if isinstance(result['output'], list) else result['output']
             
-            # Update progress - downloading and storing image
-            update_task_progress(task_id, 2, 'Storing generated image', 40.0)
-            
-            # Download and store image in Supabase
-            image_url = self._store_image_in_supabase(image_url, user_id)
-            
-            # Deduct credits after successful generation
-            credit_manager.deduct_credits(
-                user_id=user_id,
-                action_name="generate_image",
-                reference_id=scene_data['id'],
-                reference_type="scene",
-                description=f"Generated image for scene {scene_data['id']}"
-            )
-            
-            return image_url
+            # Log if fallback methods were used
+            if result.get('retry_success'):
+                logger.info(f"Image generated successfully on retry with fetched images for scene {scene_data['id']}")
+            elif result.get('text_only_fallback'):
+                logger.info(f"Image generated successfully using text-only fallback for scene {scene_data['id']}")
             
         except Exception as e:
-            logger.error(f"Failed to generate image for scene {scene_data['id']}: {e}")
-            raise
+            logger.error(f"Unexpected error during image generation: {e}")
+            raise Exception(f"Failed to generate image with RunwayML: {e}")
+        
+        # Update progress - downloading and storing image
+        update_task_progress(task_id, 2, 'Storing generated image', 40.0)
+        
+        # Download and store image in Supabase
+        image_url = self._store_image_in_supabase(image_url, user_id)
+        
+        # Deduct credits after successful generation
+        credit_manager.deduct_credits(
+            user_id=user_id,
+            action_name="generate_image",
+            reference_id=scene_data['id'],
+            reference_type="scene",
+            description=f"Generated image for scene {scene_data['id']}"
+        )
+        
+        return image_url
     
     def _generate_video(self, scene_data: Dict[str, Any], image_url: str, user_id: str, task_id: str) -> str:
         """Generate video using the image and visual prompt."""

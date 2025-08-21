@@ -11,6 +11,15 @@ from typing import Dict, List, Any, Optional, Union, Tuple
 from pathlib import Path
 import asyncio
 from concurrent.futures import ThreadPoolExecutor
+import requests
+from io import BytesIO
+
+try:
+    from PIL import Image
+    PIL_AVAILABLE = True
+except ImportError:
+    PIL_AVAILABLE = False
+    logging.warning("Pillow package not available. Install with: pip install Pillow")
 
 try:
     from runwayml import RunwayML, TaskFailedError
@@ -62,6 +71,10 @@ class RunwayMLManager:
                 settings.RUNWAYML_API_SECRET and 
                 self.client is not None)
     
+    def is_pillow_available(self) -> bool:
+        """Check if Pillow is available for image processing."""
+        return PIL_AVAILABLE
+    
     def _get_image_as_data_uri(self, image_path: Union[str, Path]) -> str:
         """Convert an image file to a data URI."""
         try:
@@ -89,6 +102,103 @@ class RunwayMLManager:
             # Assume it's a URL
             return str(image_source)
         return str(image_source)
+    
+    def _fetch_image_from_url(self, image_url: str) -> Optional[bytes]:
+        """
+        Fetch image data from a URL.
+        
+        Args:
+            image_url: URL of the image to fetch
+            
+        Returns:
+            Image data as bytes if successful, None otherwise
+        """
+        try:
+            logger.info(f"Fetching image from URL: {image_url}")
+            response = requests.get(image_url, timeout=30)
+            response.raise_for_status()
+            
+            # Check if response contains image data
+            content_type = response.headers.get('content-type', '')
+            if not content_type.startswith('image/'):
+                logger.warning(f"URL does not contain image data: {content_type}")
+                return None
+                
+            logger.info(f"Successfully fetched image from URL: {image_url}")
+            return response.content
+            
+        except requests.exceptions.RequestException as e:
+            logger.error(f"Failed to fetch image from URL {image_url}: {e}")
+            return None
+        except Exception as e:
+            logger.error(f"Unexpected error fetching image from URL {image_url}: {e}")
+            return None
+    
+    def _convert_image_to_png_data_uri(self, image_data: bytes) -> str:
+        """
+        Convert image data to PNG format and return as data URI.
+        
+        Args:
+            image_data: Raw image data as bytes
+            
+        Returns:
+            PNG image as data URI
+        """
+        if not PIL_AVAILABLE:
+            logger.error("Pillow not available, cannot convert image to PNG")
+            raise RuntimeError("Pillow not available for image conversion")
+            
+        try:
+            # Open image from bytes
+            image = Image.open(BytesIO(image_data))
+            
+            # Convert to RGB if necessary (PNG supports RGBA, but some models prefer RGB)
+            if image.mode in ('RGBA', 'LA', 'P'):
+                # Create white background for transparent images
+                background = Image.new('RGB', image.size, (255, 255, 255))
+                if image.mode == 'P':
+                    image = image.convert('RGBA')
+                background.paste(image, mask=image.split()[-1] if image.mode == 'RGBA' else None)
+                image = background
+            elif image.mode != 'RGB':
+                image = image.convert('RGB')
+            
+            # Convert to PNG bytes
+            png_buffer = BytesIO()
+            image.save(png_buffer, format='PNG', optimize=True)
+            png_data = png_buffer.getvalue()
+            
+            # Convert to base64 data URI
+            base64_image = base64.b64encode(png_data).decode("utf-8")
+            data_uri = f"data:image/png;base64,{base64_image}"
+            
+            logger.info("Successfully converted image to PNG data URI")
+            return data_uri
+            
+        except Exception as e:
+            logger.error(f"Failed to convert image to PNG: {e}")
+            raise
+    
+    def _fetch_and_convert_image(self, image_url: str) -> Optional[str]:
+        """
+        Fetch image from URL and convert to PNG data URI.
+        
+        Args:
+            image_url: URL of the image to fetch
+            
+        Returns:
+            PNG image as data URI if successful, None otherwise
+        """
+        try:
+            image_data = self._fetch_image_from_url(image_url)
+            if image_data is None:
+                return None
+                
+            return self._convert_image_to_png_data_uri(image_data)
+            
+        except Exception as e:
+            logger.error(f"Failed to fetch and convert image from {image_url}: {e}")
+            return None
     
     async def generate_video_from_image(
         self,
@@ -371,33 +481,109 @@ class RunwayMLManager:
                     }
                     processed_reference_images.append(processed_ref)
             
-            # Create image generation task
-            task_params = {
-                "model": model,
-                "prompt_text": prompt_text,
-                "ratio": ratio,
-                **kwargs
-            }
-            
-            if processed_reference_images:
-                task_params["reference_images"] = processed_reference_images
-            
-            task = self.client.text_to_image.create(**task_params)
-            
-            # Wait for task completion
-            result = task.wait_for_task_output()
-            
-            logger.info("Image generation completed successfully")
-            
-            return {
-                "success": True,
-                "model": model,
-                "prompt_text": prompt_text,
-                "ratio": ratio,
-                "output": result.output,
-                "task_id": result.id,
-                "status": "completed"
-            }
+            # First attempt with original reference images
+            try:
+                # Create image generation task
+                task_params = {
+                    "model": model,
+                    "prompt_text": prompt_text,
+                    "ratio": ratio,
+                    **kwargs
+                }
+                
+                if processed_reference_images:
+                    task_params["reference_images"] = processed_reference_images
+                
+                task = self.client.text_to_image.create(**task_params)
+                
+                # Wait for task completion
+                result = task.wait_for_task_output()
+                
+                logger.info("Image generation completed successfully")
+                
+                return {
+                    "success": True,
+                    "model": model,
+                    "prompt_text": prompt_text,
+                    "ratio": ratio,
+                    "output": result.output,
+                    "task_id": result.id,
+                    "status": "completed"
+                }
+                
+            except Exception as e:
+                error_message = str(e)
+                logger.warning(f"First attempt failed: {error_message}")
+                logger.info(f"Error type: {type(e)}")
+                
+                # Check if it's the specific "referenceImages failed to fetch asset" error
+                if "referenceImages" in error_message and processed_reference_images:
+                    logger.info("Detected 'referenceImages failed to fetch asset' error, attempting to fetch and convert images")
+                    
+                    # Try to fetch and convert reference images
+                    fetched_reference_images = []
+                    for ref_img in processed_reference_images:
+                        ref_uri = ref_img["uri"]
+                        if ref_uri.startswith('http'):
+                            # Try to fetch and convert the image
+                            converted_uri = self._fetch_and_convert_image(ref_uri)
+                            if converted_uri:
+                                fetched_reference_images.append({
+                                    "uri": converted_uri,
+                                    "tag": ref_img.get("tag")
+                                })
+                                logger.info(f"Successfully fetched and converted reference image: {ref_uri}")
+                            else:
+                                logger.warning(f"Failed to fetch and convert reference image: {ref_uri}")
+                        else:
+                            # Keep local file references as is
+                            fetched_reference_images.append(ref_img)
+                    
+                    # If we have fetched reference images, try again
+                    if fetched_reference_images:
+                        try:
+                            logger.info("Retrying with fetched and converted reference images")
+                            
+                            task_params = {
+                                "model": model,
+                                "prompt_text": prompt_text,
+                                "ratio": ratio,
+                                "reference_images": fetched_reference_images,
+                                **kwargs
+                            }
+                            
+                            task = self.client.text_to_image.create(**task_params)
+                            
+                            result = task.wait_for_task_output()
+                            
+                            logger.info("Image generation completed successfully on retry")
+                            
+                            return {
+                                "success": True,
+                                "model": model,
+                                "prompt_text": prompt_text,
+                                "ratio": ratio,
+                                "output": result.output,
+                                "task_id": result.id,
+                                "status": "completed",
+                                "retry_success": True
+                            }
+                            
+                        except Exception as retry_error:
+                            logger.warning(f"Retry with fetched images also failed: {retry_error}")
+                            # Fall through to text-only generation
+                    
+                    # If all attempts with reference images failed, fall back to text-only generation
+                    logger.info("Falling back to text-only image generation")
+                    return await self._generate_image_text_only(
+                        prompt_text=prompt_text,
+                        model=model,
+                        ratio=ratio,
+                        **kwargs
+                    )
+                else:
+                    # Re-raise if it's not the specific error we're handling
+                    raise
             
         except TaskFailedError as e:
             logger.error(f"Image generation failed: {e}")
@@ -409,6 +595,68 @@ class RunwayMLManager:
             }
         except Exception as e:
             logger.error(f"Unexpected error during image generation: {e}")
+            return {
+                "success": False,
+                "error": str(e),
+                "status": "error"
+            }
+    
+    async def _generate_image_text_only(
+        self,
+        prompt_text: str,
+        model: str = None,
+        ratio: str = None,
+        **kwargs
+    ) -> Dict[str, Any]:
+        """
+        Generate an image from text only (no reference images).
+        
+        Args:
+            prompt_text: Text prompt for image generation
+            model: Model to use (default: gen4_image)
+            ratio: Image aspect ratio (default: 1920:1080)
+            **kwargs: Additional parameters for image generation
+            
+        Returns:
+            Dictionary containing task results and image URL
+        """
+        try:
+            logger.info("Generating image with text prompt only (no reference images)")
+            
+            # Create image generation task without reference images
+            task = self.client.text_to_image.create(
+                model=model,
+                prompt_text=prompt_text,
+                ratio=ratio,
+                **kwargs
+            )
+            
+            # Wait for task completion
+            result = task.wait_for_task_output()
+            
+            logger.info("Text-only image generation completed successfully")
+            
+            return {
+                "success": True,
+                "model": model,
+                "prompt_text": prompt_text,
+                "ratio": ratio,
+                "output": result.output,
+                "task_id": result.id,
+                "status": "completed",
+                "text_only_fallback": True
+            }
+            
+        except TaskFailedError as e:
+            logger.error(f"Text-only image generation failed: {e}")
+            return {
+                "success": False,
+                "error": "Text-only image generation failed",
+                "task_details": e.task_details,
+                "status": "failed"
+            }
+        except Exception as e:
+            logger.error(f"Unexpected error during text-only image generation: {e}")
             return {
                 "success": False,
                 "error": str(e),
@@ -444,7 +692,7 @@ class RunwayMLManager:
         # Set defaults
         model = model or "gen4_image"
         ratio = ratio or "1920:1080"
-        
+                
         try:
             logger.info(f"Starting styled image generation with model {model}")
             
@@ -462,29 +710,105 @@ class RunwayMLManager:
                     # No tag for style image
                 })
             
-            # Create image generation task
-            task = self.client.text_to_image.create(
-                model=model,
-                prompt_text=prompt_text,
-                ratio=ratio,
-                reference_images=reference_images,
-                **kwargs
-            )
+            print(f"reference_image: {reference_images}")
             
-            # Wait for task completion
-            result = task.wait_for_task_output()
-            
-            logger.info("Styled image generation completed successfully")
-            
-            return {
-                "success": True,
-                "model": model,
-                "prompt_text": prompt_text,
-                "ratio": ratio,
-                "output": result.output,
-                "task_id": result.id,
-                "status": "completed"
-            }
+            # First attempt with original reference images
+            try:
+                # Create image generation task
+                task = self.client.text_to_image.create(
+                    model=model,
+                    prompt_text=prompt_text,
+                    ratio=ratio,
+                    reference_images=reference_images,
+                    **kwargs
+                )
+                
+                # Wait for task completion
+                result = task.wait_for_task_output()
+                
+                logger.info("Styled image generation completed successfully")
+                
+                return {
+                    "success": True,
+                    "model": model,
+                    "prompt_text": prompt_text,
+                    "ratio": ratio,
+                    "output": result.output,
+                    "task_id": result.id,
+                    "status": "completed"
+                }
+                
+            except Exception as e:
+                error_message = str(e)
+                logger.warning(f"First attempt failed: {error_message}")
+                logger.info(f"Error type: {type(e)}")
+                
+                # Check if it's the specific "referenceImages failed to fetch asset" error
+                if "referenceImages" in error_message:
+                    logger.info("Detected 'referenceImages failed to fetch asset' error, attempting to fetch and convert images")
+                    
+                    # Try to fetch and convert reference images
+                    processed_reference_images = []
+                    for ref_img in reference_images:
+                        ref_uri = ref_img["uri"]
+                        if ref_uri.startswith('http'):
+                            # Try to fetch and convert the image
+                            converted_uri = self._fetch_and_convert_image(ref_uri)
+                            if converted_uri:
+                                processed_reference_images.append({
+                                    "uri": converted_uri,
+                                    "tag": ref_img.get("tag")
+                                })
+                                logger.info(f"Successfully fetched and converted reference image: {ref_uri}")
+                            else:
+                                logger.warning(f"Failed to fetch and convert reference image: {ref_uri}")
+                        else:
+                            # Keep local file references as is
+                            processed_reference_images.append(ref_img)
+                    
+                    # If we have processed reference images, try again
+                    if processed_reference_images:
+                        try:
+                            logger.info("Retrying with fetched and converted reference images")
+                            
+                            task = self.client.text_to_image.create(
+                                model=model,
+                                prompt_text=prompt_text,
+                                ratio=ratio,
+                                reference_images=processed_reference_images,
+                                **kwargs
+                            )
+                            
+                            result = task.wait_for_task_output()
+                            
+                            logger.info("Styled image generation completed successfully on retry")
+                            
+                            return {
+                                "success": True,
+                                "model": model,
+                                "prompt_text": prompt_text,
+                                "ratio": ratio,
+                                "output": result.output,
+                                "task_id": result.id,
+                                "status": "completed",
+                                "retry_success": True
+                            }
+                            
+                        except Exception as retry_error:
+                            logger.warning(f"Retry with fetched images also failed: {retry_error}")
+                            # Fall through to text-only generation
+                    
+                    # If all attempts with reference images failed, fall back to text-only generation
+                    logger.info("Falling back to text-only image generation")
+                    return await self.generate_image_from_text(
+                        prompt_text=prompt_text,
+                        model=model,
+                        ratio=ratio,
+                        **kwargs
+                    )
+                else:
+                    # Re-raise if it's not the specific error we're handling
+                    raise
             
         except TaskFailedError as e:
             logger.error(f"Styled image generation failed: {e}")
@@ -594,6 +918,11 @@ def is_runwayml_available() -> bool:
     return runwayml_manager.is_available()
 
 
+def is_pillow_available() -> bool:
+    """Check if Pillow is available for image processing."""
+    return runwayml_manager.is_pillow_available()
+
+
 def get_runwayml_status() -> Dict[str, Any]:
     """Get RunwayML service status and configuration."""
     return {
@@ -601,6 +930,7 @@ def get_runwayml_status() -> Dict[str, Any]:
         "enabled": settings.RUNWAYML_ENABLED,
         "configured": bool(settings.RUNWAYML_API_SECRET),
         "package_available": RUNWAYML_AVAILABLE,
+        "pillow_available": runwayml_manager.is_pillow_available(),
         "models": runwayml_manager.get_available_models() if runwayml_manager.is_available() else None,
         "supported_ratios": runwayml_manager.get_supported_ratios() if runwayml_manager.is_available() else None,
         "supported_durations": runwayml_manager.get_supported_durations() if runwayml_manager.is_available() else None
