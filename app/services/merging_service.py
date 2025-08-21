@@ -1157,13 +1157,14 @@ class MergingService:
             merged_path = os.path.join(temp_dir, "video_with_audio.mp4")
 
             # Merge audio with video using FFmpeg
+            # Use apad to extend audio if it's shorter than video, ensuring output matches video duration
             cmd = [
                 'ffmpeg', '-y',
                 '-i', video_path,
                 '-i', audio_path,
                 '-c:v', 'copy',  # Copy video codec
                 '-c:a', 'aac',   # Convert audio to AAC
-                '-longest',       # Use the longer duration between video and audio
+                '-af', 'apad=whole_dur=' + str(self._get_video_duration(video_path)),  # Pad audio to match video duration
                 merged_path
             ]
 
