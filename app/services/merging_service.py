@@ -3,6 +3,8 @@ Merging Service for Finalizing Shorts
 
 This module provides functionality for:
 - Merging generated video scenes into final videos
+- Merging audio with videos
+- Embedding subtitles into videos
 - Generating thumbnails using RunwayML
 - Upscaling videos using RunwayML
 - Adding watermarks for free plan users
@@ -43,7 +45,7 @@ RETRY_DELAY = 5  # Seconds to wait between retries
 
 
 class MergingService:
-    """Service for finalizing shorts by merging videos and generating thumbnails."""
+    """Service for finalizing shorts by merging videos, audio, and generating thumbnails."""
 
     def __init__(self):
         self._active_threads: Dict[str, threading.Thread] = {}
@@ -114,9 +116,9 @@ class MergingService:
         try:
             # Start task
             start_task(task_id)
-            update_task_progress(task_id, 0.1, "Fetching video scenes")
+            update_task_progress(task_id, 0.1, "Fetching video scenes and audio data")
             
-            # Step 1: Fetch video scenes and product info
+            # Step 1: Fetch video scenes, product info, and audio data
             scenes_data = self._fetch_video_scenes(short_id)
             if not scenes_data:
                 raise Exception("No video scenes found for this short")
@@ -124,6 +126,9 @@ class MergingService:
             product_info = self._fetch_product_info(short_id)
             if not product_info:
                 raise Exception("Product information not found")
+            
+            # Fetch audio data
+            audio_data = self._fetch_audio_data(short_id)
             
             update_task_progress(task_id, 0.2, "Generating thumbnail")
             
@@ -135,28 +140,44 @@ class MergingService:
             # Update shorts table with thumbnail
             self._update_shorts_thumbnail(short_id, thumbnail_url)
             
-            update_task_progress(task_id, 0.4, "Downloading videos")
+            update_task_progress(task_id, 0.4, "Downloading videos and audio")
             
-            # Step 3: Download videos
+            # Step 3: Download videos and audio
             video_files = self._download_videos(scenes_data, task_id)
             if not video_files:
                 raise Exception("Failed to download videos")
             
-            update_task_progress(task_id, 0.6, "Merging videos")
+            audio_file = None
+            if audio_data and audio_data.get('generated_audio_url'):
+                audio_file = self._download_audio(audio_data['generated_audio_url'], task_id)
+            
+            update_task_progress(task_id, 0.6, "Merging videos and audio")
             
             # Step 4: Merge videos
             merged_video_path = self._merge_videos(video_files, task_id)
             if not merged_video_path:
                 raise Exception("Failed to merge videos")
             
+            # Step 5: Merge audio if available
+            if audio_file:
+                merged_video_path = self._merge_audio_with_video(
+                    merged_video_path, audio_file, task_id
+                )
+            
+            # Step 6: Add subtitles if available
+            if audio_data and audio_data.get('subtitles'):
+                merged_video_path = self._embed_subtitles(
+                    merged_video_path, audio_data['subtitles'], task_id
+                )
+            
             update_task_progress(task_id, 0.7, "Processing final video")
             
-            # Step 5: Add watermark if free plan
+            # Step 7: Add watermark if free plan
             final_video_path = self._add_watermark_if_needed(
                 merged_video_path, user_id, task_id
             )
             
-            # Step 6: Upscale if requested
+            # Step 8: Upscale if requested
             if upscale:
                 update_task_progress(task_id, 0.8, "Upscaling video")
                 final_video_path = self._upscale_video(
@@ -165,7 +186,7 @@ class MergingService:
             
             update_task_progress(task_id, 0.9, "Uploading final video")
             
-            # Step 7: Upload final video
+            # Step 9: Upload final video
             final_video_url = self._upload_final_video(final_video_path, short_id, task_id)
             if not final_video_url:
                 raise Exception("Failed to upload final video")
@@ -174,12 +195,15 @@ class MergingService:
             self._update_shorts_final_video(short_id, final_video_url)
             
             # Clean up temporary files
-            self._cleanup_temp_files(video_files + [merged_video_path, final_video_path])
+            temp_files = video_files + [merged_video_path, final_video_path]
+            if audio_file:
+                temp_files.append(audio_file)
+            self._cleanup_temp_files(temp_files)
             
             # Complete task
             complete_task(task_id, {
                 "thumbnail_url": thumbnail_url,
-                "final_video_url": final_video_url,  # Use final_video_url to match the field name
+                "final_video_url": final_video_url,
                 "short_id": short_id
             })
             
@@ -220,7 +244,6 @@ class MergingService:
             # Sort by scene number
             scenes = sorted(scenes_result.data, key=lambda x: x['scene_number'])
             
-            logger.info(f"Found {len(scenes)} video scenes for short {short_id}")
             return scenes
             
         except Exception as e:
@@ -269,6 +292,37 @@ class MergingService:
             logger.error(f"Failed to fetch product info: {e}")
             raise
 
+    def _fetch_audio_data(self, short_id: str) -> Optional[Dict[str, Any]]:
+        """Fetch audio data from audio_info table."""
+        try:
+            if not supabase_manager.is_connected():
+                logger.warning("Supabase connection not available, skipping audio fetch")
+                return None
+            
+            # Get audio info for the short
+            audio_result = supabase_manager.client.table('audio_info').select(
+                'generated_audio_url, subtitles, status'
+            ).eq('short_id', short_id).eq('status', 'completed').execute()
+            
+            if not audio_result.data:
+                logger.info(f"No completed audio found for short {short_id}")
+                return None
+            
+            audio_data = audio_result.data[0]
+            
+            # Check if we have the required fields
+            if not audio_data.get('generated_audio_url'):
+                logger.info(f"No generated audio URL found for short {short_id}")
+                return None
+            
+            logger.info(f"Found audio data for short {short_id}")
+            return audio_data
+            
+        except Exception as e:
+            logger.error(f"Failed to fetch audio data: {e}")
+            # Don't fail the entire process if audio fetch fails
+            return None
+
     def _generate_thumbnail(self, user_id: str, product_info: Dict[str, Any], task_id: str, short_id: str) -> str:
         """Generate thumbnail using RunwayML."""
         try:
@@ -315,21 +369,16 @@ class MergingService:
             if not image_url:
                 raise Exception("No image URL returned from RunwayML")
             
-            logger.info(f"RunwayML returned image URL: {image_url} (type: {type(image_url)})")
-            
             # Handle case where output might be a list of URLs
             if isinstance(image_url, list):
                 if len(image_url) > 0:
                     image_url = image_url[0]  # Take the first URL
-                    logger.info(f"Extracted first URL from list: {image_url}")
                 else:
                     raise Exception("No image URLs returned from RunwayML")
             
             # Ensure image_url is a string
             if not isinstance(image_url, str):
                 raise Exception(f"Invalid image URL format: {type(image_url)}")
-                
-            logger.info(f"Uploading image directly from: {image_url}")
             # Upload directly from URL to Supabase storage without saving to filesystem
             thumbnail_url = self._upload_thumbnail_from_url(image_url, user_id, task_id)
             
@@ -342,7 +391,6 @@ class MergingService:
                 description="Generated thumbnail for short video"
             )
             
-            logger.info(f"Successfully generated thumbnail for user {user_id}")
             return thumbnail_url
             
         except Exception as e:
@@ -378,7 +426,6 @@ class MergingService:
             
             # Create storage path
             filename = f"thumbnail_images/{user_id}/{uuid.uuid4()}.png"
-            logger.info(f"Attempting to upload thumbnail to path: {filename}")
             
             # Validate Supabase connection and bucket
             if not supabase_manager.is_connected():
@@ -395,18 +442,9 @@ class MergingService:
             try:
                 buckets = supabase_manager.client.storage.list_buckets()
                 bucket_names = [bucket.name for bucket in buckets]
-                logger.info(f"Available storage buckets: {bucket_names}")
                 
                 if 'generated-content' not in bucket_names:
                     raise Exception("Storage bucket 'generated-content' not found")
-                
-                # Test bucket permissions
-                try:
-                    # Try to list files in the bucket (this tests read permissions)
-                    files = supabase_manager.client.storage.from_('generated-content').list(path='')
-                    logger.info(f"Successfully listed files in bucket, found {len(files)} items")
-                except Exception as list_error:
-                    logger.warning(f"Could not list files in bucket (may be permission issue): {list_error}")
                     
             except Exception as bucket_error:
                 logger.error(f"Failed to check storage buckets: {bucket_error}")
@@ -414,12 +452,8 @@ class MergingService:
             
             # Download image data directly from URL and upload to Supabase
             with httpx.Client(timeout=DOWNLOAD_TIMEOUT) as client:
-                logger.info(f"Downloading image from URL: {image_url}")
                 response = client.get(image_url)
                 response.raise_for_status()
-                
-                # Log response details for debugging
-                logger.info(f"Downloaded image: {len(response.content)} bytes, content-type: {response.headers.get('content-type', 'unknown')}")
                 
                 # Validate image content
                 if len(response.content) == 0:
@@ -430,22 +464,17 @@ class MergingService:
                     raise Exception(f"Image file too large: {len(response.content)} bytes")
                 
                 # Upload the image data directly to Supabase storage
-                logger.info(f"Uploading to Supabase storage bucket: generated-content")
                 try:
                     result = supabase_manager.client.storage.from_('generated-content').upload(
                         path=filename,
                         file=response.content,  # Use the response content directly
                         file_options={"content-type": "image/png"}
                     )
-                    logger.info(f"Supabase upload result: {result}")
                 except json.JSONDecodeError as json_error:
                     logger.error(f"Supabase upload failed with JSON decode error: {json_error}")
-                    logger.error(f"This usually indicates an empty or invalid response from Supabase")
                     raise Exception(f"Supabase upload failed with JSON decode error: {json_error}")
                 except Exception as upload_error:
                     logger.error(f"Supabase upload failed with error: {upload_error}")
-                    logger.error(f"Upload error type: {type(upload_error)}")
-                    logger.error(f"Upload error details: {str(upload_error)}")
                     raise Exception(f"Supabase upload failed: {upload_error}")
             
             # Check for upload errors
@@ -456,12 +485,9 @@ class MergingService:
             if not result:
                 raise Exception("Upload result is empty or None")
             
-            logger.info(f"Upload completed successfully, result: {result}")
-            
             # Get public URL
             try:
                 thumbnail_url = supabase_manager.client.storage.from_('generated-content').get_public_url(filename)
-                logger.info(f"Generated public URL: {thumbnail_url}")
             except Exception as url_error:
                 logger.error(f"Failed to generate public URL: {url_error}")
                 raise Exception(f"Public URL generation failed: {url_error}")
@@ -469,16 +495,12 @@ class MergingService:
             if not thumbnail_url:
                 raise Exception("Generated thumbnail URL is empty")
             
-            logger.info(f"Successfully uploaded thumbnail to {thumbnail_url}")
             return thumbnail_url
             
         except Exception as e:
             logger.error(f"Failed to upload thumbnail from URL: {e}")
-            logger.error(f"Error type: {type(e)}")
-            logger.error(f"Full error details: {str(e)}")
             
             # Try fallback method: save to temp file first
-            logger.info("Attempting fallback upload method (save to temp file first)")
             try:
                 return self._upload_thumbnail_fallback(image_url, user_id, task_id)
             except Exception as fallback_error:
@@ -509,7 +531,6 @@ class MergingService:
             # Get public URL
             thumbnail_url = supabase_manager.client.storage.from_('generated-content').get_public_url(filename)
             
-            logger.info(f"Successfully uploaded thumbnail to {thumbnail_url}")
             return thumbnail_url
             
         except Exception as e:
@@ -519,8 +540,6 @@ class MergingService:
     def _upload_thumbnail_fallback(self, image_url: str, user_id: str, task_id: str) -> str:
         """Fallback method: download image to temp file first, then upload."""
         try:
-            logger.info("Using fallback upload method: downloading to temp file first")
-            
             # Download image to temporary file
             temp_path = self._download_image(image_url, task_id)
             
@@ -532,15 +551,12 @@ class MergingService:
             if file_size == 0:
                 raise Exception(f"Downloaded file is empty (0 bytes)")
             
-            logger.info(f"Downloaded file: {temp_path}, size: {file_size} bytes")
-            
             # Upload using the existing method
             thumbnail_url = self._upload_thumbnail(temp_path, user_id, task_id)
             
             # Clean up temp file
             try:
                 os.remove(temp_path)
-                logger.debug(f"Cleaned up temporary file: {temp_path}")
             except Exception as cleanup_error:
                 logger.warning(f"Failed to cleanup temporary file {temp_path}: {cleanup_error}")
             
@@ -840,6 +856,120 @@ class MergingService:
             logger.warning(f"Failed to get video duration: {e}, defaulting to 30 seconds")
             return 30
 
+    def _merge_audio_with_video(self, video_path: str, audio_path: str, task_id: str) -> str:
+        """Merge audio with video using FFmpeg."""
+        try:
+            # Create temporary directory for merged video
+            temp_dir = tempfile.mkdtemp()
+            merged_path = os.path.join(temp_dir, "video_with_audio.mp4")
+            
+            # Merge audio with video using FFmpeg
+            cmd = [
+                'ffmpeg', '-y',
+                '-i', video_path,
+                '-i', audio_path,
+                '-c:v', 'copy',  # Copy video codec
+                '-c:a', 'aac',   # Convert audio to AAC
+                '-shortest',      # End when shortest stream ends
+                merged_path
+            ]
+            
+            result = subprocess.run(
+                cmd,
+                capture_output=True,
+                text=True,
+                timeout=300  # 5 minutes timeout
+            )
+            
+            if result.returncode != 0:
+                raise Exception(f"FFmpeg audio merge failed: {result.stderr}")
+            
+            if not os.path.exists(merged_path):
+                raise Exception("Audio-merged video file was not created")
+            
+            logger.info(f"Successfully merged audio with video")
+            return merged_path
+            
+        except Exception as e:
+            logger.error(f"Failed to merge audio with video: {e}")
+            raise
+
+    def _embed_subtitles(self, video_path: str, subtitles: List[Dict[str, Any]], task_id: str) -> str:
+        """Embed subtitles into video using FFmpeg."""
+        try:
+            # Create temporary directory for subtitled video
+            temp_dir = tempfile.mkdtemp()
+            subtitled_path = os.path.join(temp_dir, "video_with_subtitles.mp4")
+            
+            # Create SRT file from subtitles data
+            srt_path = os.path.join(temp_dir, "subtitles.srt")
+            self._create_srt_file(subtitles, srt_path)
+            
+            # Embed subtitles using FFmpeg
+            cmd = [
+                'ffmpeg', '-y',
+                '-i', video_path,
+                '-vf', f'subtitles={srt_path}:force_style=\'FontSize=24,PrimaryColour=&Hffffff,OutlineColour=&H000000,BackColour=&H000000,Bold=1\'',
+                '-c:a', 'copy',  # Copy audio codec
+                subtitled_path
+            ]
+            
+            result = subprocess.run(
+                cmd,
+                capture_output=True,
+                text=True,
+                timeout=300  # 5 minutes timeout
+            )
+            
+            if result.returncode != 0:
+                raise Exception(f"FFmpeg subtitle embedding failed: {result.stderr}")
+            
+            if not os.path.exists(subtitled_path):
+                raise Exception("Subtitled video file was not created")
+            
+            logger.info(f"Successfully embedded subtitles into video")
+            return subtitled_path
+            
+        except Exception as e:
+            logger.error(f"Failed to embed subtitles: {e}")
+            raise
+
+    def _create_srt_file(self, subtitles: List[Dict[str, Any]], srt_path: str):
+        """Create SRT file from subtitles data."""
+        try:
+            with open(srt_path, 'w', encoding='utf-8') as f:
+                for i, subtitle in enumerate(subtitles, 1):
+                    start_time = subtitle.get('start_time', 0)
+                    end_time = subtitle.get('end_time', 0)
+                    text = subtitle.get('text', '')
+                    
+                    # Convert seconds to SRT time format (HH:MM:SS,mmm)
+                    start_srt = self._seconds_to_srt_time(start_time)
+                    end_srt = self._seconds_to_srt_time(end_time)
+                    
+                    f.write(f"{i}\n")
+                    f.write(f"{start_srt} --> {end_srt}\n")
+                    f.write(f"{text}\n\n")
+            
+            logger.info(f"Created SRT file at {srt_path}")
+            
+        except Exception as e:
+            logger.error(f"Failed to create SRT file: {e}")
+            raise
+
+    def _seconds_to_srt_time(self, seconds: float) -> str:
+        """Convert seconds to SRT time format (HH:MM:SS,mmm)."""
+        try:
+            hours = int(seconds // 3600)
+            minutes = int((seconds % 3600) // 60)
+            secs = int(seconds % 60)
+            milliseconds = int((seconds % 1) * 1000)
+            
+            return f"{hours:02d}:{minutes:02d}:{secs:02d},{milliseconds:03d}"
+            
+        except Exception as e:
+            logger.error(f"Failed to convert seconds to SRT time: {e}")
+            return "00:00:00,000"
 
 
     def _upload_final_video(self, video_path: str, short_id: str, task_id: str) -> str:
