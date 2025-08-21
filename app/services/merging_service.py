@@ -1254,6 +1254,30 @@ class MergingService:
                     f"Failed to clean up temporary directory: {cleanup_error}")
             raise
 
+    def _get_subtitle_font(self) -> str:
+        """Get appropriate font for subtitles based on system."""
+        try:
+            # Common fonts that work well across different systems
+            common_fonts = [
+                'Arial',
+                'Helvetica',
+                'DejaVu Sans',
+                'Liberation Sans',
+                'FreeSans',
+                'Verdana'
+            ]
+            
+            # For Windows, Arial is usually available
+            if os.name == 'nt':  # Windows
+                return 'Arial'
+            else:
+                # For Unix-like systems, try to find a common font
+                return 'DejaVu Sans'
+                
+        except Exception as e:
+            logger.warning(f"Could not determine subtitle font, using default: {e}")
+            return 'Arial'
+
     def _create_srt_file(self, subtitles: List[Dict[str, Any]], srt_path: str):
         """Create SRT file from subtitles data."""
         try:
