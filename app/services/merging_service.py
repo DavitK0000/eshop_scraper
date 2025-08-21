@@ -594,9 +594,12 @@ class MergingService:
             with tempfile.NamedTemporaryFile(suffix='.mp3', delete=False) as temp_file:
                 temp_path = temp_file.name
             
+            # Check if this is a Supabase storage URL and convert to signed URL if needed
+            download_url = self._get_signed_audio_url(audio_url)
+            
             # Download audio
             with httpx.Client(timeout=DOWNLOAD_TIMEOUT) as client:
-                response = client.get(audio_url)
+                response = client.get(download_url)
                 response.raise_for_status()
                 
                 with open(temp_path, 'wb') as f:
@@ -608,6 +611,98 @@ class MergingService:
         except Exception as e:
             logger.error(f"Failed to download audio: {e}")
             raise
+
+    def _get_signed_audio_url(self, audio_url: str) -> str:
+        """Convert Supabase storage URL to signed URL for private files."""
+        try:
+            # Check if it's a Supabase storage URL
+            if '/storage/v1/object/public/' in audio_url:
+                # Extract bucket and path from the URL
+                parts = audio_url.split('/storage/v1/object/public/')
+                if len(parts) == 2:
+                    bucket_path = parts[1]
+                    bucket_name, file_path = bucket_path.split('/', 1)
+                    
+                    # Create signed URL with 1 hour expiration
+                    signed_url_response = supabase_manager.client.storage.from_(bucket_name).create_signed_url(
+                        file_path, 3600
+                    )
+                    
+                    # Extract the signed URL string from the response
+                    if isinstance(signed_url_response, dict):
+                        if 'signedURL' in signed_url_response:
+                            signed_url = signed_url_response['signedURL']
+                        elif 'signedUrl' in signed_url_response:
+                            signed_url = signed_url_response['signedUrl']
+                        else:
+                            # Try to find any URL-like property
+                            for key, value in signed_url_response.items():
+                                if isinstance(value, str) and value.startswith('http'):
+                                    signed_url = value
+                                    break
+                            else:
+                                logger.warning(f"Could not find signed URL in response: {signed_url_response}")
+                                return audio_url  # Fallback to original URL
+                    elif isinstance(signed_url_response, str):
+                        signed_url = signed_url_response
+                    else:
+                        signed_url = str(signed_url_response)
+                    
+                    logger.info(f"Created signed URL for audio file in bucket {bucket_name}")
+                    return signed_url
+            
+            # Also check for URLs that might be direct Supabase URLs without the public pattern
+            elif 'supabase.co' in audio_url and '/storage/' in audio_url:
+                # Try to extract bucket and path from various URL formats
+                try:
+                    # Handle URLs like: https://project.supabase.co/storage/v1/object/public/bucket/path
+                    # or: https://project.supabase.co/storage/v1/object/bucket/path
+                    if '/storage/v1/object/' in audio_url:
+                        parts = audio_url.split('/storage/v1/object/')
+                        if len(parts) == 2:
+                            bucket_path = parts[1]
+                            # Remove 'public/' prefix if present
+                            if bucket_path.startswith('public/'):
+                                bucket_path = bucket_path[7:]  # Remove 'public/' prefix
+                            
+                            bucket_name, file_path = bucket_path.split('/', 1)
+                            
+                            # Create signed URL with 1 hour expiration
+                            signed_url_response = supabase_manager.client.storage.from_(bucket_name).create_signed_url(
+                                file_path, 3600
+                            )
+                            
+                            # Extract the signed URL string from the response
+                            if isinstance(signed_url_response, dict):
+                                if 'signedURL' in signed_url_response:
+                                    signed_url = signed_url_response['signedURL']
+                                elif 'signedUrl' in signed_url_response:
+                                    signed_url = signed_url_response['signedUrl']
+                                else:
+                                    # Try to find any URL-like property
+                                    for key, value in signed_url_response.items():
+                                        if isinstance(value, str) and value.startswith('http'):
+                                            signed_url = value
+                                            break
+                                    else:
+                                        logger.warning(f"Could not find signed URL in response: {signed_url_response}")
+                                        return audio_url  # Fallback to original URL
+                            elif isinstance(signed_url_response, str):
+                                signed_url = signed_url_response
+                            else:
+                                signed_url = str(signed_url_response)
+                            
+                            logger.info(f"Created signed URL for audio file in bucket {bucket_name}")
+                            return signed_url
+                except Exception as parse_error:
+                    logger.warning(f"Failed to parse Supabase URL format: {parse_error}")
+            
+            # If not a Supabase storage URL or parsing failed, return original
+            return audio_url
+            
+        except Exception as e:
+            logger.warning(f"Failed to create signed URL for audio: {e}, using original URL")
+            return audio_url
 
     def _download_videos(self, scenes_data: List[Dict[str, Any]], task_id: str) -> List[str]:
         """Download all video files from scenes."""
