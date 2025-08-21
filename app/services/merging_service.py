@@ -1000,11 +1000,11 @@ class MergingService:
             temp_dir = tempfile.mkdtemp()
             watermarked_video_path = os.path.join(temp_dir, "watermarked.mp4")
 
-            # Add watermark using FFmpeg
+            # Add watermark using FFmpeg with bigger, transparent gray text and subtle shadow
             cmd = [
                 'ffmpeg', '-y',
                 '-i', video_path,
-                '-vf', 'drawtext=text=\'PromoNexAI\':fontcolor=white:fontsize=48:x=(w-text_w)/2:y=(h-text_h)/2:box=1:boxcolor=black@0.5',
+                '-vf', 'drawtext=text=\'PromoNexAI\':fontcolor=gray@0.6:fontsize=120:x=(w-text_w)/2:y=(h-text_h)/2:shadowcolor=black@0.2:shadowx=1:shadowy=1',
                 '-c:a', 'copy',
                 watermarked_video_path
             ]

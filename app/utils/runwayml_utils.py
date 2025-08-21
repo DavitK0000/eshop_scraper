@@ -283,7 +283,7 @@ class RunwayMLManager:
         self,
         video_path: Union[str, Path],
         target_resolution: str = "1920:1080",
-        model: str = "video_upscaler",
+        model: str = "upscale_v1",
         **kwargs
     ) -> Dict[str, Any]:
         """
@@ -308,9 +308,9 @@ class RunwayMLManager:
             logger.info(f"Starting video upscaling with model {model} to {target_resolution}")
             
             # Create video upscaling task
-            task = self.client.video_upscaler.create(
+            task = self.client.video_upscale.create(
                 model=model,
-                video=video_uri,
+                video_uri=video_uri,
                 target_resolution=target_resolution,
                 **kwargs
             )
@@ -349,7 +349,7 @@ class RunwayMLManager:
         self,
         video_path: Union[str, Path],
         target_resolution: str = "1920:1080",
-        model: str = "video_upscaler",
+        model: str = "upscale_v1",
         **kwargs
     ) -> Dict[str, Any]:
         """
@@ -374,9 +374,9 @@ class RunwayMLManager:
             logger.info(f"Starting video upscaling with model {model} to {target_resolution}")
             
             # Create video upscaling task
-            task = self.client.video_upscaler.create(
+            task = self.client.video_upscale.create(
                 model=model,
-                video=video_uri,
+                video_uri=video_uri,
                 target_resolution=target_resolution,
                 **kwargs
             )
