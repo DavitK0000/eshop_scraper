@@ -587,6 +587,28 @@ class MergingService:
             logger.error(f"Failed to update shorts thumbnail: {e}")
             raise
 
+    def _download_audio(self, audio_url: str, task_id: str) -> str:
+        """Download audio file from URL."""
+        try:
+            # Create temporary file for audio
+            with tempfile.NamedTemporaryFile(suffix='.mp3', delete=False) as temp_file:
+                temp_path = temp_file.name
+            
+            # Download audio
+            with httpx.Client(timeout=DOWNLOAD_TIMEOUT) as client:
+                response = client.get(audio_url)
+                response.raise_for_status()
+                
+                with open(temp_path, 'wb') as f:
+                    f.write(response.content)
+            
+            logger.info(f"Downloaded audio to {temp_path}")
+            return temp_path
+            
+        except Exception as e:
+            logger.error(f"Failed to download audio: {e}")
+            raise
+
     def _download_videos(self, scenes_data: List[Dict[str, Any]], task_id: str) -> List[str]:
         """Download all video files from scenes."""
         try:
