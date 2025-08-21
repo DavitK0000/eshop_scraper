@@ -148,7 +148,7 @@ class MergingService:
             update_task_progress(task_id, 0.4, "Downloading videos and audio")
 
             # Step 3: Download videos and audio
-            video_files = self._download_videos(scenes_data)
+            video_files = self._download_videos(scenes_data, user_id)
             if not video_files:
                 raise Exception("Failed to download videos")
 
@@ -835,7 +835,7 @@ class MergingService:
             # Return original URL if we can't handle it
             return url
 
-    def _download_videos(self, scenes_data: List[Dict[str, Any]]) -> List[str]:
+    def _download_videos(self, scenes_data: List[Dict[str, Any]], user_id: str) -> List[str]:
         """Download all video files from scenes."""
         try:
             video_files = []
@@ -846,7 +846,7 @@ class MergingService:
                     continue
 
                 # Handle potentially expired URLs
-                working_url = self._handle_expired_url(video_url, scene.get('user_id', 'unknown'))
+                working_url = self._handle_expired_url(video_url, user_id)
                 
                 # Create temporary file
                 with tempfile.NamedTemporaryFile(suffix='.mp4', delete=False) as temp_file:
@@ -870,7 +870,7 @@ class MergingService:
                         if e.response.status_code == 400 and 'supabase.co' in working_url:
                             logger.warning(f"Attempt {attempt + 1}: Got 400 error for Supabase URL, trying to refresh: {e}")
                             # Try to refresh the URL
-                            working_url = self._handle_expired_url(video_url, scene.get('user_id', 'unknown'))
+                            working_url = self._handle_expired_url(video_url, user_id)
                             if working_url == video_url:  # No change, break to avoid infinite loop
                                 break
                         else:
