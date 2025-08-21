@@ -210,6 +210,15 @@ class MergingService:
             temp_files = video_files + [merged_video_path, final_video_path]
             if audio_file:
                 temp_files.append(audio_file)
+            
+            # Also clean up any subtitle temporary directories
+            if audio_data and audio_data.get('subtitles'):
+                try:
+                    # Find and clean up subtitle temp directories
+                    self._cleanup_subtitle_temp_dirs()
+                except Exception as cleanup_error:
+                    logger.warning(f"Failed to cleanup subtitle temp directories: {cleanup_error}")
+            
             self._cleanup_temp_files(temp_files)
 
             # Complete task
@@ -805,6 +814,7 @@ class MergingService:
                                     signed_url = str(signed_url_response)
                                 
                                 logger.info(f"Successfully regenerated signed URL for private storage: {signed_url}")
+                                logger.debug(f"Regenerated URL for bucket '{bucket_name}', file path '{file_path}'")
                                 return signed_url
                                 
                             except Exception as regen_error:
@@ -1180,10 +1190,14 @@ class MergingService:
     def _embed_subtitles(self, video_path: str, subtitles: List[Dict[str, Any]], task_id: str) -> str:
         """Embed subtitles into video using FFmpeg with SRT format."""
         try:
-            # Create temporary directory for subtitled video
-            # Use a shorter path to avoid Windows path length issues
-            temp_dir = tempfile.mkdtemp(
-                prefix="sub_", dir=os.path.expanduser("~"))
+            # Create temporary directory at the same level as the app directory
+            app_dir = os.path.dirname(os.path.dirname(os.path.dirname(os.path.abspath(__file__))))
+            temp_dir = os.path.join(app_dir, "temp_subtitles")
+            
+            # Create the temp directory if it doesn't exist
+            if not os.path.exists(temp_dir):
+                os.makedirs(temp_dir)
+            
             subtitled_path = os.path.join(temp_dir, "video_with_subtitles.mp4")
 
             # Create SRT file from subtitles data
@@ -1195,24 +1209,18 @@ class MergingService:
             srt_path_ffmpeg = srt_path.replace('\\', '/')
 
             # Use subtitles filter with SRT file
-            # Properly escape and quote the path for FFmpeg
-            # Use single quotes around the path to handle spaces and special characters
-            srt_path_escaped = srt_path_ffmpeg.replace("'", "\\'")
-
-            # Log the paths for debugging
-            logger.info(f"Original SRT path: {srt_path}")
-            logger.info(f"FFmpeg SRT path: {srt_path_ffmpeg}")
-            logger.info(f"Escaped SRT path: {srt_path_escaped}")
+            # Convert Windows path to proper format for FFmpeg
+            srt_path_ffmpeg = srt_path.replace('\\', '/')
 
             cmd = [
                 'ffmpeg', '-y',
                 '-i', video_path,
-                '-vf', f'subtitles=\'{srt_path_escaped}\'',
+                '-vf', f'subtitles={srt_path_ffmpeg}',
                 '-c:a', 'copy',  # Copy audio codec
                 subtitled_path
             ]
 
-            # Log the full command for debugging
+            # Log the command for debugging
             logger.info(f"FFmpeg command: {' '.join(cmd)}")
 
             result = subprocess.run(
@@ -1223,138 +1231,16 @@ class MergingService:
             )
 
             if result.returncode != 0:
-                # If subtitles filter fails, try with different path format
-                logger.warning(
-                    f"Subtitles filter failed, trying alternative path format: {result.stderr}")
+                raise Exception(f"FFmpeg subtitle embedding failed: {result.stderr}")
 
-                # Try with proper quoting around the path
-                cmd = [
-                    'ffmpeg', '-y',
-                    '-i', video_path,
-                    '-vf', f'subtitles=\'{srt_path_ffmpeg}\'',
-                    '-c:a', 'copy',
-                    subtitled_path
-                ]
-
-                result = subprocess.run(
-                    cmd,
-                    capture_output=True,
-                    text=True,
-                    timeout=300
-                )
-
-                if result.returncode != 0:
-                    # Try one more approach with different path handling
-                    logger.warning(
-                        f"Subtitles filter still failing, trying alternative path approach: {result.stderr}")
-
-                    # Try using a relative path or different escaping
-                    try:
-                        # Create a simple filename without full path
-                        simple_srt_name = "subtitles.srt"
-                        simple_srt_path = os.path.join(
-                            temp_dir, simple_srt_name)
-
-                        # Copy the SRT file to a simple name
-                        import shutil
-                        shutil.copy2(srt_path, simple_srt_path)
-
-                        cmd = [
-                            'ffmpeg', '-y',
-                            '-i', video_path,
-                            '-vf', f'subtitles={simple_srt_name}',
-                            '-c:a', 'copy',
-                            subtitled_path
-                        ]
-
-                        # Run from the temp directory
-                        result = subprocess.run(
-                            cmd,
-                            capture_output=True,
-                            text=True,
-                            timeout=300,
-                            cwd=temp_dir
-                        )
-
-                        if result.returncode == 0:
-                            logger.info(
-                                "Successfully embedded subtitles using simple path approach")
-                        else:
-                            # If still failing, try using drawtext filter as fallback
-                            logger.warning(
-                                f"Simple path approach also failed, trying drawtext fallback: {result.stderr}")
-
-                            subtitle_text = self._get_subtitle_text_for_drawtext(
-                                subtitles)
-                            if subtitle_text:
-                                cmd = [
-                                    'ffmpeg', '-y',
-                                    '-i', video_path,
-                                    '-vf', f'drawtext=text=\'{subtitle_text}\':fontcolor=white:fontsize=24:x=(w-text_w)/2:y=(h-text_h)/2:box=1:boxcolor=black@0.5',
-                                    '-c:a', 'copy',
-                                    subtitled_path
-                                ]
-
-                                result = subprocess.run(
-                                    cmd,
-                                    capture_output=True,
-                                    text=True,
-                                    timeout=300
-                                )
-
-                                if result.returncode != 0:
-                                    raise Exception(
-                                        f"All subtitle embedding methods failed: {result.stderr}")
-                            else:
-                                raise Exception(
-                                    f"FFmpeg subtitle embedding failed: {result.stderr}")
-                    except Exception as e:
-                        logger.warning(
-                            f"Simple path approach failed, falling back to drawtext: {e}")
-
-                        # Final fallback to drawtext
-                        subtitle_text = self._get_subtitle_text_for_drawtext(
-                            subtitles)
-                        if subtitle_text:
-                            cmd = [
-                                'ffmpeg', '-y',
-                                '-i', video_path,
-                                '-vf', f'drawtext=text=\'{subtitle_text}\':fontcolor=white:fontsize=24:x=(w-text_w)/2:y=(h-text_h)/2:box=1:boxcolor=black@0.5',
-                                '-c:a', 'copy',
-                                subtitled_path
-                            ]
-
-                            result = subprocess.run(
-                                cmd,
-                                capture_output=True,
-                                text=True,
-                                timeout=300
-                            )
-
-                            if result.returncode != 0:
-                                raise Exception(
-                                    f"All subtitle embedding methods failed: {result.stderr}")
-                        else:
-                            raise Exception(
-                                f"FFmpeg subtitle embedding failed: {result.stderr}")
-
-                        if not os.path.exists(subtitled_path):
-                            raise Exception("Subtitled video file was not created")
-                    
-                    # If we get here, one of the methods succeeded
-                    if not os.path.exists(subtitled_path):
-                        raise Exception("Subtitled video file was not created")
+            if not os.path.exists(subtitled_path):
+                raise Exception("Subtitled video file was not created")
             
             logger.info(f"Successfully embedded subtitles into video")
 
-            # Clean up temporary directory after successful processing
-            try:
-                if os.path.exists(temp_dir):
-                    shutil.rmtree(temp_dir)
-                    logger.info(f"Cleaned up temporary directory: {temp_dir}")
-            except Exception as cleanup_error:
-                logger.warning(
-                    f"Failed to clean up temporary directory: {cleanup_error}")
+            # Don't clean up temporary directory here - let the caller handle cleanup
+            # This ensures the file exists when the upload method tries to access it
+            logger.debug(f"Subtitle embedding completed, file available at: {subtitled_path}")
 
             return subtitled_path
 
@@ -1392,27 +1278,6 @@ class MergingService:
             logger.error(f"Failed to create SRT file: {e}")
             raise
 
-    def _get_subtitle_text_for_drawtext(self, subtitles: List[Dict[str, Any]]) -> str:
-        """Extract subtitle text for use with drawtext filter as fallback."""
-        try:
-            if not subtitles:
-                return None
-
-            # Get the first subtitle text as a simple fallback
-            # This is not ideal but provides some text overlay
-            first_subtitle = subtitles[0]
-            text = first_subtitle.get('text', '')
-
-            # Clean up the text for drawtext filter
-            # Remove special characters that might cause issues
-            text = text.replace("'", "\\'").replace('"', '\\"')
-
-            return text if text else None
-
-        except Exception as e:
-            logger.error(f"Failed to get subtitle text for drawtext: {e}")
-            return None
-
     def _seconds_to_srt_time(self, seconds: float) -> str:
         """Convert seconds to SRT time format (HH:MM:SS,mmm)."""
         try:
@@ -1432,6 +1297,17 @@ class MergingService:
         try:
             if not supabase_manager.is_connected():
                 raise Exception("Supabase connection not available")
+
+            # Validate that the video file exists before attempting upload
+            if not os.path.exists(video_path):
+                raise Exception(f"Video file not found at path: {video_path}")
+            
+            # Check file size to ensure it's not empty
+            file_size = os.path.getsize(video_path)
+            if file_size == 0:
+                raise Exception(f"Video file is empty (0 bytes) at path: {video_path}")
+            
+            logger.info(f"Uploading video file: {video_path} (size: {file_size} bytes)")
 
             # Create storage path
             filename = f"final_videos/{short_id}/{uuid.uuid4()}.mp4"
@@ -1502,6 +1378,20 @@ class MergingService:
 
         except Exception as e:
             logger.warning(f"Failed to cleanup some temporary files: {e}")
+
+    def _cleanup_subtitle_temp_dirs(self):
+        """Clean up subtitle temporary directories that may have been created."""
+        try:
+            # Clean up the subtitle temp directory at the same level as the app directory
+            app_dir = os.path.dirname(os.path.dirname(os.path.dirname(os.path.abspath(__file__))))
+            temp_dir = os.path.join(app_dir, "temp_subtitles")
+            
+            if os.path.exists(temp_dir):
+                shutil.rmtree(temp_dir)
+                logger.debug(f"Cleaned up subtitle temp directory: {temp_dir}")
+                    
+        except Exception as e:
+            logger.warning(f"Failed to cleanup subtitle temp directory: {e}")
 
     def get_task_status(self, task_id: str) -> Optional[Dict[str, Any]]:
         """Get the status of a finalization task."""
