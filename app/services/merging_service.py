@@ -1069,8 +1069,16 @@ class MergingService:
                     f"RunwayML upscaling failed: {upscale_result.get('error', 'Unknown error')}")
 
             # Download the upscaled video
+            # Handle case where output might be a list of URLs
+            video_url = upscale_result["output"]
+            if isinstance(video_url, list):
+                if len(video_url) > 0:
+                    video_url = video_url[0]  # Take the first URL
+                else:
+                    raise Exception("No video URLs returned from RunwayML")
+            
             upscaled_video_path = self._download_upscaled_video(
-                upscale_result["output"],
+                video_url,
                 task_id
             )
 
