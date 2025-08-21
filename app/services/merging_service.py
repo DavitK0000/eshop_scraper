@@ -148,7 +148,7 @@ class MergingService:
             update_task_progress(task_id, 0.4, "Downloading videos and audio")
 
             # Step 3: Download videos and audio
-            video_files = self._download_videos(scenes_data, task_id)
+            video_files = self._download_videos(scenes_data)
             if not video_files:
                 raise Exception("Failed to download videos")
 
@@ -746,7 +746,96 @@ class MergingService:
                 f"Failed to create signed URL for audio: {e}, using original URL")
             return audio_url
 
-    def _download_videos(self, scenes_data: List[Dict[str, Any]], task_id: str) -> List[str]:
+    def _handle_expired_url(self, url: str, user_id: str) -> str:
+        """
+        Handle expired signed URLs by converting them to public URLs or regenerating signed URLs.
+        
+        Args:
+            url: The potentially expired URL
+            user_id: The user ID for regenerating URLs if needed
+            
+        Returns:
+            A working URL for the video
+        """
+        try:
+            # Check if this is a Supabase signed URL
+            if 'supabase.co' in url and 'token=' in url:
+                logger.info(f"Detected expired Supabase signed URL, attempting to convert to public URL")
+                
+                # Extract the file path from the signed URL
+                # URL format: https://.../storage/v1/object/sign/bucket/path?token=...
+                if '/storage/v1/object/sign/' in url:
+                    # Extract bucket and path from signed URL
+                    parts = url.split('/storage/v1/object/sign/')
+                    if len(parts) > 1:
+                        bucket_path = parts[1].split('?')[0]  # Remove query parameters
+                        bucket_parts = bucket_path.split('/', 1)
+                        if len(bucket_parts) > 1:
+                            bucket_name = bucket_parts[0]
+                            file_path = bucket_parts[1]
+                            
+                            # Try to get public URL
+                            try:
+                                if not supabase_manager.is_connected():
+                                    raise Exception("Supabase connection not available")
+                                
+                                # Get public URL from storage
+                                public_url = supabase_manager.client.storage.from_(bucket_name).get_public_url(file_path)
+                                
+                                if public_url:
+                                    logger.info(f"Successfully converted to public URL: {public_url}")
+                                    return public_url
+                                else:
+                                    raise Exception("Failed to get public URL")
+                                    
+                            except Exception as e:
+                                logger.warning(f"Failed to get public URL: {e}, trying to regenerate signed URL")
+                                
+                                # Fallback: try to regenerate signed URL
+                                try:
+                                    signed_url_response = supabase_manager.client.storage.from_(bucket_name).create_signed_url(
+                                        file_path, 3600  # 1 hour expiration
+                                    )
+                                    
+                                    # Extract the signed URL string from the response
+                                    if isinstance(signed_url_response, dict):
+                                        if 'signedURL' in signed_url_response:
+                                            signed_url = signed_url_response['signedURL']
+                                        elif 'signedUrl' in signed_url_response:
+                                            signed_url = signed_url_response['signedUrl']
+                                        else:
+                                            # Try to find any URL-like property
+                                            for key, value in signed_url_response.items():
+                                                if isinstance(value, str) and value.startswith('http'):
+                                                    signed_url = value
+                                                    break
+                                            else:
+                                                raise Exception(f"Could not find signed URL in response: {signed_url_response}")
+                                    elif isinstance(signed_url_response, str):
+                                        signed_url = signed_url_response
+                                    else:
+                                        signed_url = str(signed_url_response)
+                                    
+                                    logger.info(f"Successfully regenerated signed URL: {signed_url}")
+                                    return signed_url
+                                    
+                                except Exception as regen_error:
+                                    logger.error(f"Failed to regenerate signed URL: {regen_error}")
+                                    raise Exception(f"Could not handle expired URL: {regen_error}")
+                
+                # If we can't parse the URL or convert it, return the original
+                logger.warning(f"Could not parse or convert expired URL, returning original: {url}")
+                return url
+            else:
+                # Not a Supabase signed URL, return as-is
+                return url
+                
+        except Exception as e:
+            logger.error(f"Error handling expired URL {url}: {e}")
+            # Return original URL if we can't handle it
+            return url
+
+    def _download_videos(self, scenes_data: List[Dict[str, Any]]) -> List[str]:
         """Download all video files from scenes."""
         try:
             video_files = []
@@ -756,17 +845,47 @@ class MergingService:
                 if not video_url:
                     continue
 
+                # Handle potentially expired URLs
+                working_url = self._handle_expired_url(video_url, scene.get('user_id', 'unknown'))
+                
                 # Create temporary file
                 with tempfile.NamedTemporaryFile(suffix='.mp4', delete=False) as temp_file:
                     temp_path = temp_file.name
 
-                # Download video
-                with httpx.Client(timeout=DOWNLOAD_TIMEOUT) as client:
-                    response = client.get(video_url)
-                    response.raise_for_status()
+                # Download video with retry logic
+                download_success = False
+                for attempt in range(MAX_RETRIES):
+                    try:
+                        with httpx.Client(timeout=DOWNLOAD_TIMEOUT) as client:
+                            response = client.get(working_url)
+                            response.raise_for_status()
 
-                    with open(temp_path, 'wb') as f:
-                        f.write(response.content)
+                            with open(temp_path, 'wb') as f:
+                                f.write(response.content)
+
+                        download_success = True
+                        break
+                        
+                    except httpx.HTTPStatusError as e:
+                        if e.response.status_code == 400 and 'supabase.co' in working_url:
+                            logger.warning(f"Attempt {attempt + 1}: Got 400 error for Supabase URL, trying to refresh: {e}")
+                            # Try to refresh the URL
+                            working_url = self._handle_expired_url(video_url, scene.get('user_id', 'unknown'))
+                            if working_url == video_url:  # No change, break to avoid infinite loop
+                                break
+                        else:
+                            logger.error(f"HTTP error downloading video: {e}")
+                            break
+                    except Exception as e:
+                        logger.error(f"Attempt {attempt + 1} failed: {e}")
+                        if attempt < MAX_RETRIES - 1:
+                            import time
+                            time.sleep(RETRY_DELAY)
+                        else:
+                            raise
+
+                if not download_success:
+                    raise Exception(f"Failed to download video after {MAX_RETRIES} attempts")
 
                 video_files.append(temp_path)
                 logger.info(
