@@ -809,7 +809,13 @@ class MergingService:
                                 
                             except Exception as regen_error:
                                 logger.error(f"Failed to regenerate signed URL for private storage: {regen_error}")
-                                raise Exception(f"Could not handle expired URL: {regen_error}")
+                                # Try to provide more specific error information
+                                if "permission" in str(regen_error).lower():
+                                    raise Exception(f"Permission denied when regenerating signed URL for private storage: {regen_error}")
+                                elif "bucket" in str(regen_error).lower():
+                                    raise Exception(f"Storage bucket access issue when regenerating signed URL: {regen_error}")
+                                else:
+                                    raise Exception(f"Could not regenerate signed URL for private storage: {regen_error}")
                 
                 # If we can't parse the URL or convert it, return the original
                 logger.warning(f"Could not parse or convert expired URL for user {user_id}, returning original: {url}")
