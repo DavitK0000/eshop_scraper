@@ -1,16 +1,17 @@
 import logging
-from fastapi import FastAPI, Request, HTTPException
+from fastapi import FastAPI, Request, HTTPException, BackgroundTasks
 from fastapi.middleware.cors import CORSMiddleware
 from fastapi.middleware.trustedhost import TrustedHostMiddleware
 from fastapi.responses import JSONResponse
 import time
 import json
 import os
+import asyncio
 from contextlib import asynccontextmanager
+import threading
 
 from app.config import settings
 from app.api.routes import router
-from app.services.cache_service import cache_service
 from app.services.scraping_service import scraping_service
 from app.security import security_middleware, cleanup_security_data
 from app.logging_config import setup_logging, get_logger
@@ -23,17 +24,56 @@ setup_logging()
 logger = get_logger(__name__)
 
 
+def monitor_database_connections():
+    """Background task to monitor database connections"""
+    while True:
+        try:
+            from app.utils.task_management import task_manager
+            from app.utils.supabase_utils import supabase_manager
+            
+            # Monitor MongoDB connection
+            task_manager.monitor_connections()
+            
+            # Monitor Supabase connection
+            supabase_manager.ensure_connection()
+            
+            # Wait 5 minutes before next check
+            time.sleep(300)
+            
+        except Exception as e:
+            logger.error(f"Error in database connection monitoring: {e}")
+            time.sleep(60)  # Wait 1 minute on error before retry
+
+
 @asynccontextmanager
 async def lifespan(app: FastAPI):
     """Application lifespan events"""
     # Startup
     logger.info("Starting E-commerce Scraper API...")
     
-    # Test cache connection
-    if cache_service.is_connected():
-        logger.info("Cache service connected successfully")
-    else:
-        logger.warning("Cache service not available - caching will be disabled")
+    # Initialize database connections
+    try:
+        from app.utils.task_management import initialize_task_manager
+        from app.utils.supabase_utils import supabase_manager
+        
+        # Initialize Supabase
+        if supabase_manager.is_connected():
+            logger.info("Supabase connection established successfully")
+        else:
+            logger.warning("Supabase connection failed - Supabase operations will be disabled")
+        
+        # Initialize MongoDB
+        if initialize_task_manager():
+            logger.info("MongoDB connection established successfully")
+        else:
+            logger.warning("MongoDB connection failed - Task management will be disabled")
+            
+        # Start background connection monitoring
+        threading.Thread(target=monitor_database_connections, daemon=True).start()
+        logger.info("Database connection monitoring started")
+            
+    except Exception as e:
+        logger.error(f"Failed to initialize database connections: {e}")
     
     # Clean up old security data on startup
     cleanup_security_data()
@@ -42,6 +82,14 @@ async def lifespan(app: FastAPI):
     
     # Shutdown
     logger.info("Shutting down E-commerce Scraper API...")
+    
+    # Cleanup database connections
+    try:
+        from app.utils.task_management import cleanup_task_manager
+        cleanup_task_manager()
+        logger.info("Database connections closed")
+    except Exception as e:
+        logger.error(f"Error closing database connections: {e}")
     
     # Clean up Windows asyncio resources
     cleanup_windows_asyncio()

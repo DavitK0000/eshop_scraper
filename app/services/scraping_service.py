@@ -3,8 +3,13 @@ import time
 import re
 from typing import Optional, Dict, Any, List, Tuple
 from datetime import datetime
-from app.models import ProductInfo, ScrapeResponse, TaskStatus
+from app.models import ProductInfo, TaskStatusResponse, TaskStatus, TaskPriority
 from app.utils import generate_task_id, proxy_manager, user_agent_manager, is_valid_url
+from app.utils.credit_utils import can_perform_action, deduct_credits
+from app.utils.task_management import (
+    create_task, start_task, update_task_progress, 
+    complete_task, fail_task, get_task_status, TaskType, TaskStatus as TMStatus
+)
 from app.config import settings
 from bs4 import BeautifulSoup
 from app.logging_config import get_logger
@@ -16,8 +21,6 @@ class ScrapingService:
     """Main service for orchestrating scraping operations"""
     
     def __init__(self):
-        self.active_tasks: Dict[str, Dict[str, Any]] = {}
-        
         # Platform detection indicators for HTML analysis
         self.platform_indicators = {
                             'shopify': {
@@ -290,63 +293,107 @@ class ScrapingService:
     def start_scraping_task(
         self,
         url: str,
-        force_refresh: bool = False,
+        user_id: str,
         proxy: Optional[str] = None,
         user_agent: Optional[str] = None,
         block_images: bool = True,
         target_language: Optional[str] = None
-    ) -> ScrapeResponse:
+    ) -> TaskStatusResponse:
         """
         Start a scraping task asynchronously using threads
         
         Args:
             url: Product URL to scrape
-            force_refresh: Whether to bypass cache
+            user_id: User ID associated with the task (required)
             proxy: Custom proxy to use
             user_agent: Custom user agent to use
             block_images: Whether to block images
             target_language: Target language for content extraction
             
         Returns:
-            ScrapeResponse with task_id and PENDING status
+            TaskStatusResponse with task_id and PENDING status
         """
-        task_id = generate_task_id(url)
+        # Create task in MongoDB first to get the actual task ID
+        try:
+            # Create the task in MongoDB and get the actual task ID
+            logger.info(f"Creating MongoDB task for URL: {url}")
+            actual_task_id = create_task(
+                TaskType.SCRAPING,
+                url=url,
+                user_id=user_id,
+                block_images=block_images,
+                target_language=target_language,
+                proxy=proxy,
+                user_agent=user_agent
+            )
+            if not actual_task_id:
+                raise Exception("Failed to create task in MongoDB")
+            
+            logger.info(f"Successfully created MongoDB task with ID: {actual_task_id}")
+            
+            # Start the task
+            logger.info(f"Starting MongoDB task {actual_task_id}")
+            task_started = start_task(actual_task_id)
+            if not task_started:
+                raise Exception("Failed to start task in MongoDB")
+            
+            logger.info(f"Successfully created and started MongoDB task {actual_task_id}")
+            
+        except Exception as e:
+            logger.error(f"Failed to create MongoDB task for {url}: {e}")
+            # Fallback to local task creation if MongoDB fails
+            fallback_task_id = generate_task_id(url)
+            response = TaskStatusResponse(
+                task_id=fallback_task_id,
+                status=TaskStatus.FAILED,
+                url=url,
+                task_type="scraping",
+                progress=None,
+                message=f"Failed to create task: {str(e)}",
+                created_at=datetime.now(),
+                updated_at=datetime.now(),
+                priority=TaskPriority.NORMAL,
+                user_id=user_id,
+                session_id=None,
+                detail={}
+            )
+            return response
         
-        # Initialize response
-        response = ScrapeResponse(
-            task_id=task_id,
+        # Initialize response with the actual task ID from MongoDB
+        detail = {}
+        # Note: target_language is not included in detail for scraping tasks
+        
+        response = TaskStatusResponse(
+            task_id=actual_task_id,
             status=TaskStatus.PENDING,
             url=url,
+            task_type="scraping",
+            progress=None,
             message="Task created, waiting to start",
             created_at=datetime.now(),
-            target_language=target_language
+            updated_at=datetime.now(),
+            priority=TaskPriority.NORMAL,
+            user_id=user_id,
+            session_id=None,
+            detail=detail
         )
-        
-        # Store task info
-        self.active_tasks[task_id] = {
-            'status': TaskStatus.PENDING,
-            'created_at': datetime.now(),
-            'url': url,
-            'response': response,
-            'target_language': target_language
-        }
         
         # Start scraping in a separate thread
         thread = threading.Thread(
             target=self._execute_scraping_task_thread,
-            args=(task_id, url, force_refresh, proxy, user_agent, block_images, target_language),
+            args=(actual_task_id, url, user_id, proxy, user_agent, block_images, target_language),
             daemon=True
         )
         thread.start()
         
-        logger.info(f"Started scraping task {task_id} for {url} in thread")
+        logger.info(f"Started scraping task {actual_task_id} for {url} by user {user_id} in thread")
         return response
 
     def _execute_scraping_task_thread(
         self,
         task_id: str,
         url: str,
-        force_refresh: bool = False,
+        user_id: str,
         proxy: Optional[str] = None,
         user_agent: Optional[str] = None,
         block_images: bool = True,
@@ -358,7 +405,7 @@ class ScrapingService:
         Args:
             task_id: The task ID to execute
             url: Product URL to scrape
-            force_refresh: Whether to bypass cache
+            user_id: User ID associated with the task
             proxy: Custom proxy to use
             user_agent: Custom user agent to use
             block_images: Whether to block images
@@ -370,8 +417,21 @@ class ScrapingService:
             if not is_valid_url(url):
                 raise ValueError(f"Invalid URL format: {url}")
             
-            # Update task status
-            self._update_task_status(task_id, TaskStatus.RUNNING, "Starting scraping process")
+            # Check user's credit
+            credit_check = can_perform_action(user_id, "scraping")
+            if credit_check.get("error"):
+                raise ValueError(f"Credit check failed: {credit_check['error']}")
+            
+            if not credit_check.get("can_perform", False):
+                reason = credit_check.get("reason", "Insufficient credits")
+                current_credits = credit_check.get("current_credits", 0)
+                required_credits = credit_check.get("required_credits", 1)
+                raise ValueError(f"Credit check failed: {reason}. Current credits: {current_credits}, Required: {required_credits}")
+            
+            logger.info(f"Credit check passed for user {user_id}. Can perform scraping action.")
+            
+            # Update task status in MongoDB
+            update_task_progress(task_id, 1, "Starting scraping process")
             
             # Get proxy and user agent if not provided
             if not proxy and settings.ROTATE_PROXIES:
@@ -381,7 +441,7 @@ class ScrapingService:
                 user_agent = user_agent_manager.get_user_agent()
             
             # First, get HTML content using browser manager with retry logic
-            self._update_task_status(task_id, TaskStatus.RUNNING, "Fetching page content")
+            update_task_progress(task_id, 2, "Fetching page content")
             from app.browser_manager import browser_manager
             
             # Use timeout logic to prevent blocking
@@ -402,39 +462,44 @@ class ScrapingService:
                     raise e
             
             # Detect platform based on URL and content
-            self._update_task_status(task_id, TaskStatus.RUNNING, "Detecting e-commerce platform")
+            update_task_progress(task_id, 3, "Detecting e-commerce platform")
             platform, platform_confidence, platform_indicators = self._detect_platform_smart(url, html_content)
             
             # Create appropriate extractor based on detected platform
-            self._update_task_status(task_id, TaskStatus.RUNNING, "Creating platform-specific extractor")
+            update_task_progress(task_id, 4, "Creating platform-specific extractor")
             from app.extractors.factory import ExtractorFactory
             extractor = ExtractorFactory.create_extractor(platform, html_content, url)
             
             # Extract product information using the platform-specific extractor
-            self._update_task_status(task_id, TaskStatus.RUNNING, "Extracting product information")
+            update_task_progress(task_id, 5, "Extracting product information")
             product_info = extractor.extract_product_info()
             
             # Update task with results
-            self._update_task_with_results(
-                task_id, 
-                TaskStatus.COMPLETED, 
-                "Scraping completed successfully",
-                product_info,
-                platform,
-                platform_confidence,
-                platform_indicators
-            )
+            product_id, short_id = self._save_product_to_supabase(user_id, product_info, url, platform, target_language)
+            
+            # Complete the task in MongoDB with product_id and short_id
+            complete_task(task_id, {
+                "product_id": product_id,
+                "short_id": short_id
+            })
             
             logger.info(f"Successfully scraped product from {url}")
             
-            # Cache successful results
+            # Deduct credits on successful scraping
             try:
-                from app.services.cache_service import cache_service
-                response = self.active_tasks[task_id]['response']
-                cache_service.cache_result(url, response)
-                logger.info(f"Cached result for {url}")
-            except Exception as cache_error:
-                logger.warning(f"Failed to cache result: {cache_error}")
+                success = deduct_credits(
+                    user_id=user_id, 
+                    action_name="scraping",
+                    reference_id=product_id,
+                    reference_type="product",
+                    description=f"Product scraping completed for {url}"
+                )
+                if success:
+                    logger.info(f"Successfully deducted credits for user {user_id} for scraping task {task_id}")
+                else:
+                    logger.warning(f"Failed to deduct credits for user {user_id} for scraping task {task_id}")
+            except Exception as credit_error:
+                logger.error(f"Error deducting credits for user {user_id} for scraping task {task_id}: {credit_error}")
             
             # Clean up browser resources in the same thread where they were created
             try:
@@ -447,8 +512,8 @@ class ScrapingService:
         except Exception as e:
             logger.error(f"Error in execute_scraping_task for task_id: {task_id}: {e}", exc_info=True)
             
-            # Update task with error
-            self._update_task_with_error(task_id, TaskStatus.FAILED, str(e))
+            # Update task with error in MongoDB
+            fail_task(task_id, str(e))
             
             # Clean up browser resources even on error
             try:
@@ -460,51 +525,192 @@ class ScrapingService:
         
         logger.info(f"Completed execute_scraping_task for task_id: {task_id}")
 
+    def scrape_product_with_user(
+        self,
+        url: str,
+        user_id: str,
+        proxy: Optional[str] = None,
+        user_agent: Optional[str] = None,
+        block_images: bool = True,
+        target_language: Optional[str] = None,
+        detail: Optional[Dict[str, Any]] = None
+    ) -> TaskStatusResponse:
+        """
+        Scrape product information from URL with user authentication
+        
+        Args:
+            url: Product URL to scrape
+            user_id: User ID associated with the task
+            proxy: Custom proxy to use
+            user_agent: Custom user agent to use
+            block_images: Whether to block images
+            target_language: Target language for content extraction
+            detail: Additional details for the task
+            
+        Returns:
+            TaskStatusResponse with task information
+        """
+        # Create task in MongoDB first to get the actual task ID
+        try:
+            # Create the task in MongoDB and get the actual task ID
+            logger.info(f"Creating MongoDB task for URL: {url}")
+            actual_task_id = create_task(
+                TaskType.SCRAPING,
+                url=url,
+                user_id=user_id,
+                block_images=block_images,
+                target_language=target_language,
+                proxy=proxy,
+                user_agent=user_agent
+            )
+            if not actual_task_id:
+                raise Exception("Failed to create task in MongoDB")
+            
+            logger.info(f"Successfully created MongoDB task with ID: {actual_task_id}")
+            
+            # Start the task
+            logger.info(f"Starting MongoDB task {actual_task_id}")
+            task_started = start_task(actual_task_id)
+            if not task_started:
+                raise Exception("Failed to start task in MongoDB")
+            
+            logger.info(f"Successfully created and started MongoDB task {actual_task_id}")
+            
+        except Exception as e:
+            logger.error(f"Failed to create MongoDB task for {url}: {e}")
+            # Fallback to local task creation if MongoDB fails
+            fallback_task_id = generate_task_id(url)
+            response = TaskStatusResponse(
+                task_id=fallback_task_id,
+                status=TaskStatus.FAILED,
+                url=url,
+                task_type="scraping",
+                progress=None,
+                message=f"Failed to create task: {str(e)}",
+                created_at=datetime.now(),
+                updated_at=datetime.now(),
+                priority=TaskPriority.NORMAL,
+                user_id=user_id,
+                session_id=None,
+                detail=detail
+            )
+            return response
+        
+        # Initialize response with the actual task ID from MongoDB
+        response = TaskStatusResponse(
+            task_id=actual_task_id,
+            status=TaskStatus.PENDING,
+            url=url,
+            task_type="scraping",
+            progress=None,
+            message="Task created, waiting to start",
+            created_at=datetime.now(),
+            updated_at=datetime.now(),
+            priority=TaskPriority.NORMAL,
+            user_id=user_id,
+            session_id=None,
+            detail=detail
+        )
+        
+        # Start scraping in a separate thread
+        thread = threading.Thread(
+            target=self._execute_scraping_task_thread,
+            args=(actual_task_id, url, user_id, proxy, user_agent, block_images, target_language),
+            daemon=True
+        )
+        thread.start()
+        
+        logger.info(f"Started scraping task {actual_task_id} for {url} by user {user_id} in thread")
+        return response
+
     def scrape_product(
         self,
         url: str,
-        force_refresh: bool = False,
         proxy: Optional[str] = None,
         user_agent: Optional[str] = None,
-        block_images: bool = True
-    ) -> ScrapeResponse:
+        block_images: bool = True,
+        target_language: Optional[str] = None
+    ) -> TaskStatusResponse:
         """
         Scrape product information from URL (synchronous version for backward compatibility)
         
         Args:
             url: Product URL to scrape
-            force_refresh: Whether to bypass cache
             proxy: Custom proxy to use
             user_agent: Custom user agent to use
+            block_images: Whether to block images
+            target_language: Target language for content extraction
             
         Returns:
-            ScrapeResponse with product information
+            TaskStatusResponse with product information
         """
-        task_id = generate_task_id(url)
+        # Create task in MongoDB first to get the actual task ID
+        try:
+            # Create the task in MongoDB and get the actual task ID
+            logger.info(f"Creating MongoDB task for URL: {url}")
+            actual_task_id = create_task(
+                TaskType.SCRAPING,
+                url=url,
+                block_images=block_images,
+                proxy=proxy,
+                user_agent=user_agent
+            )
+            if not actual_task_id:
+                raise Exception("Failed to create task in MongoDB")
+            
+            logger.info(f"Successfully created MongoDB task with ID: {actual_task_id}")
+            
+            # Start the task
+            logger.info(f"Starting MongoDB task {actual_task_id}")
+            task_started = start_task(actual_task_id)
+            if not task_started:
+                raise Exception("Failed to start task in MongoDB")
+            
+            logger.info(f"Successfully created and started MongoDB task {actual_task_id}")
+            
+        except Exception as e:
+            logger.error(f"Failed to create MongoDB task for URL {url}: {e}")
+            # Continue with scraping even if MongoDB task creation fails
+            actual_task_id = generate_task_id(url)  # Fallback to generated ID
         
-        # Initialize response
-        response = ScrapeResponse(
-            task_id=task_id,
+        # Initialize response with the actual task ID from MongoDB
+        response = TaskStatusResponse(
+            task_id=actual_task_id,
             status=TaskStatus.PENDING,
             url=url,
+            task_type="scraping",
+            progress=None,
             message="Task created, waiting to start",
-            created_at=datetime.now()
+            created_at=datetime.now(),
+            updated_at=datetime.now(),
+            priority=TaskPriority.NORMAL,
+            user_id=None,
+            session_id=None,
+            detail={}
         )
-        
-        # Store task info
-        self.active_tasks[task_id] = {
-            'status': TaskStatus.PENDING,
-            'created_at': datetime.now(),
-            'url': url
-        }
         
         try:
             # Validate URL
             if not is_valid_url(url):
                 raise ValueError(f"Invalid URL format: {url}")
             
-            # Update task status
-            self._update_task_status(task_id, TaskStatus.RUNNING, "Starting scraping process")
+            # Check user's credit (for synchronous scraping, we'll use a default user_id)
+            # Note: In production, this should be passed as a parameter
+            default_user_id = "00000000-0000-0000-0000-000000000000"  # Placeholder
+            credit_check = can_perform_action(default_user_id, "scraping")
+            if credit_check.get("error"):
+                raise ValueError(f"Credit check failed: {credit_check['error']}")
+            
+            if not credit_check.get("can_perform", False):
+                reason = credit_check.get("reason", "Insufficient credits")
+                current_credits = credit_check.get("current_credits", 0)
+                required_credits = credit_check.get("required_credits", 1)
+                raise ValueError(f"Credit check failed: {reason}. Current credits: {current_credits}, Required: {required_credits}")
+            
+            logger.info(f"Credit check passed for user {default_user_id}. Can perform scraping action.")
+            
+            # Update task status in MongoDB
+            update_task_progress(actual_task_id, 1, "Starting scraping process")
             
             # Get proxy and user agent if not provided
             if not proxy and settings.ROTATE_PROXIES:
@@ -514,46 +720,81 @@ class ScrapingService:
                 user_agent = user_agent_manager.get_user_agent()
             
             # First, get HTML content using browser manager
-            self._update_task_status(task_id, TaskStatus.RUNNING, "Fetching page content")
+            update_task_progress(actual_task_id, 2, "Fetching page content")
             from app.browser_manager import browser_manager
             html_content = browser_manager.get_page_content_with_retry(url, proxy, user_agent, block_images)
             
             # Detect platform based on URL and content
-            self._update_task_status(task_id, TaskStatus.RUNNING, "Detecting e-commerce platform")
+            update_task_progress(actual_task_id, 3, "Detecting e-commerce platform")
             platform, platform_confidence, platform_indicators = self._detect_platform_smart(url, html_content)
             
             # Create appropriate extractor based on detected platform
-            self._update_task_status(task_id, TaskStatus.RUNNING, "Creating platform-specific extractor")
+            update_task_progress(actual_task_id, 4, "Creating platform-specific extractor")
             from app.extractors.factory import ExtractorFactory
             extractor = ExtractorFactory.create_extractor(platform, html_content, url)
             
             # Extract product information using the platform-specific extractor
-            self._update_task_status(task_id, TaskStatus.RUNNING, "Extracting product information")
+            update_task_progress(actual_task_id, 5, "Extracting product information")
             product_info = extractor.extract_product_info()
             
-            # Store platform detection results
-            response.detected_platform = platform
-            response.platform_confidence = platform_confidence
-            response.platform_indicators = platform_indicators
+            # Update task with results
+            product_id, short_id = self._save_product_to_supabase(default_user_id, product_info, url, platform, target_language)
             
-            logger.info(f"Platform detection for {url}: {platform} (confidence: {platform_confidence:.2f})")
+            # Complete the task in MongoDB with product_id and short_id
+            complete_task(actual_task_id, {
+                "product_id": product_id,
+                "short_id": short_id
+            })
             
-            # Update response
+            # Update response with results
             response.status = TaskStatus.COMPLETED
             response.message = "Scraping completed successfully"
             response.product_info = product_info
             response.completed_at = datetime.now()
+            response.detected_platform = platform
+            response.platform_confidence = platform_confidence
+            response.platform_indicators = platform_indicators or []
+            response.supabase_product_id = product_id
+            response.short_id = short_id
             
-            # Update task status
-            self._update_task_status(task_id, TaskStatus.COMPLETED, "Scraping completed successfully")
+            # Add short_id to response detail
+            if short_id:
+                response.detail = {"short_id": short_id}
+            else:
+                response.detail = {}
             
             logger.info(f"Successfully scraped product from {url}")
             
-
+            # Deduct credits on successful scraping
+            try:
+                success = deduct_credits(
+                    user_id=default_user_id, 
+                    action_name="scraping",
+                    reference_id=product_id,
+                    reference_type="product",
+                    description=f"Product scraping completed for {url}"
+                )
+                if success:
+                    logger.info(f"Successfully deducted credits for user {default_user_id} for scraping task {actual_task_id}")
+                else:
+                    logger.warning(f"Failed to deduct credits for user {default_user_id} for scraping task {actual_task_id}")
+            except Exception as credit_error:
+                logger.error(f"Error deducting credits for user {default_user_id} for scraping task {actual_task_id}: {credit_error}")
+            
+            # Clean up browser resources
+            try:
+                from app.browser_manager import browser_manager
+                browser_manager.cleanup()
+                logger.info(f"Browser cleanup completed for task {actual_task_id}")
+            except Exception as cleanup_error:
+                logger.warning(f"Browser cleanup failed for task {actual_task_id}: {cleanup_error}")
             
         except Exception as e:
-            error_msg = f"Scraping failed: {str(e)}"
-            logger.error(f"Error scraping {url}: {e}", exc_info=True)
+            error_msg = str(e)
+            logger.error(f"Error in scrape_product for {url}: {error_msg}", exc_info=True)
+            
+            # Update task with error in MongoDB
+            fail_task(actual_task_id, error_msg)
             
             # Update response with error
             response.status = TaskStatus.FAILED
@@ -561,10 +802,13 @@ class ScrapingService:
             response.error = error_msg
             response.completed_at = datetime.now()
             
-            # Update task status
-            self._update_task_status(task_id, TaskStatus.FAILED, error_msg)
-            
-
+            # Clean up browser resources even on error
+            try:
+                from app.browser_manager import browser_manager
+                browser_manager.cleanup()
+                logger.info(f"Browser cleanup completed for failed task {actual_task_id}")
+            except Exception as cleanup_error:
+                logger.warning(f"Browser cleanup failed for failed task {actual_task_id}: {cleanup_error}")
         
         return response
 
@@ -574,33 +818,62 @@ class ScrapingService:
     
     def get_task_status(self, task_id: str) -> Optional[Dict[str, Any]]:
         """Get task status"""
-        task_info = self.active_tasks.get(task_id)
-        if not task_info:
-            logger.warning(f"Task {task_id} not found in active_tasks")
-            return None
+        try:
+            task = get_task_status(task_id)
+            if not task:
+                logger.warning(f"Task {task_id} not found in MongoDB")
+                return None
             
-
-        return task_info
+            # Convert Task object to dictionary format for backward compatibility
+            task_dict = {
+                'status': task.task_status,
+                'created_at': task.created_at,
+                'updated_at': task.updated_at,
+                'url': task.url,
+                'user_id': task.user_id,
+                'message': task.task_status_message,
+                'progress': task.progress,
+                'current_step': task.current_step,
+                'current_step_name': task.current_step_name,
+                'error_message': task.error_message,
+                # Note: Platform data is stored in Supabase, but product_id is stored in task metadata
+                'platform': None,
+                'platform_confidence': None,
+                'platform_indicators': None,
+                'product_id': task.task_metadata.get('product_id') if task.task_metadata else None,
+                'short_id': task.task_metadata.get('short_id') if task.task_metadata else None
+            }
+            
+            return task_dict
+            
+        except Exception as e:
+            logger.error(f"Error getting task status for {task_id}: {e}")
+            return None
     
     def get_all_tasks(self) -> Dict[str, Dict[str, Any]]:
         """Get all active tasks"""
-        return self.active_tasks.copy()
+        # Since we removed the get_tasks_by_status function, 
+        # we'll return an empty dictionary for now
+        # In the future, this could be enhanced to work with the fallback storage
+        return {}
     
     def cleanup_completed_tasks(self, max_age_hours: int = 24):
         """Clean up old completed tasks"""
-        cutoff_time = datetime.now().replace(hour=datetime.now().hour - max_age_hours)
-        
-        tasks_to_remove = []
-        for task_id, task_info in self.active_tasks.items():
-            if (task_info['status'] in [TaskStatus.COMPLETED, TaskStatus.FAILED] and
-                task_info.get('updated_at', task_info['created_at']) < cutoff_time):
-                tasks_to_remove.append(task_id)
-        
-        for task_id in tasks_to_remove:
-            del self.active_tasks[task_id]
-        
-        if tasks_to_remove:
-            logger.info(f"Cleaned up {len(tasks_to_remove)} old tasks")
+        try:
+            from app.utils.task_management import cleanup_old_tasks
+            # Convert hours to days for the cleanup function
+            days_old = max_age_hours / 24.0
+            if days_old < 1:
+                days_old = 1  # Minimum 1 day
+            
+            deleted_count = cleanup_old_tasks(int(days_old))
+            if deleted_count > 0:
+                logger.info(f"Cleaned up {deleted_count} old tasks from MongoDB")
+            else:
+                logger.info("No old tasks to clean up")
+                
+        except Exception as e:
+            logger.error(f"Error cleaning up completed tasks: {e}")
 
     # ============================================================================
     # PLATFORM DETECTION METHODS
@@ -832,90 +1105,136 @@ class ScrapingService:
     # TASK UPDATE METHODS
     # ============================================================================
     
-    def _update_task_status(self, task_id: str, status: TaskStatus, message: str = None):
-        """Update task status"""
-        if task_id in self.active_tasks:
-            task_info = self.active_tasks[task_id]
-            
-            # Update task info
-            task_info.update({
-                'status': status,
-                'updated_at': datetime.now(),
-                'message': message
-            })
-            
-            # Update the stored response object if it exists
-            if 'response' in task_info and message:
-                task_info['response'].message = message
-            
-            logger.info(f"Updated task {task_id} status to {status}: {message}")
-        else:
-            logger.warning(f"Task {task_id} not found in active_tasks")
+    # Task update methods are now handled by MongoDB task management utilities
+    # See app.utils.task_management for update_task_progress, complete_task, fail_task, etc.
     
-    def _update_task_with_results(
-        self, 
-        task_id: str, 
-        status: TaskStatus, 
-        message: str,
-        product_info,
-        platform: Optional[str] = None,
-        platform_confidence: Optional[float] = None,
-        platform_indicators: Optional[List[str]] = None
-    ):
-        """Update task with successful results"""
-        if task_id in self.active_tasks:
-            task_info = self.active_tasks[task_id]
+    def _save_product_to_supabase(self, user_id: str, product_info, original_url: str, platform: Optional[str] = None, target_language: Optional[str] = None):
+        """
+        Save scraped product data to Supabase products table and create a shorts entry
+        
+        Args:
+            user_id: User ID who requested the scraping
+            product_info: Extracted product information
+            original_url: Original product URL that was scraped
+            platform: Detected e-commerce platform
+            target_language: Target language for content generation (defaults to 'en-US')
             
-            # Update the stored response object
-            if 'response' in task_info:
-                response = task_info['response']
-                response.status = status
-                response.message = message
-                response.product_info = product_info
-                response.completed_at = datetime.now()
-                response.detected_platform = platform
-                response.platform_confidence = platform_confidence
-                response.platform_indicators = platform_indicators or []
+        Returns:
+            tuple: (product_id, short_id) or (None, None) if failed
+        """
+        try:
+            from app.utils.supabase_utils import supabase_manager
+            
+            if not supabase_manager.is_connected():
+                logger.warning("Supabase not connected, skipping product save")
+                return None, None
+            
+            # Validate required fields
+            if not product_info.title:
+                logger.warning("Product title is missing, skipping save to Supabase")
+                return None, None
+            
+            # Prepare product data for Supabase
+            product_data = {
+                "user_id": user_id,
+                "title": product_info.title,
+                "description": product_info.description or "",
+                "price": float(product_info.price) if product_info.price and product_info.price > 0 else None,
+                "currency": product_info.currency or "USD",
+                "images": product_info.images or [],
+                "original_url": original_url,
+                "platform": platform or "unknown",
+                "rating": float(product_info.rating) if product_info.rating and product_info.rating > 0 else None,
+                "review_count": int(product_info.review_count) if product_info.review_count and product_info.review_count > 0 else None,
+                "specifications": product_info.specifications or {},
+                "metadata": {
+                    "scraped_at": datetime.now().isoformat(),
+                    "platform_detected": platform,
+                    "source_url": original_url
+                }
+            }
+            
+            # Remove None values to avoid database errors
+            product_data = {k: v for k, v in product_data.items() if v is not None}
+            
+            # Insert into products table
+            result = supabase_manager.insert_record_sync("products", product_data)
+            
+            if result:
+                product_id = result.get('id')
+                logger.info(f"Successfully saved product to Supabase for user {user_id}: {product_data['title']} (ID: {product_id})")
+                logger.debug(f"Product data saved: {product_data}")
                 
-                logger.info(f"Updated stored response for task {task_id}: status={status}, has_product_info={bool(product_info)}")
+                # Create a shorts entry for this product
+                short_id = self._create_shorts_entry(user_id, product_id, product_info, target_language)
+                
+                return product_id, short_id
             else:
-                logger.warning(f"No stored response found for task {task_id}")
+                logger.error(f"Failed to save product to Supabase for user {user_id}")
+                return None, None
+                
+        except ImportError:
+            logger.warning("Supabase utils not available, skipping product save")
+            return None, None
+        except Exception as e:
+            logger.error(f"Error saving product to Supabase: {e}", exc_info=True)
+            # Don't raise the exception to avoid breaking the scraping flow
+            return None, None
+
+    def _create_shorts_entry(self, user_id: str, product_id: str, product_info, target_language: Optional[str] = None):
+        """
+        Create a shorts entry in the shorts table for a newly scraped product
+        
+        Args:
+            user_id: User ID who owns the product
+            product_id: The ID of the newly created product
+            product_info: The extracted product information
+            target_language: Target language for content generation (defaults to 'en-US')
+        """
+        try:
+            from app.utils.supabase_utils import supabase_manager
             
-            # Update task info
-            task_info.update({
-                'status': status,
-                'updated_at': datetime.now(),
-                'message': message,
-                'product_info': product_info,
-                'platform': platform,
-                'platform_confidence': platform_confidence,
-                'platform_indicators': platform_indicators
-            })
+            if not supabase_manager.is_connected():
+                logger.warning("Supabase not connected, skipping shorts creation")
+                return None
             
-            logger.info(f"Updated task info for task {task_id}: status={status}, has_product_info={bool(product_info)}")
-        else:
-            logger.warning(f"Task {task_id} not found in active_tasks during result update")
-    
-    def _update_task_with_error(self, task_id: str, status: TaskStatus, error_message: str):
-        """Update task with error"""
-        if task_id in self.active_tasks:
-            task_info = self.active_tasks[task_id]
+            # Set default target language if not provided
+            if not target_language:
+                target_language = "en-US"
             
-            # Update the stored response object
-            if 'response' in task_info:
-                response = task_info['response']
-                response.status = status
-                response.message = error_message
-                response.error = error_message
-                response.completed_at = datetime.now()
+            # Prepare shorts data
+            shorts_data = {
+                "user_id": user_id,
+                "product_id": product_id,
+                "title": f"Short for {product_info.title}",
+                "description": f"Auto-generated short video project for {product_info.title}",
+                "status": "draft",
+                "target_language": target_language,
+                "metadata": {
+                    "auto_created": True,
+                    "created_from_scraping": True,
+                    "product_title": product_info.title,
+                    "product_platform": getattr(product_info, 'platform', 'unknown'),
+                    "created_at": datetime.now().isoformat()
+                }
+            }
             
-            # Update task info
-            task_info.update({
-                'status': status,
-                'updated_at': datetime.now(),
-                'message': error_message,
-                'error': error_message
-            })
-    
+            # Insert into shorts table
+            result = supabase_manager.insert_record_sync("shorts", shorts_data)
+            
+            if result:
+                short_id = result.get('id')
+                logger.info(f"Successfully created shorts entry for product {product_id}: Short ID {short_id}")
+                logger.debug(f"Shorts data created: {shorts_data}")
+                return short_id
+            else:
+                logger.warning(f"Failed to create shorts entry for product {product_id}")
+                return None
+                
+        except Exception as e:
+            logger.error(f"Error creating shorts entry for product {product_id}: {e}", exc_info=True)
+            # Don't raise the exception to avoid breaking the main flow
+            return None
+
 # Global scraping service instance
 scraping_service = ScrapingService() 

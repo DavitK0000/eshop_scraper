@@ -30,6 +30,13 @@ The system has been simplified and restructured for better separation of concern
    - Manages task lifecycle
    - Integrates browser manager and extractors
 
+5. **AI Generation Utilities** (`app/utils/runwayml_utils.py`)
+   - RunwayML integration for AI-powered content generation
+   - Image-to-video generation using gen4_turbo model
+   - Text-to-image generation with reference support
+   - Styled image generation with style transfer
+   - Async support for better performance
+
 ### How It Works
 
 1. **Browser Setup**: Browser manager sets up Chrome with image blocking
@@ -54,7 +61,7 @@ The following endpoints have been removed to simplify the system:
 - Video processing endpoints
 - Security statistics endpoints
 - Cache management endpoints
-- Redis status endpoints
+- In-memory cache status endpoints
 
 ## Installation
 
@@ -177,6 +184,52 @@ Log files are automatically rotated when they reach the configured size limit.
 - `WARNING` - Warning messages
 - `ERROR` - Error messages
 - `CRITICAL` - Critical errors
+
+## AI Generation with RunwayML
+
+The application includes powerful AI generation utilities powered by [RunwayML](https://runwayml.com/) for creating dynamic content from your scraped product data.
+
+### Features
+
+- 🎬 **Image-to-Video**: Convert product photos into engaging marketing videos
+- 🎨 **Text-to-Image**: Generate product mockups and lifestyle images
+- 🎭 **Style Transfer**: Apply brand styles to product images
+- ⚡ **Async Processing**: Non-blocking generation for better performance
+
+### Quick Start
+
+1. **Install the package:**
+   ```bash
+   pip install runwayml
+   ```
+
+2. **Configure your API key:**
+   ```bash
+   # Add to your .env file
+   RUNWAYML_API_SECRET=your_api_key_here
+   RUNWAYML_ENABLED=True
+   ```
+
+3. **Generate content:**
+   ```python
+   from app.utils.runwayml_utils import generate_video_from_image
+   
+   # Create a product video
+   result = await generate_video_from_image(
+       prompt_image="product.jpg",
+       prompt_text="Show the product rotating with elegant lighting",
+       duration=5
+   )
+   ```
+
+### Use Cases
+
+- **Product Marketing**: Create dynamic videos from static product images
+- **Social Media**: Generate branded content in various aspect ratios
+- **Brand Consistency**: Apply consistent styling across product catalogs
+- **Content Creation**: Generate images for product descriptions and marketing
+
+For detailed usage instructions, see [RUNWAYML_README.md](RUNWAYML_README.md).
 
 ## Development
 

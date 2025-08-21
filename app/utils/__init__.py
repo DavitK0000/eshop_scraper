@@ -20,6 +20,20 @@ from .currency_utils import (
     _get_default_currency_by_domain
 )
 from .structured_data import StructuredDataExtractor
+from .task_management import (
+    TaskType,
+    TaskStatus,
+    TaskPriority,
+    Task,
+    TaskManager,
+    task_manager,
+    create_task,
+    start_task,
+    update_task_progress,
+    complete_task,
+    fail_task,
+    get_task_status
+)
 
 # Create global instances
 proxy_manager = ProxyManager()
@@ -32,10 +46,24 @@ __all__ = [
     'DecodoProxyManager', 
     'UserAgentManager',
     'StructuredDataExtractor',
+    'TaskType',
+    'TaskStatus',
+    'TaskPriority',
+    'Task',
+    'TaskManager',
     
     # Global instances
     'proxy_manager',
     'user_agent_manager',
+    'task_manager',
+    
+    # Task management functions
+    'create_task',
+    'start_task',
+    'update_task_progress',
+    'complete_task',
+    'fail_task',
+    'get_task_status',
     
     # Text processing functions
     'sanitize_text',

@@ -1,23 +1,25 @@
 """
-Video Processing Service
+Video Service
 
 This module provides video processing capabilities including:
-- Downloading videos from URLs
-- Merging multiple videos
-- Adding audio and subtitles
-- Extracting thumbnails
-- Converting to base64 format
+- Video downloading and processing
+- Video merging and concatenation
+- Audio extraction and processing
+- Subtitle handling
+- FFmpeg integration
 """
 
-import base64
 import os
-import tempfile
-import uuid
+import base64
 import subprocess
-import threading
-from datetime import datetime
-from typing import Dict, Any, Optional, List
+import tempfile
+import logging
+from typing import List, Dict, Any, Optional, Tuple
+from pathlib import Path
 import httpx
+
+# Timeout configuration
+VIDEO_DOWNLOAD_TIMEOUT = 600  # 10 minutes for video downloads
 
 from app.models import TaskStatus, VideoProcessResponse
 from app.logging_config import get_logger
@@ -189,7 +191,7 @@ class VideoProcessingService:
         logger.info(f"Downloading {len(unique_urls)} videos from URLs")
         
         video_files = []
-        with httpx.Client() as client:
+        with httpx.Client(timeout=VIDEO_DOWNLOAD_TIMEOUT) as client:  # Use constant timeout value
             for i, url in enumerate(unique_urls):
                 video_file = self._download_single_video(client, url, temp_dir, i)
                 video_files.append(video_file)

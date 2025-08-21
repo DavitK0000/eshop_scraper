@@ -236,7 +236,7 @@ Check your application logs for security-related messages.
 
 ### 1. Environment Setup
 - Set `DEBUG=False` in production
-- Configure proper Redis connection
+- Configure proper in-memory security storage
 - Set up proper logging
 - Use HTTPS in production
 

@@ -16,13 +16,7 @@ class Settings:
     HOST: str = os.getenv("HOST", "0.0.0.0")
     PORT: int = int(os.getenv("PORT", "8000"))
     
-    # Redis Settings
-    REDIS_URL: str = os.getenv("REDIS_URL", "redis://localhost:6379")
-    REDIS_DB: int = int(os.getenv("REDIS_DB", "0"))
-    
-    # Celery Settings
-    CELERY_BROKER_URL: str = os.getenv("CELERY_BROKER_URL", "redis://localhost:6379/1")
-    CELERY_RESULT_BACKEND: str = os.getenv("CELERY_RESULT_BACKEND", "redis://localhost:6379/2")
+
     
     # Scraping Settings
     DEFAULT_TIMEOUT: int = int(os.getenv("DEFAULT_TIMEOUT", "30"))
@@ -285,6 +279,30 @@ class Settings:
     LOG_TO_FILE: bool = os.getenv("LOG_TO_FILE", "True").lower() == "true"
     LOG_FILE_MAX_SIZE: int = int(os.getenv("LOG_FILE_MAX_SIZE", "10485760"))  # 10MB
     LOG_FILE_BACKUP_COUNT: int = int(os.getenv("LOG_FILE_BACKUP_COUNT", "5"))
+    
+    # RunwayML Settings
+    RUNWAYML_API_SECRET: str = os.getenv("RUNWAYML_API_SECRET", "")
+    RUNWAYML_API_VERSION: str = os.getenv("RUNWAYML_API_VERSION", "2024-11-06")
+    RUNWAYML_ENABLED: bool = os.getenv("RUNWAYML_ENABLED", "False").lower() == "true"
+    RUNWAYML_DEFAULT_MODEL: str = os.getenv("RUNWAYML_DEFAULT_MODEL", "gen4_turbo")
+    RUNWAYML_DEFAULT_RATIO: str = os.getenv("RUNWAYML_DEFAULT_RATIO", "1280:720")
+    RUNWAYML_DEFAULT_DURATION: int = int(os.getenv("RUNWAYML_DEFAULT_DURATION", "5"))
+    RUNWAYML_MAX_RETRIES: int = int(os.getenv("RUNWAYML_MAX_RETRIES", "3"))
+    RUNWAYML_TIMEOUT: int = int(os.getenv("RUNWAYML_TIMEOUT", "300"))  # 5 minutes
+    
+    # Supabase Settings
+    SUPABASE_URL: str = os.getenv("SUPABASE_URL", "")
+    SUPABASE_SERVICE_ROLE_KEY: str = os.getenv("SUPABASE_SERVICE_ROLE_KEY", "")
+    SUPABASE_ANON_KEY: str = os.getenv("SUPABASE_ANON_KEY", "")
+    
+    # MongoDB Settings
+    MONGODB_URI: str = os.getenv("MONGODB_URI", "mongodb://localhost:27017")
+    MONGODB_DATABASE: str = os.getenv("MONGODB_DATABASE", "eshop_scraper")
+    MONGODB_POOL_SIZE: int = int(os.getenv("MONGODB_POOL_SIZE", "10"))
+    MONGODB_MAX_POOL_SIZE: int = int(os.getenv("MONGODB_MAX_POOL_SIZE", "100"))
+    MONGODB_SERVER_SELECTION_TIMEOUT: int = int(os.getenv("MONGODB_SERVER_SELECTION_TIMEOUT", "5000"))
+    MONGODB_CONNECT_TIMEOUT: int = int(os.getenv("MONGODB_CONNECT_TIMEOUT", "20000"))
+    MONGODB_SOCKET_TIMEOUT: int = int(os.getenv("MONGODB_SOCKET_TIMEOUT", "30000"))
     
     @classmethod
     def get_browser_for_domain(cls, domain: str) -> str:
