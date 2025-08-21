@@ -1205,17 +1205,16 @@ class MergingService:
             self._create_srt_file(subtitles, srt_path)
 
             # Convert Windows path to proper format for FFmpeg
-            # FFmpeg on Windows needs forward slashes and proper escaping
-            srt_path_ffmpeg = srt_path.replace('\\', '/')
-
-            # Use subtitles filter with SRT file
-            # Convert Windows path to proper format for FFmpeg
-            srt_path_ffmpeg = srt_path.replace('\\', '/')
-
+            # Use forward slashes for FFmpeg on Windows - it handles them better
+            escaped_srt_path = srt_path.replace('\\', '/').replace(':', '\\:')
+            
+            # Get appropriate font for the language
+            font_name = self._get_subtitle_font()
+            
             cmd = [
                 'ffmpeg', '-y',
                 '-i', video_path,
-                '-vf', f'subtitles={srt_path_ffmpeg}',
+                '-vf', f"subtitles='{escaped_srt_path}':force_style='FontSize=16,Bold=1,FontName={font_name},PrimaryColour=&HFFFFFF&,OutlineColour=&H000000&,Outline=1,Shadow=1,BackColour=&H000000&'",
                 '-c:a', 'copy',  # Copy audio codec
                 subtitled_path
             ]
@@ -1277,6 +1276,7 @@ class MergingService:
         except Exception as e:
             logger.error(f"Failed to create SRT file: {e}")
             raise
+        
 
     def _seconds_to_srt_time(self, seconds: float) -> str:
         """Convert seconds to SRT time format (HH:MM:SS,mmm)."""
