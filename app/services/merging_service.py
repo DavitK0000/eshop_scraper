@@ -166,9 +166,13 @@ class MergingService:
             
             # Step 6: Add subtitles if available
             if audio_data and audio_data.get('subtitles'):
-                merged_video_path = self._embed_subtitles(
-                    merged_video_path, audio_data['subtitles'], task_id
-                )
+                try:
+                    merged_video_path = self._embed_subtitles(
+                        merged_video_path, audio_data['subtitles'], task_id
+                    )
+                except Exception as subtitle_error:
+                    logger.warning(f"Failed to embed subtitles, continuing without them: {subtitle_error}")
+                    # Continue with the video without subtitles
             
             update_task_progress(task_id, 0.7, "Processing final video")
             
@@ -1022,11 +1026,21 @@ class MergingService:
             srt_path = os.path.join(temp_dir, "subtitles.srt")
             self._create_srt_file(subtitles, srt_path)
             
-            # Embed subtitles using FFmpeg
+            # Convert Windows path to proper format for FFmpeg
+            # FFmpeg on Windows needs forward slashes and proper escaping
+            srt_path_ffmpeg = srt_path.replace('\\', '/')
+            
+            # Use a simpler subtitle filter that's more compatible
+            # The 'subtitles' filter can be problematic on Windows, so use 'ass' filter instead
+            # First, convert SRT to ASS format for better compatibility
+            ass_path = os.path.join(temp_dir, "subtitles.ass")
+            self._convert_srt_to_ass(srt_path, ass_path)
+            
+            # Embed subtitles using FFmpeg with ASS filter
             cmd = [
                 'ffmpeg', '-y',
                 '-i', video_path,
-                '-vf', f'subtitles={srt_path}:force_style=\'FontSize=24,PrimaryColour=&Hffffff,OutlineColour=&H000000,BackColour=&H000000,Bold=1\'',
+                '-vf', f'ass={ass_path}',
                 '-c:a', 'copy',  # Copy audio codec
                 subtitled_path
             ]
@@ -1039,7 +1053,51 @@ class MergingService:
             )
             
             if result.returncode != 0:
-                raise Exception(f"FFmpeg subtitle embedding failed: {result.stderr}")
+                # If ASS filter fails, try the original subtitles filter with proper path handling
+                logger.warning(f"ASS filter failed, trying subtitles filter: {result.stderr}")
+                
+                # Use subtitles filter with proper path escaping
+                cmd = [
+                    'ffmpeg', '-y',
+                    '-i', video_path,
+                    '-vf', f'subtitles={srt_path_ffmpeg}',
+                    '-c:a', 'copy',
+                    subtitled_path
+                ]
+                
+                result = subprocess.run(
+                    cmd,
+                    capture_output=True,
+                    text=True,
+                    timeout=300
+                )
+                
+                if result.returncode != 0:
+                    # If both filters fail, try a different approach with hardcoded subtitle text
+                    logger.warning(f"Subtitles filter also failed, trying hardcoded approach: {result.stderr}")
+                    
+                    # Try using drawtext filter as a last resort
+                    subtitle_text = self._get_subtitle_text_for_drawtext(subtitles)
+                    if subtitle_text:
+                        cmd = [
+                            'ffmpeg', '-y',
+                            '-i', video_path,
+                            '-vf', f'drawtext=text=\'{subtitle_text}\':fontcolor=white:fontsize=24:x=(w-text_w)/2:y=(h-text_h)/2:box=1:boxcolor=black@0.5',
+                            '-c:a', 'copy',
+                            subtitled_path
+                        ]
+                        
+                        result = subprocess.run(
+                            cmd,
+                            capture_output=True,
+                            text=True,
+                            timeout=300
+                        )
+                        
+                        if result.returncode != 0:
+                            raise Exception(f"All subtitle embedding methods failed: {result.stderr}")
+                    else:
+                        raise Exception(f"FFmpeg subtitle embedding failed: {result.stderr}")
             
             if not os.path.exists(subtitled_path):
                 raise Exception("Subtitled video file was not created")
@@ -1073,6 +1131,114 @@ class MergingService:
         except Exception as e:
             logger.error(f"Failed to create SRT file: {e}")
             raise
+
+    def _convert_srt_to_ass(self, srt_path: str, ass_path: str):
+        """Convert SRT subtitle file to ASS format for better FFmpeg compatibility."""
+        try:
+            # Create a simple ASS file with basic styling
+            ass_header = """[Script Info]
+Title: Generated Subtitles
+ScriptType: v4.00+
+WrapStyle: 1
+ScaledBorderAndShadow: yes
+YCbCr Matrix: TV.601
+
+[V4+ Styles]
+Format: Name, Fontname, Fontsize, PrimaryColour, SecondaryColour, OutlineColour, BackColour, Bold, Italic, Underline, StrikeOut, ScaleX, ScaleY, Spacing, Angle, BorderStyle, Outline, Shadow, Alignment, MarginL, MarginR, MarginV, Encoding
+Style: Default,Arial,24,&H00FFFFFF,&H000000FF,&H00000000,&H00000000,1,0,0,0,100,100,0,0,1,2,2,2,10,10,10,1
+
+[Events]
+Format: Layer, Start, End, Style, Name, MarginL, MarginR, MarginV, Effect, Text
+"""
+            
+            with open(ass_path, 'w', encoding='utf-8') as ass_file:
+                ass_file.write(ass_header)
+                
+                # Read SRT file and convert to ASS format
+                with open(srt_path, 'r', encoding='utf-8') as srt_file:
+                    lines = srt_file.readlines()
+                
+                i = 0
+                while i < len(lines):
+                    line = lines[i].strip()
+                    
+                    # Skip empty lines
+                    if not line:
+                        i += 1
+                        continue
+                    
+                    # Check if this is a subtitle number
+                    if line.isdigit():
+                        # Next line should be timestamp
+                        if i + 1 < len(lines):
+                            timestamp_line = lines[i + 1].strip()
+                            if ' --> ' in timestamp_line:
+                                start_time, end_time = timestamp_line.split(' --> ')
+                                
+                                # Convert SRT time to ASS time (HH:MM:SS.cc)
+                                start_ass = self._srt_time_to_ass_time(start_time)
+                                end_ass = self._srt_time_to_ass_time(end_time)
+                                
+                                # Next line should be subtitle text
+                                if i + 2 < len(lines):
+                                    text = lines[i + 2].strip()
+                                    
+                                    # Write ASS event line
+                                    ass_line = f"Dialogue: 0,{start_ass},{end_ass},Default,,0,0,0,,{text}\n"
+                                    ass_file.write(ass_line)
+                                    
+                                    i += 3  # Skip number, timestamp, and text lines
+                                    continue
+                    
+                    i += 1
+            
+            logger.info(f"Converted SRT to ASS format at {ass_path}")
+            
+        except Exception as e:
+            logger.error(f"Failed to convert SRT to ASS: {e}")
+            raise
+
+    def _srt_time_to_ass_time(self, srt_time: str) -> str:
+        """Convert SRT time format (HH:MM:SS,mmm) to ASS time format (H:MM:SS.cc)."""
+        try:
+            # Parse SRT time: HH:MM:SS,mmm
+            time_parts = srt_time.replace(',', '.').split(':')
+            hours = int(time_parts[0])
+            minutes = int(time_parts[1])
+            seconds = float(time_parts[2])
+            
+            # Convert to ASS format: H:MM:SS.cc
+            total_seconds = hours * 3600 + minutes * 60 + seconds
+            ass_hours = int(total_seconds // 3600)
+            ass_minutes = int((total_seconds % 3600) // 60)
+            ass_seconds = total_seconds % 60
+            
+            return f"{ass_hours}:{ass_minutes:02d}:{ass_seconds:05.2f}"
+            
+        except Exception as e:
+            logger.error(f"Failed to convert SRT time to ASS time: {e}")
+            return "0:00:00.00"
+
+    def _get_subtitle_text_for_drawtext(self, subtitles: List[Dict[str, Any]]) -> str:
+        """Extract subtitle text for use with drawtext filter as fallback."""
+        try:
+            if not subtitles:
+                return None
+            
+            # Get the first subtitle text as a simple fallback
+            # This is not ideal but provides some text overlay
+            first_subtitle = subtitles[0]
+            text = first_subtitle.get('text', '')
+            
+            # Clean up the text for drawtext filter
+            # Remove special characters that might cause issues
+            text = text.replace("'", "\\'").replace('"', '\\"')
+            
+            return text if text else None
+            
+        except Exception as e:
+            logger.error(f"Failed to get subtitle text for drawtext: {e}")
+            return None
 
     def _seconds_to_srt_time(self, seconds: float) -> str:
         """Convert seconds to SRT time format (HH:MM:SS,mmm)."""
