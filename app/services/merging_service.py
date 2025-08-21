@@ -1061,8 +1061,7 @@ class MergingService:
 
             # Use RunwayML for video upscaling (synchronous)
             upscale_result = runwayml_manager.upscale_video_sync(
-                video_path=video_path,
-                target_resolution="1920:1080"
+                video_path=video_path
             )
 
             if not upscale_result.get("success", False):

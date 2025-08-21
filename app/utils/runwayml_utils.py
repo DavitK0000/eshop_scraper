@@ -382,7 +382,6 @@ class RunwayMLManager:
             return {
                 "success": True,
                 "model": model,
-                "target_resolution": target_resolution,
                 "output": result.output,
                 "task_id": result.id,
                 "status": "completed"
@@ -886,23 +885,21 @@ async def generate_image_with_reference_style(
 
 async def upscale_video(
     video_path: Union[str, Path],
-    target_resolution: str = "1920:1080",
     **kwargs
 ) -> Dict[str, Any]:
     """Convenience function to upscale video."""
     return await runwayml_manager.upscale_video(
-        video_path, target_resolution, **kwargs
+        video_path, **kwargs
     )
 
 
 def upscale_video_sync(
     video_path: Union[str, Path],
-    target_resolution: str = "1920:1080",
     **kwargs
 ) -> Dict[str, Any]:
     """Convenience function to upscale video (synchronous)."""
     return runwayml_manager.upscale_video_sync(
-        video_path, target_resolution, **kwargs
+        video_path, **kwargs
     )
 
 
