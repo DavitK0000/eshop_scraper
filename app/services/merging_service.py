@@ -760,7 +760,8 @@ class MergingService:
         try:
             # Check if this is a Supabase signed URL
             if 'supabase.co' in url and 'token=' in url:
-                logger.info(f"Detected expired Supabase signed URL, attempting to convert to public URL")
+                logger.info(f"Detected potentially expired Supabase signed URL for user {user_id}, regenerating signed URL for private storage")
+                logger.debug(f"Original URL: {url}")
                 
                 # Extract the file path from the signed URL
                 # URL format: https://.../storage/v1/object/sign/bucket/path?token=...
@@ -774,57 +775,44 @@ class MergingService:
                             bucket_name = bucket_parts[0]
                             file_path = bucket_parts[1]
                             
-                            # Try to get public URL
+                            # For private storage, directly regenerate signed URL instead of trying public URL
                             try:
                                 if not supabase_manager.is_connected():
                                     raise Exception("Supabase connection not available")
                                 
-                                # Get public URL from storage
-                                public_url = supabase_manager.client.storage.from_(bucket_name).get_public_url(file_path)
+                                # Regenerate signed URL for private storage
+                                signed_url_response = supabase_manager.client.storage.from_(bucket_name).create_signed_url(
+                                    file_path, 3600  # 1 hour expiration
+                                )
                                 
-                                if public_url:
-                                    logger.info(f"Successfully converted to public URL: {public_url}")
-                                    return public_url
-                                else:
-                                    raise Exception("Failed to get public URL")
-                                    
-                            except Exception as e:
-                                logger.warning(f"Failed to get public URL: {e}, trying to regenerate signed URL")
-                                
-                                # Fallback: try to regenerate signed URL
-                                try:
-                                    signed_url_response = supabase_manager.client.storage.from_(bucket_name).create_signed_url(
-                                        file_path, 3600  # 1 hour expiration
-                                    )
-                                    
-                                    # Extract the signed URL string from the response
-                                    if isinstance(signed_url_response, dict):
-                                        if 'signedURL' in signed_url_response:
-                                            signed_url = signed_url_response['signedURL']
-                                        elif 'signedUrl' in signed_url_response:
-                                            signed_url = signed_url_response['signedUrl']
-                                        else:
-                                            # Try to find any URL-like property
-                                            for key, value in signed_url_response.items():
-                                                if isinstance(value, str) and value.startswith('http'):
-                                                    signed_url = value
-                                                    break
-                                            else:
-                                                raise Exception(f"Could not find signed URL in response: {signed_url_response}")
-                                    elif isinstance(signed_url_response, str):
-                                        signed_url = signed_url_response
+                                # Extract the signed URL string from the response
+                                if isinstance(signed_url_response, dict):
+                                    if 'signedURL' in signed_url_response:
+                                        signed_url = signed_url_response['signedURL']
+                                    elif 'signedUrl' in signed_url_response:
+                                        signed_url = signed_url_response['signedUrl']
                                     else:
-                                        signed_url = str(signed_url_response)
-                                    
-                                    logger.info(f"Successfully regenerated signed URL: {signed_url}")
-                                    return signed_url
-                                    
-                                except Exception as regen_error:
-                                    logger.error(f"Failed to regenerate signed URL: {regen_error}")
-                                    raise Exception(f"Could not handle expired URL: {regen_error}")
+                                        # Try to find any URL-like property
+                                        for key, value in signed_url_response.items():
+                                            if isinstance(value, str) and value.startswith('http'):
+                                                signed_url = value
+                                                break
+                                        else:
+                                            raise Exception(f"Could not find signed URL in response: {signed_url_response}")
+                                elif isinstance(signed_url_response, str):
+                                    signed_url = signed_url_response
+                                else:
+                                    signed_url = str(signed_url_response)
+                                
+                                logger.info(f"Successfully regenerated signed URL for private storage: {signed_url}")
+                                return signed_url
+                                
+                            except Exception as regen_error:
+                                logger.error(f"Failed to regenerate signed URL for private storage: {regen_error}")
+                                raise Exception(f"Could not handle expired URL: {regen_error}")
                 
                 # If we can't parse the URL or convert it, return the original
-                logger.warning(f"Could not parse or convert expired URL, returning original: {url}")
+                logger.warning(f"Could not parse or convert expired URL for user {user_id}, returning original: {url}")
                 return url
             else:
                 # Not a Supabase signed URL, return as-is
