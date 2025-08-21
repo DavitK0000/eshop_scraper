@@ -493,6 +493,7 @@ def get_short_finalization_task_status(task_id: str) -> FinalizeShortResponse:
             message = task_info.task_status_message or ''
             thumbnail_url = task_info.task_metadata.get('thumbnail_url', '') if task_info.task_metadata else ''
             video_url = task_info.task_metadata.get('video_url', '') if task_info.task_metadata else ''
+            final_video_url = task_info.task_metadata.get('final_video_url', '') if task_info.task_metadata else ''
             updated_at = task_info.updated_at
         else:
             # Dict format
@@ -506,6 +507,7 @@ def get_short_finalization_task_status(task_id: str) -> FinalizeShortResponse:
             message = task_info.get('message', '')
             thumbnail_url = task_info.get('thumbnail_url', '')
             video_url = task_info.get('video_url', '')
+            final_video_url = task_info.get('final_video_url', '')
             updated_at = task_info.get('updated_at')
         
         return FinalizeShortResponse(
@@ -519,7 +521,7 @@ def get_short_finalization_task_status(task_id: str) -> FinalizeShortResponse:
             current_step=current_step,
             error_message=error_message,
             thumbnail_url=thumbnail_url,
-            final_video_url=video_url,  # Map from video_url to final_video_url for API response
+            final_video_url=final_video_url,
             completed_at=updated_at if status == TaskStatus.COMPLETED else None
         )
         
