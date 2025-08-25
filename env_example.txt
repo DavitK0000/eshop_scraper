@@ -102,3 +102,18 @@ RUNWAYML_DEFAULT_RATIO=1280:720
 RUNWAYML_DEFAULT_DURATION=5
 RUNWAYML_MAX_RETRIES=3
 RUNWAYML_TIMEOUT=300 
+
+# Captcha Solving Service Configuration
+# 2captcha.com - Get API key from https://2captcha.com/
+CAPTCHA_2CAPTCHA_API_KEY=your_2captcha_api_key_here
+
+# AntiCaptcha.com - Get API key from https://anti-captcha.com/
+CAPTCHA_ANTICAPTCHA_API_KEY=your_anticaptcha_api_key_here
+
+# CapMonster.cloud - Get API key from https://capmonster.cloud/
+CAPTCHA_CAPMONSTER_API_KEY=your_capmonster_api_key_here
+
+# Captcha Handling Settings
+CAPTCHA_AUTO_HANDLE=True
+CAPTCHA_SOLVING_TIMEOUT=120
+CAPTCHA_MAX_RETRIES=3 

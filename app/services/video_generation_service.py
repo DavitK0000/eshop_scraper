@@ -272,7 +272,7 @@ class VideoGenerationService:
                 'progress': 0.0,
                 'current_step': 'Initializing',
                 'error_message': None,
-                'video_url': None,  # Will be populated when task completes
+                'video_url': None,  # Will be populated with signed URL when task completes
                 'image_url': None   # Will be populated when task completes
             }
         except Exception as e:
@@ -302,7 +302,7 @@ class VideoGenerationService:
                     'error_message': task.error_message,
                     'created_at': task.created_at,
                     'updated_at': task.updated_at,
-                    'video_url': video_url,  # Already a signed URL, no need to re-sign
+                    'video_url': video_url,  # Signed URL from task metadata for immediate access
                     'image_url': image_url   # Image URL from metadata
                 }
             return None
@@ -369,17 +369,19 @@ class VideoGenerationService:
             
             # Step 3: Generate video
             update_task_progress(task_id, 3, 'Creating video from generated image', 80.0)
-            video_url = self._generate_video(scene_data, image_url, user_id, task_id)
+            # Get both public URL (for database) and signed URL (for immediate access)
+            public_video_url, signed_video_url = self._generate_video(scene_data, image_url, user_id, task_id)
             
             # Step 4: Update scene with generated URLs
             update_task_progress(task_id, 4, 'Saving results and finalizing', 95.0)
-            self._update_scene_urls(scene_id, image_url, video_url)
+            # Store public URL in database for permanent access
+            self._update_scene_urls(scene_id, image_url, public_video_url)
             
-            # Complete the task
+            # Complete the task with signed URL for immediate access
             complete_task(task_id, {
                 'scene_id': scene_id,
                 'image_url': image_url,
-                'video_url': video_url,
+                'video_url': signed_video_url,  # Signed URL for immediate access
                 'status': 'completed'
             })
             
@@ -528,8 +530,8 @@ class VideoGenerationService:
             # Update progress - downloading and storing video
             update_task_progress(task_id, 3, 'Storing generated video', 75.0)
             
-            # Download and store video in Supabase (returns signed URL)
-            video_url = self._store_video_in_supabase(video_url, user_id)
+            # Download and store video in Supabase (returns tuple of public_url, signed_url)
+            public_url, signed_url = self._store_video_in_supabase(video_url, user_id)
             
             # Deduct credits after successful generation
             credit_manager.deduct_credits(
@@ -540,7 +542,7 @@ class VideoGenerationService:
                 description=f"Generated video for scene {scene_data['id']}"
             )
             
-            return video_url
+            return public_url, signed_url
             
         except Exception as e:
             logger.error(f"Failed to generate video for scene {scene_data['id']}: {e}")
@@ -604,8 +606,13 @@ class VideoGenerationService:
                     logger.error(f"Failed to store image in Supabase after {MAX_RETRIES} attempts: {e}")
                     raise
     
-    def _store_video_in_supabase(self, video_url: str, user_id: str) -> str:
-        """Download video from RunwayML and store it in Supabase storage."""
+    def _store_video_in_supabase(self, video_url: str, user_id: str) -> tuple[str, str]:
+        """
+        Download video from RunwayML and store it in Supabase storage.
+        
+        Returns:
+            tuple: (public_url, signed_url) - public URL for database, signed URL for immediate access
+        """
         for attempt in range(MAX_RETRIES):
             try:
                 # Download video from RunwayML
@@ -647,16 +654,15 @@ class VideoGenerationService:
                     else:
                         raise bucket_error
                 
-                # Get signed URL instead of public URL for security
+                # Get public URL for storage in database
+                public_url = supabase_manager.client.storage.from_('video-files').get_public_url(filename)
+                
+                # Get signed URL for immediate access
                 signed_url_response = supabase_manager.client.storage.from_('video-files').create_signed_url(
                     filename, 3600  # 1 hour expiration
                 )
                 
-                # Log the response structure for debugging
-                logger.info(f"Signed URL response type: {type(signed_url_response)}, content: {signed_url_response}")
-                
-                # Extract the signed URL string from the response object
-                # Supabase returns an object with 'signedURL' property
+                # Extract the signed URL string from the response
                 if isinstance(signed_url_response, dict):
                     if 'signedURL' in signed_url_response:
                         signed_url = signed_url_response['signedURL']
@@ -678,8 +684,8 @@ class VideoGenerationService:
                     signed_url = str(signed_url_response)
                     logger.warning(f"Unexpected signed URL response format: {signed_url_response}")
                 
-                logger.info(f"Extracted signed URL: {signed_url}")
-                return signed_url
+                logger.info(f"Stored video in Supabase: public={public_url}, signed={signed_url}")
+                return public_url, signed_url
                 
             except Exception as e:
                 if attempt < MAX_RETRIES - 1:
@@ -696,10 +702,10 @@ class VideoGenerationService:
             if not supabase_manager.is_connected():
                 raise Exception("Supabase connection not available")
             
-            # Update scene with new URLs (video_url is already a signed URL)
+            # Update scene with new URLs (video_url is the public URL for database storage)
             result = supabase_manager.client.table('video_scenes').update({
                 'image_url': image_url,
-                'generated_video_url': video_url,  # This is now a signed URL
+                'generated_video_url': video_url,  # Public URL stored in database
                 'status': 'completed',
                 'updated_at': datetime.now().isoformat()
             }).eq('id', scene_id).execute()
@@ -707,7 +713,7 @@ class VideoGenerationService:
             if not result.data:
                 raise Exception("Failed to update scene with generated URLs")
             
-            logger.info(f"Updated scene {scene_id} with generated URLs (video as signed URL)")
+            logger.info(f"Updated scene {scene_id} with generated URLs (public video URL stored in database)")
             
         except Exception as e:
             logger.error(f"Failed to update scene {scene_id} with generated URLs: {e}")

@@ -1,5 +1,5 @@
 import os
-from typing import List, Dict
+from typing import List, Dict, Optional
 from dotenv import load_dotenv
 
 load_dotenv()
@@ -315,6 +315,16 @@ class Settings:
     def get_browser_config(cls, browser_name: str) -> Dict:
         """Get configuration for a specific browser"""
         return cls.BROWSER_CONFIGS.get(browser_name, cls.BROWSER_CONFIGS[cls.DEFAULT_BROWSER])
+    
+    # Captcha solving service configurations
+    CAPTCHA_2CAPTCHA_API_KEY: Optional[str] = os.getenv("CAPTCHA_2CAPTCHA_API_KEY")
+    CAPTCHA_ANTICAPTCHA_API_KEY: Optional[str] = os.getenv("CAPTCHA_ANTICAPTCHA_API_KEY")
+    CAPTCHA_CAPMONSTER_API_KEY: Optional[str] = os.getenv("CAPTCHA_CAPMONSTER_API_KEY")
+    
+    # Captcha handling settings
+    CAPTCHA_AUTO_HANDLE: bool = os.getenv("CAPTCHA_AUTO_HANDLE", "True").lower() == "true"
+    CAPTCHA_SOLVING_TIMEOUT: int = int(os.getenv("CAPTCHA_SOLVING_TIMEOUT", "120"))  # seconds
+    CAPTCHA_MAX_RETRIES: int = int(os.getenv("CAPTCHA_MAX_RETRIES", "3"))
 
 
 settings = Settings() 
