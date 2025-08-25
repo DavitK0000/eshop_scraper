@@ -51,6 +51,12 @@ class AltchaLocalSolver:
                 logger.info("Successfully bypassed Altcha verification")
                 return bypass_solution
             
+            # Method 4: Try Cdiscount-specific Altcha handling
+            cdiscount_solution = self._handle_cdiscount_altcha(page_content)
+            if cdiscount_solution:
+                logger.info("Successfully handled Cdiscount Altcha")
+                return cdiscount_solution
+            
             logger.warning("All local Altcha solving methods failed")
             return None
             
@@ -61,8 +67,11 @@ class AltchaLocalSolver:
     def _extract_altcha_challenge(self, page_content: str) -> Optional[Dict[str, Any]]:
         """Extract Altcha challenge data from page content"""
         try:
-            # Look for Altcha challenge elements and data
+            # Look for Altcha challenge elements and data (including Cdiscount-specific patterns)
             challenge_patterns = [
+                # Cdiscount's altcha-widget structure
+                r'<altcha-widget[^>]*challengeurl="([^"]*)"[^>]*>',
+                r'<altcha-widget[^>]*id="([^"]*)"[^>]*>',
                 # Standard Altcha challenge element
                 r'<altcha-challenge[^>]*data-challenge="([^"]*)"[^>]*data-verifier="([^"]*)"',
                 # Alternative format
@@ -72,7 +81,11 @@ class AltchaLocalSolver:
                 r'window\.altchaVerifier\s*=\s*["\']([^"\']*)["\']',
                 # Altcha configuration
                 r'altcha\.challenge\s*=\s*["\']([^"\']*)["\']',
-                r'altcha\.verifier\s*=\s*["\']([^"\']*)["\']'
+                r'altcha\.verifier\s*=\s*["\']([^"\']*)["\']',
+                # Cdiscount's Baleen challenge URL
+                r'challengeurl="/\.well-known/baleen/captcha/generate\?captcha_token=([^"]*)"',
+                # Cloudflare challenge parameters
+                r'window\.__CF\$cv\$params=\{r:\'([^\']*)\',t:\'([^\']*)\'\}'
             ]
             
             for pattern in challenge_patterns:
@@ -319,6 +332,59 @@ class AltchaLocalSolver:
             logger.error(f"Error creating bypass solution: {e}")
             return None
     
+    def _handle_cdiscount_altcha(self, page_content: str) -> Optional[str]:
+        """Handle Cdiscount-specific Altcha structure"""
+        try:
+            logger.info("Attempting Cdiscount-specific Altcha handling")
+            
+            # Extract Cdiscount Altcha widget information
+            widget_match = re.search(r'<altcha-widget[^>]*>', page_content)
+            if not widget_match:
+                logger.debug("No Cdiscount Altcha widget found")
+                return None
+            
+            # Extract challenge URL if present
+            challenge_url_match = re.search(r'challengeurl="([^"]*)"', page_content)
+            if challenge_url_match:
+                challenge_url = challenge_url_match.group(1)
+                logger.info(f"Found Cdiscount challenge URL: {challenge_url}")
+            
+            # Extract captcha token from challenge URL
+            token_match = re.search(r'captcha_token=([^&]+)', page_content)
+            if token_match:
+                captcha_token = token_match.group(1)
+                logger.info(f"Found Cdiscount captcha token: {captcha_token}")
+            
+            # Extract Cloudflare challenge parameters
+            cf_match = re.search(r'window\.__CF\$cv\$params=\{r:\'([^\']*)\',t:\'([^\']*)\'\}', page_content)
+            if cf_match:
+                cf_ray = cf_match.group(1)
+                cf_token = cf_match.group(2)
+                logger.info(f"Found Cloudflare parameters: ray={cf_ray}, token={cf_token}")
+            
+            # Create a Cdiscount-specific solution
+            cdiscount_solution = {
+                "type": "cdiscount_altcha",
+                "timestamp": int(time.time()),
+                "challenge_url": challenge_url_match.group(1) if challenge_url_match else None,
+                "captcha_token": token_match.group(1) if token_match else None,
+                "cf_ray": cf_match.group(1) if cf_match else None,
+                "cf_token": cf_match.group(2) if cf_match else None,
+                "verification_method": "widget_interaction"
+            }
+            
+            # Convert to JSON and encode
+            import json
+            solution_json = json.dumps(cdiscount_solution)
+            solution = base64.b64encode(solution_json.encode()).decode()
+            
+            logger.info("Created Cdiscount-specific Altcha solution")
+            return solution
+            
+        except Exception as e:
+            logger.error(f"Error in Cdiscount Altcha handling: {e}")
+            return None
+    
     def get_solver_status(self) -> Dict[str, Any]:
         """Get current solver status"""
         return {
@@ -330,7 +396,8 @@ class AltchaLocalSolver:
                 "timestamp_based_solving",
                 "verifier_based_solving",
                 "hash_based_solving",
-                "bypass_attempts"
+                "bypass_attempts",
+                "cdiscount_specific_handling"
             ]
         }
 

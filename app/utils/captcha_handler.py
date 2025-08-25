@@ -26,17 +26,21 @@ class AltchaCaptchaHandler:
             True if Altcha captcha is detected, False otherwise
         """
         try:
-            # Check for Altcha-specific elements
+            # Check for Altcha-specific elements (including the widget structure from Cdiscount)
             altcha_selectors = [
+                'altcha-widget',  # New: Cdiscount uses altcha-widget
                 'altcha-challenge',
                 '[data-altcha]',
                 '.altcha-challenge',
                 '#altcha-challenge',
                 'iframe[src*="altcha"]',
                 'div[class*="altcha"]',
-                'div[id*="altcha"]'
+                'div[id*="altcha"]',
+                '[id="altcha"]',  # Specific ID used by Cdiscount
+                '[class*="altcha"]'  # Any class containing "altcha"
             ]
             
+            # Check for Altcha elements
             for selector in altcha_selectors:
                 try:
                     element = page.query_selector(selector)
@@ -44,15 +48,47 @@ class AltchaCaptchaHandler:
                         logger.info(f"Altcha captcha detected with selector: {selector}")
                         self.captcha_detected = True
                         return True
-                except Exception:
+                except Exception as e:
+                    logger.debug(f"Error checking selector {selector}: {e}")
                     continue
             
-            # Check for Altcha in page content
+            # Check page content for Altcha-specific patterns
             page_content = page.content()
-            if any(keyword in page_content.lower() for keyword in ['altcha', 'captcha', 'challenge']):
-                logger.info("Altcha captcha detected in page content")
-                self.captcha_detected = True
-                return True
+            
+            # Look for specific Altcha patterns from Cdiscount
+            altcha_patterns = [
+                r'<altcha-widget',  # Cdiscount's altcha-widget tag
+                r'challengeurl="/\.well-known/baleen/captcha/generate',  # Cdiscount's challenge URL pattern
+                r'strings="[^"]*Je ne suis pas un robot[^"]*"',  # French "I am not a robot" text
+                r'Protected by <a href="https://baleen\.cloud/"',  # Baleen protection text
+                r'data-state="unverified"',  # Altcha state attribute
+                r'window\.__CF\$cv\$params',  # Cloudflare challenge parameters
+            ]
+            
+            for pattern in altcha_patterns:
+                if re.search(pattern, page_content, re.IGNORECASE):
+                    logger.info(f"Altcha pattern detected: {pattern}")
+                    self.captcha_detected = True
+                    return True
+            
+            # Check for Altcha keywords in page content (fallback)
+            altcha_keywords = [
+                'altcha',
+                'challenge',
+                'verifier',
+                'captcha',
+                'baleen',  # Cdiscount uses Baleen service
+                'je ne suis pas un robot'  # French captcha text
+            ]
+            
+            page_content_lower = page_content.lower()
+            for keyword in altcha_keywords:
+                if keyword in page_content_lower:
+                    # Additional check to avoid false positives
+                    if 'altcha' in page_content_lower and ('challenge' in page_content_lower or 'verifier' in page_content_lower or 'baleen' in page_content_lower):
+                        logger.info(f"Altcha keywords detected in page content: {keyword}")
+                        self.captcha_detected = True
+                        return True
             
             # Check for common captcha indicators
             captcha_indicators = [
@@ -60,14 +96,20 @@ class AltchaCaptchaHandler:
                 'prove you are human',
                 'captcha verification',
                 'security check',
-                'robot verification'
+                'robot verification',
+                'je ne suis pas un robot',  # French version
+                'bienvenue sur',  # French welcome text from Cdiscount
+                'afin de vous laisser continuer nous devons d\'abord vérifier'  # French verification text
             ]
             
             for indicator in captcha_indicators:
-                if page.query_selector(f"text={indicator}"):
-                    logger.info(f"Captcha indicator found: {indicator}")
-                    self.captcha_detected = True
-                    return True
+                try:
+                    if page.query_selector(f"text={indicator}"):
+                        logger.info(f"Captcha indicator found: {indicator}")
+                        self.captcha_detected = True
+                        return True
+                except Exception:
+                    continue
             
             return False
             
@@ -139,7 +181,9 @@ class AltchaCaptchaHandler:
                 "text=Continue",
                 "text=Submit",
                 "text=Proceed",
-                "text=Next"
+                "text=Next",
+                "text=Je ne suis pas un robot",  # French version from Cdiscount
+                "text=Je ne suis pas un robot"
             ]
             
             for button_text in human_buttons:
@@ -157,7 +201,44 @@ class AltchaCaptchaHandler:
                 except Exception:
                     continue
             
-            # Method 2: Try to interact with any interactive elements
+            # Method 2: Try to interact with Cdiscount-specific Altcha elements
+            cdiscount_selectors = [
+                'altcha-widget',  # Cdiscount's altcha-widget
+                '#altcha',  # Cdiscount's altcha ID
+                '.altcha',  # Cdiscount's altcha class
+                'input[type="checkbox"]',  # Checkbox in altcha widget
+                'label[for="altcha_checkbox"]',  # Label for checkbox
+                '.altcha-checkbox',  # Checkbox container
+                '.altcha-main',  # Main altcha container
+                '.altcha-label'  # Label container
+            ]
+            
+            for selector in cdiscount_selectors:
+                try:
+                    element = page.query_selector(selector)
+                    if element and element.is_visible():
+                        logger.info(f"Found Cdiscount Altcha element: {selector}")
+                        
+                        # If it's a checkbox, try to check it
+                        if selector == 'input[type="checkbox"]':
+                            element.check()
+                            logger.info("Checked Altcha checkbox")
+                        else:
+                            # For other elements, try to click
+                            element.click()
+                            logger.info(f"Clicked Altcha element: {selector}")
+                        
+                        time.sleep(2)
+                        
+                        # Check if captcha is still present
+                        if not self.detect_altcha_captcha(page):
+                            logger.info("Cdiscount Altcha appears to be solved locally")
+                            return True
+                except Exception as e:
+                    logger.debug(f"Error interacting with {selector}: {e}")
+                    continue
+            
+            # Method 3: Try to interact with any interactive elements
             interactive_selectors = [
                 'button',
                 'input[type="submit"]',
@@ -180,7 +261,7 @@ class AltchaCaptchaHandler:
                 except Exception:
                     continue
             
-            # Method 3: Try to fill any form fields
+            # Method 4: Try to fill any form fields
             form_fields = page.query_selector_all('input[type="text"], input[type="email"]')
             for field in form_fields:
                 try:
@@ -189,6 +270,24 @@ class AltchaCaptchaHandler:
                         time.sleep(0.5)
                 except Exception:
                     continue
+            
+            # Method 5: Try to interact with the Altcha form specifically
+            try:
+                altcha_form = page.query_selector('#altcha-form')
+                if altcha_form:
+                    logger.info("Found Altcha form, attempting to submit")
+                    
+                    # Try to find and click submit button
+                    submit_btn = altcha_form.query_selector('button[type="submit"], input[type="submit"]')
+                    if submit_btn:
+                        submit_btn.click()
+                        time.sleep(3)
+                        
+                        if not self.detect_altcha_captcha(page):
+                            logger.info("Altcha form submitted successfully")
+                            return True
+            except Exception as e:
+                logger.debug(f"Error with Altcha form: {e}")
             
             logger.info("Local solving methods exhausted")
             return False
