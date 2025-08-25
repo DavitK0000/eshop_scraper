@@ -9,7 +9,7 @@ from app.utils import (
     parse_price_with_regional_format
 )
 from app.utils.captcha_handler import captcha_handler
-from app.services.captcha_solver_service import captcha_solver_service
+from app.services.captcha_solver_service import altcha_local_solver
 import re
 from app.logging_config import get_logger
 
@@ -506,39 +506,40 @@ class CDiscountExtractor(BaseExtractor):
                     logger.info("CDiscount captcha solved locally")
                     return True
                 
-                # Try third-party service if local solving failed
-                if captcha_solver_service.available_services:
-                    logger.info("Attempting third-party captcha solving for CDiscount")
+                # Try local Altcha solving if local captcha solving failed
+                logger.info("Attempting local Altcha solving for CDiscount")
+                
+                # Get page content for local Altcha solving
+                page_content = self.driver.content()
+                
+                # Try to solve with local Altcha solver
+                solution = altcha_local_solver.solve_altcha_locally(page_content, self.url)
+                if solution:
+                    logger.info("CDiscount Altcha captcha solved with local solver")
                     
-                    # Get page content for third-party solving
-                    page_content = self.driver.content()
-                    
-                    # Try to solve with third-party service
-                    solution = captcha_solver_service.solve_altcha_captcha(page_content, self.url)
-                    if solution:
-                        logger.info("CDiscount captcha solved with third-party service")
+                    # Apply the solution to the page
+                    try:
+                        # Execute JavaScript to apply the solution
+                        self.driver.evaluate(f"""
+                            if (window.altcha) {{
+                                window.altcha.verify('{solution}');
+                            }} else if (window.altchaChallenge) {{
+                                window.altchaChallenge.verify('{solution}');
+                            }} else if (window.altchaVerifier) {{
+                                window.altchaVerifier.verify('{solution}');
+                            }}
+                        """)
                         
-                        # Apply the solution to the page
-                        try:
-                            # Execute JavaScript to apply the solution
-                            self.driver.evaluate(f"""
-                                if (window.altcha) {{
-                                    window.altcha.verify('{solution}');
-                                }} else if (window.altchaChallenge) {{
-                                    window.altchaChallenge.verify('{solution}');
-                                }}
-                            """)
-                            
-                            # Wait for verification
-                            import time
-                            time.sleep(3)
-                            
-                            # Check if captcha is still present
-                            if not captcha_handler.detect_altcha_captcha(self.driver):
-                                logger.info("CDiscount captcha solution applied successfully")
-                                return True
-                        except Exception as e:
-                            logger.error(f"Error applying CDiscount captcha solution: {e}")
+                        # Wait for verification
+                        import time
+                        time.sleep(3)
+                        
+                        # Check if captcha is still present
+                        if not captcha_handler.detect_altcha_captcha(self.driver):
+                            logger.info("CDiscount Altcha solution applied successfully")
+                            return True
+                    except Exception as e:
+                        logger.error(f"Error applying CDiscount Altcha solution: {e}")
                 
                 # If all else fails, try manual solving
                 logger.info("Attempting manual captcha solving for CDiscount")

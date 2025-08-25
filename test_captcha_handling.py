@@ -13,7 +13,7 @@ sys.path.append(os.path.join(os.path.dirname(__file__), 'app'))
 from app.browser_manager import browser_manager
 from app.extractors.cdiscount import CDiscountExtractor
 from app.utils.captcha_handler import captcha_handler
-from app.services.captcha_solver_service import captcha_solver_service
+from app.services.captcha_solver_service import altcha_local_solver
 
 def test_captcha_detection():
     """Test captcha detection functionality"""
@@ -23,9 +23,9 @@ def test_captcha_detection():
     handler_status = captcha_handler.get_captcha_info()
     print(f"Captcha Handler Status: {handler_status}")
     
-    # Check available captcha solving services
-    service_status = captcha_solver_service.get_service_status()
-    print(f"Captcha Service Status: {service_status}")
+    # Check local Altcha solver status
+    solver_status = altcha_local_solver.get_solver_status()
+    print(f"Local Altcha Solver Status: {solver_status}")
     
     print()
 

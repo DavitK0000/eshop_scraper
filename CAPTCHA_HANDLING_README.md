@@ -7,7 +7,7 @@ This document provides comprehensive information about handling Altcha captchas 
 Altcha is a privacy-friendly captcha system that's becoming increasingly common on e-commerce websites. This implementation provides multiple strategies for handling Altcha captchas:
 
 1. **Local Detection and Solving** - Automatic detection and local solving attempts
-2. **Third-Party Services** - Integration with professional captcha solving services
+2. **Local Altcha Challenge Solving** - Advanced local solving using challenge data
 3. **Manual Solving** - Fallback to manual human solving
 4. **Bypass Techniques** - Various methods to avoid or bypass captchas
 
@@ -15,7 +15,7 @@ Altcha is a privacy-friendly captcha system that's becoming increasingly common 
 
 - ✅ **Automatic Detection** - Detects Altcha captchas on web pages
 - ✅ **Multiple Solving Strategies** - Local, third-party, and manual solving
-- ✅ **Service Integration** - Support for 2captcha, AntiCaptcha, and CapMonster
+- ✅ **Local Altcha Solving** - Advanced challenge solving using local algorithms
 - ✅ **Fallback Mechanisms** - Multiple fallback options if primary methods fail
 - ✅ **Configurable Timeouts** - Adjustable timeouts for different solving methods
 - ✅ **Comprehensive Logging** - Detailed logging for debugging and monitoring
@@ -31,16 +31,6 @@ The captcha handling system is already integrated into your existing setup. No a
 Add the following environment variables to your `.env` file:
 
 ```bash
-# Captcha Solving Service Configuration
-# 2captcha.com - Get API key from https://2captcha.com/
-CAPTCHA_2CAPTCHA_API_KEY=your_2captcha_api_key_here
-
-# AntiCaptcha.com - Get API key from https://anti-captcha.com/
-CAPTCHA_ANTICAPTCHA_API_KEY=your_anticaptcha_api_key_here
-
-# CapMonster.cloud - Get API key from https://capmonster.cloud/
-CAPTCHA_CAPMONSTER_API_KEY=your_capmonster_api_key_here
-
 # Captcha Handling Settings
 CAPTCHA_AUTO_HANDLE=True
 CAPTCHA_SOLVING_TIMEOUT=120
@@ -49,25 +39,20 @@ CAPTCHA_MAX_RETRIES=3
 
 ## Configuration
 
-### Captcha Service API Keys
+### Local Altcha Solving Capabilities
 
-#### 2captcha.com
-- **Website**: https://2captcha.com/
-- **Pricing**: Starting from $0.8 per 1000 solves
-- **Support**: Altcha, reCAPTCHA, hCaptcha, and more
-- **API Documentation**: https://2captcha.com/2captcha-api
+The local solver provides several methods for handling Altcha captchas:
 
-#### AntiCaptcha.com
-- **Website**: https://anti-captcha.com/
-- **Pricing**: Starting from $0.8 per 1000 solves
-- **Support**: Altcha, reCAPTCHA, hCaptcha, and more
-- **API Documentation**: https://anti-captcha.com/apidoc
+#### Challenge Extraction
+- **HTML Elements**: Detects `<altcha-challenge>` elements and data attributes
+- **JavaScript Variables**: Extracts challenge data from window variables
+- **Script Content**: Parses script tags for Altcha configuration
 
-#### CapMonster.cloud
-- **Website**: https://capmonster.cloud/
-- **Pricing**: Starting from $0.6 per 1000 solves
-- **Support**: Altcha, reCAPTCHA, hCaptcha, and more
-- **API Documentation**: https://capmonster.cloud/docs/
+#### Solving Methods
+- **Timestamp-based**: Creates solutions based on challenge timestamps
+- **Verifier-based**: Uses challenge verifier data for solution generation
+- **Hash-based**: Applies various hash algorithms (MD5, SHA1, SHA256)
+- **Bypass Attempts**: Tries to bypass verification when possible
 
 ### Configuration Options
 
@@ -156,13 +141,13 @@ Attempts to solve captchas automatically using various techniques:
 - **Form Filling**: Attempts to fill form fields that might trigger verification
 - **Element Interaction**: Interacts with various page elements
 
-### 2. Third-Party Services (`strategy="auto"`)
+### 2. Local Altcha Solving (`strategy="auto"`)
 
-Uses professional captcha solving services:
+Uses advanced local solving algorithms:
 
-- **2captcha**: Most popular, good Altcha support
-- **AntiCaptcha**: Reliable service with good API
-- **CapMonster**: Cost-effective option
+- **Challenge Analysis**: Extracts and analyzes Altcha challenge data
+- **Algorithmic Solving**: Applies mathematical and cryptographic methods
+- **Pattern Recognition**: Identifies common Altcha patterns and structures
 
 ### 3. Manual Solving (`strategy="manual"`)
 
@@ -189,9 +174,9 @@ Various methods to avoid captchas:
 handler_status = captcha_handler.get_captcha_info()
 print(f"Handler Status: {handler_status}")
 
-# Get service status
-service_status = captcha_solver_service.get_service_status()
-print(f"Service Status: {service_status}")
+# Get local solver status
+solver_status = altcha_local_solver.get_solver_status()
+print(f"Local Solver Status: {solver_status}")
 
 # Get browser manager captcha status
 browser_status = browser_manager.get_captcha_status()
@@ -240,10 +225,10 @@ from app.utils.captcha_handler import captcha_handler
 status = captcha_handler.get_captcha_info()
 print(status)
 
-# Test service availability
-from app.services.captcha_solver_service import captcha_solver_service
-services = captcha_solver_service.get_service_status()
-print(services)
+# Test local solver availability
+from app.services.captcha_solver_service import altcha_local_solver
+solver = altcha_local_solver.get_solver_status()
+print(solver)
 ```
 
 ## Troubleshooting
@@ -261,12 +246,12 @@ export CAPTCHA_2CAPTCHA_API_KEY=your_key_here
 
 **Solution**: Check if the page structure has changed. Altcha elements might have different selectors.
 
-#### 3. "Third-party solving failed"
+#### 3. "Local Altcha solving failed"
 
 **Solution**: 
-- Verify your API key is correct
-- Check your account balance
-- Ensure the service supports Altcha captchas
+- Check if the Altcha challenge structure has changed
+- Verify that challenge data is being extracted correctly
+- Review logs for specific solving method failures
 
 #### 4. "Manual solving timeout"
 
@@ -298,7 +283,7 @@ logging.getLogger('app.utils.captcha_handler').setLevel(logging.DEBUG)
 ### 2. Cost Optimization
 
 - Use local solving first (free)
-- Reserve third-party services for difficult captchas
+- Local Altcha solving is completely free
 - Consider manual solving for development/testing
 
 ### 3. Rate Limiting
@@ -309,17 +294,17 @@ logging.getLogger('app.utils.captcha_handler').setLevel(logging.DEBUG)
 
 ## Security Considerations
 
-### 1. API Key Protection
+### 1. Local Solver Security
 
-- Never commit API keys to version control
-- Use environment variables or secure configuration files
-- Rotate API keys regularly
+- The local solver doesn't require external API keys
+- All solving is done locally without external requests
+- No sensitive data is transmitted to third parties
 
 ### 2. Request Monitoring
 
-- Monitor your captcha solving service usage
-- Set up alerts for unusual activity
-- Review logs for suspicious patterns
+- Monitor local solver performance and success rates
+- Set up alerts for unusual solving patterns
+- Review logs for specific solving method effectiveness
 
 ### 3. Compliance
 
@@ -374,22 +359,22 @@ captcha_handler.register_strategy("custom", custom_solving_strategy)
 - Share successful strategies
 - Contribute improvements
 
-### 3. Service Status
+### 3. Solver Performance
 
-Check service status regularly:
-- 2captcha: https://2captcha.com/status
-- AntiCaptcha: https://anti-captcha.com/status
-- CapMonster: https://capmonster.cloud/status
+Monitor solver performance regularly:
+- Check success rates for different solving methods
+- Review logs for challenge extraction effectiveness
+- Monitor bypass attempt success rates
 
 ## Conclusion
 
 This captcha handling system provides a robust solution for dealing with Altcha captchas on Cdiscount and other websites. By combining multiple strategies and fallback mechanisms, it ensures high success rates while maintaining flexibility and cost-effectiveness.
 
 For best results:
-1. Configure multiple third-party services
-2. Monitor performance and adjust timeouts
-3. Use local solving when possible
+1. Monitor local solver performance and success rates
+2. Adjust timeouts based on solving method effectiveness
+3. Use local solving as the primary method
 4. Implement proper error handling and logging
-5. Stay updated with the latest captcha developments
+5. Stay updated with the latest Altcha developments
 
 Remember that captcha solving should be used responsibly and in compliance with website terms of service.

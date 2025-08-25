@@ -4,7 +4,7 @@ from playwright.sync_api import sync_playwright, Browser, Page, BrowserContext
 from app.config import settings
 from app.logging_config import get_logger
 from app.utils.captcha_handler import captcha_handler
-from app.services.captcha_solver_service import captcha_solver_service
+from app.services.captcha_solver_service import altcha_local_solver
 
 logger = get_logger(__name__)
 
@@ -452,36 +452,37 @@ class BrowserManager:
                     logger.info("Captcha solved locally")
                     return True
                 
-                # Try third-party service if local solving failed
-                if captcha_solver_service.available_services:
-                    logger.info("Attempting third-party captcha solving")
-                    page_content = page.content()
+                # Try local Altcha solving if local captcha solving failed
+                logger.info("Attempting local Altcha solving")
+                page_content = page.content()
+                
+                # Try to solve with local Altcha solver
+                solution = altcha_local_solver.solve_altcha_locally(page_content, url)
+                if solution:
+                    logger.info("Altcha captcha solved with local solver")
                     
-                    # Try to solve with third-party service
-                    solution = captcha_solver_service.solve_altcha_captcha(page_content, url)
-                    if solution:
-                        logger.info("Captcha solved with third-party service")
+                    # Apply the solution to the page
+                    try:
+                        # Execute JavaScript to apply the solution
+                        page.evaluate(f"""
+                            if (window.altcha) {{
+                                window.altcha.verify('{solution}');
+                            }} else if (window.altchaChallenge) {{
+                                window.altchaChallenge.verify('{solution}');
+                            }} else if (window.altchaVerifier) {{
+                                window.altchaVerifier.verify('{solution}');
+                            }}
+                        """)
                         
-                        # Apply the solution to the page
-                        try:
-                            # Execute JavaScript to apply the solution
-                            page.evaluate(f"""
-                                if (window.altcha) {{
-                                    window.altcha.verify('{solution}');
-                                }} else if (window.altchaChallenge) {{
-                                    window.altchaChallenge.verify('{solution}');
-                                }}
-                            """)
-                            
-                            # Wait for verification
-                            time.sleep(3)
-                            
-                            # Check if captcha is still present
-                            if not captcha_handler.detect_altcha_captcha(page):
-                                logger.info("Captcha solution applied successfully")
-                                return True
-                        except Exception as e:
-                            logger.error(f"Error applying captcha solution: {e}")
+                        # Wait for verification
+                        time.sleep(3)
+                        
+                        # Check if captcha is still present
+                        if not captcha_handler.detect_altcha_captcha(page):
+                            logger.info("Altcha solution applied successfully")
+                            return True
+                    except Exception as e:
+                        logger.error(f"Error applying Altcha solution: {e}")
                 
                 # If all else fails, try manual solving
                 logger.info("Attempting manual captcha solving")
@@ -502,7 +503,7 @@ class BrowserManager:
         """Get current captcha handling status"""
         return {
             "handler_status": captcha_handler.get_captcha_info(),
-            "solver_services": captcha_solver_service.get_service_status()
+            "local_solver": altcha_local_solver.get_solver_status()
         }
 
 
