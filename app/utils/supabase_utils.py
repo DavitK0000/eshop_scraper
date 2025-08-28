@@ -219,6 +219,22 @@ class SupabaseManager:
             logger.error(f"Failed to execute raw SQL: {e}")
             return None
 
+    def get_categories(self) -> Optional[List[Dict[str, Any]]]:
+        """Get all categories from the database."""
+        if not self.is_connected():
+            logger.error("Supabase client not connected")
+            return None
+
+        try:
+            result = self.client.table("categories").select("*").execute()
+            if result.data:
+                logger.info(f"Successfully fetched {len(result.data)} categories")
+                return result.data
+            return []
+        except Exception as e:
+            logger.error(f"Failed to fetch categories: {e}")
+            return None
+
     # Storage Operations
     async def upload_file(self, bucket: str, path: str, file_data: bytes,
                           content_type: str = "application/octet-stream") -> Optional[str]:
@@ -401,3 +417,8 @@ async def delete_file(bucket: str, path: str) -> bool:
 async def get_file_url(bucket: str, path: str, expires_in: int = 3600) -> Optional[str]:
     """Get a signed URL for a file."""
     return await supabase_manager.get_file_url(bucket, path, expires_in)
+
+
+def get_categories() -> Optional[List[Dict[str, Any]]]:
+    """Get all categories from the database (synchronous version)."""
+    return supabase_manager.get_categories()

@@ -8,8 +8,7 @@ from app.utils import (
     parse_url_domain, 
     parse_price_with_regional_format
 )
-from app.utils.captcha_handler import captcha_handler
-from app.services.captcha_solver_service import altcha_local_solver
+
 import re
 from app.logging_config import get_logger
 
@@ -483,102 +482,6 @@ class CDiscountExtractor(BaseExtractor):
         
         return specs 
     
-    def handle_captcha_if_present(self) -> bool:
-        """
-        Handle Altcha captcha if present on the page
-        
-        Returns:
-            True if captcha was handled successfully, False otherwise
-        """
-        try:
-            if not hasattr(self, 'driver') or not self.driver:
-                logger = get_logger(__name__)
-                logger.warning("No driver available for captcha handling")
-                return False
-            
-            # Check if captcha is present
-            if captcha_handler.detect_altcha_captcha(self.driver):
-                logger = get_logger(__name__)
-                logger.info("Altcha captcha detected on CDiscount page")
-                
-                # Try local solving first
-                if captcha_handler.solve_altcha_captcha(self.driver, strategy="local"):
-                    logger.info("CDiscount captcha solved locally")
-                    return True
-                
-                # Try local Altcha solving if local captcha solving failed
-                logger.info("Attempting local Altcha solving for CDiscount")
-                
-                # Get page content for local Altcha solving
-                page_content = self.driver.content()
-                
-                # Try to solve with local Altcha solver
-                solution = altcha_local_solver.solve_altcha_locally(page_content, self.url)
-                if solution:
-                    logger.info("CDiscount Altcha captcha solved with local solver")
-                    
-                    # Apply the solution to the page
-                    try:
-                        # Execute JavaScript to apply the solution
-                        self.driver.evaluate(f"""
-                            if (window.altcha) {{
-                                window.altcha.verify('{solution}');
-                            }} else if (window.altchaChallenge) {{
-                                window.altchaChallenge.verify('{solution}');
-                            }} else if (window.altchaVerifier) {{
-                                window.altchaVerifier.verify('{solution}');
-                            }}
-                        """)
-                        
-                        # Wait for verification
-                        import time
-                        time.sleep(3)
-                        
-                        # Check if captcha is still present
-                        if not captcha_handler.detect_altcha_captcha(self.driver):
-                            logger.info("CDiscount Altcha solution applied successfully")
-                            return True
-                    except Exception as e:
-                        logger.error(f"Error applying CDiscount Altcha solution: {e}")
-                
-                # If all else fails, try manual solving
-                logger.info("Attempting manual captcha solving for CDiscount")
-                if captcha_handler.solve_altcha_captcha(self.driver, strategy="manual"):
-                    logger.info("CDiscount captcha solved manually")
-                    return True
-                
-                logger.warning("All CDiscount captcha solving methods failed")
-                return False
-            
-            return True  # No captcha detected
-            
-        except Exception as e:
-            logger = get_logger(__name__)
-            logger.error(f"Error handling CDiscount captcha: {e}")
-            return False
+
     
-    def extract_with_captcha_handling(self) -> Optional[ProductInfo]:
-        """
-        Extract product information with automatic captcha handling
-        
-        Returns:
-            ProductInfo object or None if extraction failed
-        """
-        try:
-            # First, handle captcha if present
-            if not self.handle_captcha_if_present():
-                logger = get_logger(__name__)
-                logger.error("Failed to handle captcha on CDiscount page")
-                return None
-            
-            # Wait a bit for page to settle after captcha
-            import time
-            time.sleep(2)
-            
-            # Now extract product information
-            return self.extract()
-            
-        except Exception as e:
-            logger = get_logger(__name__)
-            logger.error(f"Error in CDiscount extraction with captcha handling: {e}")
-            return None 
+ 

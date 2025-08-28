@@ -474,6 +474,9 @@ class ScrapingService:
             update_task_progress(task_id, 5, "Extracting product information")
             product_info = extractor.extract_product_info()
             
+            # Update task progress before saving to database
+            update_task_progress(task_id, 6, "Saving product to database and detecting category")
+            
             # Update task with results
             product_id, short_id = self._save_product_to_supabase(user_id, product_info, url, platform, target_language)
             
@@ -736,6 +739,9 @@ class ScrapingService:
             # Extract product information using the platform-specific extractor
             update_task_progress(actual_task_id, 5, "Extracting product information")
             product_info = extractor.extract_product_info()
+            
+            # Update task progress before saving to database
+            update_task_progress(actual_task_id, 6, "Saving product to database and detecting category")
             
             # Update task with results
             product_id, short_id = self._save_product_to_supabase(default_user_id, product_info, url, platform, target_language)
@@ -1108,7 +1114,7 @@ class ScrapingService:
     # Task update methods are now handled by MongoDB task management utilities
     # See app.utils.task_management for update_task_progress, complete_task, fail_task, etc.
     
-    def _save_product_to_supabase(self, user_id: str, product_info, original_url: str, platform: Optional[str] = None, target_language: Optional[str] = None):
+    def _save_product_to_supabase(self, user_id: str, product_info, original_url: str, platform: Optional[str] = None, target_language: Optional[str] = None, task_id: Optional[str] = None):
         """
         Save scraped product data to Supabase products table and create a shorts entry
         
@@ -1156,6 +1162,14 @@ class ScrapingService:
             
             # Remove None values to avoid database errors
             product_data = {k: v for k, v in product_data.items() if v is not None}
+                        
+            # Detect category using OpenAI before saving
+            detected_category = self._detect_category_with_openai(product_info)
+            if detected_category:
+                product_data["category"] = detected_category
+                logger.info(f"Detected category for product '{product_info.title}': {detected_category}")
+            else:
+                logger.warning(f"Failed to detect category for product '{product_info.title}', proceeding without category")
             
             # Create a shorts entry first
             short_id = self._create_shorts_entry(user_id, product_info, target_language)
@@ -1245,6 +1259,116 @@ class ScrapingService:
         except Exception as e:
             logger.error(f"Error creating shorts entry: {e}", exc_info=True)
             # Don't raise the exception to avoid breaking the main flow
+            return None
+
+    def _detect_category_with_openai(self, product_info) -> Optional[str]:
+        """
+        Detect product category using OpenAI based on product information.
+        
+        Args:
+            product_info: Extracted product information containing title, description, and specifications
+            
+        Returns:
+            str: Detected category in format "Parent > Sub-category" or None if detection fails
+        """
+        try:
+            from app.utils.supabase_utils import get_categories
+            import openai
+            
+            # Check if OpenAI API key is configured
+            if not settings.OPENAI_API_KEY:
+                logger.warning("OpenAI API key not configured, skipping category detection")
+                return None
+            
+            # Get categories from database
+            categories = get_categories()
+            if not categories:
+                logger.warning("No categories found in database, skipping category detection")
+                return None
+            
+            # Filter to only include sub-categories (those with parent_id)
+            sub_categories = [cat for cat in categories if cat.get('parent_id')]
+            if not sub_categories:
+                logger.warning("No sub-categories found in database, skipping category detection")
+                return None
+            
+            # Prepare product information for category detection
+            product_info_text = {
+                'title': product_info.title,
+                'description': getattr(product_info, 'description', '') or '',
+                'specifications': getattr(product_info, 'specifications', {}) or {}
+            }
+            
+            # Create category list for the prompt
+            category_list = []
+            for sub_cat in sub_categories:
+                parent = next((cat for cat in categories if cat['id'] == sub_cat['parent_id']), None)
+                if parent:
+                    category_list.append(f"{parent['name']} > {sub_cat['name']}")
+            
+            if not category_list:
+                logger.warning("No valid category combinations found, skipping category detection")
+                return None
+            
+            # Create prompt for category detection
+            prompt = f"""Analyze the following product information and determine the most appropriate sub-category from this predefined list:
+
+Product Title: {product_info_text['title']}
+Product Description: {product_info_text['description']}
+Product Specifications: {', '.join([f"{k}: {v}" for k, v in product_info_text['specifications'].items()])}
+
+Available Sub-Categories:
+{chr(10).join(category_list)}
+
+Please provide the exact sub-category name from the list above that best describes this product. Use the format "Parent > Sub-category".
+
+Respond with only the sub-category name, nothing else."""
+            
+            # Initialize OpenAI client
+            client = openai.OpenAI(api_key=settings.OPENAI_API_KEY)
+            
+            # Call OpenAI for category detection
+            response = client.chat.completions.create(
+                model=settings.OPENAI_MODEL,
+                messages=[
+                    {
+                        "role": "system",
+                        "content": "You are a product categorization expert. You must choose from the provided category list. Provide only the exact category name from the list, nothing else."
+                    },
+                    {
+                        "role": "user",
+                        "content": prompt
+                    }
+                ],
+                max_tokens=100,  # Hard-coded for category detection
+                temperature=settings.OPENAI_TEMPERATURE,
+                top_p=1,
+                frequency_penalty=0,
+                presence_penalty=0
+            )
+            
+            if response.choices and response.choices[0].message.content:
+                detected_category = response.choices[0].message.content.strip()
+                
+                # Validate that the detected category exists in our predefined list
+                if detected_category in category_list:
+                    logger.info(f"Successfully detected category: {detected_category}")
+                    return detected_category
+                else:
+                    logger.warning(f"OpenAI returned invalid category: {detected_category}")
+                    # Use the first available sub-category as fallback
+                    fallback_category = category_list[0]
+                    logger.info(f"Using fallback category: {fallback_category}")
+                    return fallback_category
+            else:
+                logger.warning("OpenAI response did not contain valid category")
+                return None
+                
+        except ImportError:
+            logger.warning("OpenAI library not available, skipping category detection")
+            return None
+        except Exception as e:
+            logger.error(f"Error in category detection: {e}", exc_info=True)
             return None
 
 # Global scraping service instance

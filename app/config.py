@@ -295,6 +295,12 @@ class Settings:
     SUPABASE_SERVICE_ROLE_KEY: str = os.getenv("SUPABASE_SERVICE_ROLE_KEY", "")
     SUPABASE_ANON_KEY: str = os.getenv("SUPABASE_ANON_KEY", "")
     
+    # OpenAI Settings
+    OPENAI_API_KEY: str = os.getenv("OPENAI_API_KEY", "")
+    OPENAI_MODEL: str = os.getenv("OPENAI_MODEL", "gpt-3.5-turbo")
+    OPENAI_MAX_TOKENS: int = int(os.getenv("OPENAI_MAX_TOKENS", "100"))
+    OPENAI_TEMPERATURE: float = float(os.getenv("OPENAI_TEMPERATURE", "0.3"))
+    
     # MongoDB Settings
     MONGODB_URI: str = os.getenv("MONGODB_URI", "mongodb://localhost:27017")
     MONGODB_DATABASE: str = os.getenv("MONGODB_DATABASE", "eshop_scraper")
@@ -303,6 +309,10 @@ class Settings:
     MONGODB_SERVER_SELECTION_TIMEOUT: int = int(os.getenv("MONGODB_SERVER_SELECTION_TIMEOUT", "5000"))
     MONGODB_CONNECT_TIMEOUT: int = int(os.getenv("MONGODB_CONNECT_TIMEOUT", "20000"))
     MONGODB_SOCKET_TIMEOUT: int = int(os.getenv("MONGODB_SOCKET_TIMEOUT", "30000"))
+    
+    # Scheduler Settings
+    CLEANUP_INTERVAL_HOURS: int = int(os.getenv("CLEANUP_INTERVAL_HOURS", "24"))
+    CLEANUP_DAYS_THRESHOLD: int = int(os.getenv("CLEANUP_DAYS_THRESHOLD", "2"))
     
     @classmethod
     def get_browser_for_domain(cls, domain: str) -> str:
@@ -316,10 +326,7 @@ class Settings:
         """Get configuration for a specific browser"""
         return cls.BROWSER_CONFIGS.get(browser_name, cls.BROWSER_CONFIGS[cls.DEFAULT_BROWSER])
     
-    # Captcha handling settings
-    CAPTCHA_AUTO_HANDLE: bool = os.getenv("CAPTCHA_AUTO_HANDLE", "True").lower() == "true"
-    CAPTCHA_SOLVING_TIMEOUT: int = int(os.getenv("CAPTCHA_SOLVING_TIMEOUT", "120"))  # seconds
-    CAPTCHA_MAX_RETRIES: int = int(os.getenv("CAPTCHA_MAX_RETRIES", "3"))
+
 
 
 settings = Settings() 

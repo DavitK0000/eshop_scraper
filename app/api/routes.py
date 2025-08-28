@@ -14,6 +14,7 @@ from app.models import (
 from app.services.scraping_service import scraping_service
 from app.services.video_generation_service import video_generation_service
 from app.services.merging_service import merging_service
+from app.services.scheduler_service import get_scheduler_status, run_cleanup_now
 from app.config import settings
 from app.security import (
     get_api_key, validate_request_security, validate_scrape_request,
@@ -577,4 +578,35 @@ def cleanup_short_finalization_tasks():
         
     except Exception as e:
         logger.error(f"Error cleaning up short finalization tasks: {e}", exc_info=True)
-        raise HTTPException(status_code=500, detail=f"Failed to cleanup short finalization tasks: {str(e)}") 
+        raise HTTPException(status_code=500, detail=f"Failed to cleanup short finalization tasks: {str(e)}")
+
+
+# Scheduler Management Endpoints
+@router.get("/scheduler/status")
+def get_scheduler_status_endpoint():
+    """
+    Get the current status of the scheduler service
+    """
+    try:
+        status = get_scheduler_status()
+        return status
+    except Exception as e:
+        logger.error(f"Error getting scheduler status: {e}", exc_info=True)
+        raise HTTPException(status_code=500, detail=f"Failed to get scheduler status: {str(e)}")
+
+
+@router.post("/scheduler/cleanup/now")
+def trigger_cleanup_now():
+    """
+    Manually trigger cleanup of old tasks now
+    """
+    try:
+        deleted_count = run_cleanup_now()
+        return {
+            "message": "Manual cleanup completed successfully",
+            "deleted_tasks_count": deleted_count,
+            "timestamp": datetime.utcnow().isoformat()
+        }
+    except Exception as e:
+        logger.error(f"Error triggering manual cleanup: {e}", exc_info=True)
+        raise HTTPException(status_code=500, detail=f"Failed to trigger cleanup: {str(e)}") 

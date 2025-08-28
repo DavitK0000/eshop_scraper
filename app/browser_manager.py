@@ -3,8 +3,7 @@ from typing import Optional, Tuple
 from playwright.sync_api import sync_playwright, Browser, Page, BrowserContext
 from app.config import settings
 from app.logging_config import get_logger
-from app.utils.captcha_handler import captcha_handler
-from app.services.captcha_solver_service import altcha_local_solver
+
 
 logger = get_logger(__name__)
 
@@ -374,9 +373,9 @@ class BrowserManager:
             self.browser = None
             self.playwright = None
 
-    def get_page_content_with_retry(self, url: str, proxy: Optional[str] = None, user_agent: Optional[str] = None, block_images: bool = True, max_retries: int = None, handle_captcha: bool = True) -> str:
+    def get_page_content_with_retry(self, url: str, proxy: Optional[str] = None, user_agent: Optional[str] = None, block_images: bool = True, max_retries: int = None) -> str:
         """
-        Get HTML content with retry logic for better reliability and captcha handling
+        Get HTML content with retry logic for better reliability
         
         Args:
             url: URL to fetch
@@ -384,7 +383,6 @@ class BrowserManager:
             user_agent: Optional user agent
             block_images: Whether to block images
             max_retries: Maximum number of retry attempts (uses config default if None)
-            handle_captcha: Whether to handle captchas automatically
             
         Returns:
             HTML content as string
@@ -398,12 +396,6 @@ class BrowserManager:
             try:
                 logger.info(f"Attempt {attempt + 1}/{max_retries + 1} to fetch content from {url}")
                 content = self.get_page_content(url, proxy, user_agent, block_images)
-                
-                # Check for captcha if enabled
-                if handle_captcha and self._handle_captcha_if_present(url):
-                    # Re-fetch content after captcha handling
-                    content = self.get_page_content(url, proxy, user_agent, block_images)
-                
                 return content
                 
             except Exception as e:
@@ -424,87 +416,9 @@ class BrowserManager:
                     raise last_error
 
 
-    def _handle_captcha_if_present(self, url: str) -> bool:
-        """
-        Handle captcha if present on the current page
-        
-        Args:
-            url: Current page URL
-            
-        Returns:
-            True if captcha was handled, False otherwise
-        """
-        try:
-            if not self.context or not self.context.pages:
-                return False
-            
-            page = self.context.pages[0]
-            
-            # Reset captcha handler state
-            captcha_handler.reset()
-            
-            # Detect if captcha is present
-            if captcha_handler.detect_altcha_captcha(page):
-                logger.info(f"Altcha captcha detected on {url}")
-                
-                # Try local solving first
-                if captcha_handler.solve_altcha_captcha(page, strategy="local"):
-                    logger.info("Captcha solved locally")
-                    return True
-                
-                # Try local Altcha solving if local captcha solving failed
-                logger.info("Attempting local Altcha solving")
-                page_content = page.content()
-                
-                # Try to solve with local Altcha solver
-                solution = altcha_local_solver.solve_altcha_locally(page_content, url)
-                if solution:
-                    logger.info("Altcha captcha solved with local solver")
-                    
-                    # Apply the solution to the page
-                    try:
-                        # Execute JavaScript to apply the solution
-                        page.evaluate(f"""
-                            if (window.altcha) {{
-                                window.altcha.verify('{solution}');
-                            }} else if (window.altchaChallenge) {{
-                                window.altchaChallenge.verify('{solution}');
-                            }} else if (window.altchaVerifier) {{
-                                window.altchaVerifier.verify('{solution}');
-                            }}
-                        """)
-                        
-                        # Wait for verification
-                        time.sleep(3)
-                        
-                        # Check if captcha is still present
-                        if not captcha_handler.detect_altcha_captcha(page):
-                            logger.info("Altcha solution applied successfully")
-                            return True
-                    except Exception as e:
-                        logger.error(f"Error applying Altcha solution: {e}")
-                
-                # If all else fails, try manual solving
-                logger.info("Attempting manual captcha solving")
-                if captcha_handler.solve_altcha_captcha(page, strategy="manual"):
-                    logger.info("Captcha solved manually")
-                    return True
-                
-                logger.warning("All captcha solving methods failed")
-                return False
-            
-            return False
-            
-        except Exception as e:
-            logger.error(f"Error handling captcha: {e}")
-            return False
+
     
-    def get_captcha_status(self) -> dict:
-        """Get current captcha handling status"""
-        return {
-            "handler_status": captcha_handler.get_captcha_info(),
-            "local_solver": altcha_local_solver.get_solver_status()
-        }
+
 
 
 # Global browser manager instance

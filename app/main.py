@@ -13,6 +13,7 @@ import threading
 from app.config import settings
 from app.api.routes import router
 from app.services.scraping_service import scraping_service
+from app.services.scheduler_service import start_scheduler, stop_scheduler
 from app.security import security_middleware, cleanup_security_data
 from app.logging_config import setup_logging, get_logger
 from app.utils import cleanup_windows_asyncio
@@ -71,6 +72,10 @@ async def lifespan(app: FastAPI):
         # Start background connection monitoring
         threading.Thread(target=monitor_database_connections, daemon=True).start()
         logger.info("Database connection monitoring started")
+        
+        # Start scheduler service
+        start_scheduler()
+        logger.info("Scheduler service started")
             
     except Exception as e:
         logger.error(f"Failed to initialize database connections: {e}")
@@ -90,6 +95,13 @@ async def lifespan(app: FastAPI):
         logger.info("Database connections closed")
     except Exception as e:
         logger.error(f"Error closing database connections: {e}")
+    
+    # Stop scheduler service
+    try:
+        stop_scheduler()
+        logger.info("Scheduler service stopped")
+    except Exception as e:
+        logger.error(f"Error stopping scheduler service: {e}")
     
     # Clean up Windows asyncio resources
     cleanup_windows_asyncio()
