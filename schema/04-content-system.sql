@@ -44,7 +44,7 @@ CREATE TABLE IF NOT EXISTS public.products (
     description TEXT,
     price DECIMAL(10,2),
     currency TEXT DEFAULT 'USD',
-    images JSONB DEFAULT '[]'::jsonb, -- Array of image URLs
+    images JSONB DEFAULT '{}'::jsonb, -- Object where keys are image URLs and values are analysis data
     original_url TEXT, -- Original product URL
     platform TEXT, -- amazon, aliexpress, etc.
     category TEXT,

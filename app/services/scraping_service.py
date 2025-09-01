@@ -1147,7 +1147,7 @@ class ScrapingService:
                 "description": product_info.description or "",
                 "price": float(product_info.price) if product_info.price and product_info.price > 0 else None,
                 "currency": product_info.currency or "USD",
-                "images": product_info.images or [],
+                "images": self._convert_images_to_jsonb_format(product_info.images or []),
                 "original_url": original_url,
                 "platform": platform or "unknown",
                 "rating": float(product_info.rating) if product_info.rating and product_info.rating > 0 else None,
@@ -1340,11 +1340,7 @@ Respond with only the sub-category name, nothing else."""
                         "content": prompt
                     }
                 ],
-                max_tokens=100,  # Hard-coded for category detection
-                temperature=settings.OPENAI_TEMPERATURE,
-                top_p=1,
-                frequency_penalty=0,
-                presence_penalty=0
+                max_completion_tokens=100,  # Hard-coded for category detection
             )
             
             if response.choices and response.choices[0].message.content:
@@ -1363,13 +1359,29 @@ Respond with only the sub-category name, nothing else."""
             else:
                 logger.warning("OpenAI response did not contain valid category")
                 return None
-                
+
         except ImportError:
             logger.warning("OpenAI library not available, skipping category detection")
             return None
         except Exception as e:
             logger.error(f"Error in category detection: {e}", exc_info=True)
             return None
+
+    def _convert_images_to_jsonb_format(self, images: List[str]) -> Dict[str, Dict]:
+        """
+        Convert a list of image URLs to JSONB format where each URL is a key with an empty object as value.
+        
+        Args:
+            images: List of image URLs
+            
+        Returns:
+            Dictionary with image URLs as keys and empty objects as values
+        """
+        if not images:
+            return {}
+        
+        # Convert list of URLs to object format: {url: {}}
+        return {url: {} for url in images if url}
 
 # Global scraping service instance
 scraping_service = ScrapingService() 

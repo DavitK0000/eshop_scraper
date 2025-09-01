@@ -403,6 +403,34 @@ class RunwayMLManager:
                 "status": "error"
             }
 
+    def generate_image_from_text_sync(
+        self,
+        prompt_text: str,
+        model: str = None,
+        ratio: str = None,
+        reference_images: List[Dict[str, str]] = None,
+        **kwargs
+    ) -> Dict[str, Any]:
+        """Generate image from text synchronously."""
+        try:
+            # Run the async method in a new event loop
+            loop = asyncio.new_event_loop()
+            asyncio.set_event_loop(loop)
+            try:
+                result = loop.run_until_complete(self.generate_image_from_text(
+                    prompt_text, model, ratio, reference_images, **kwargs
+                ))
+                return result
+            finally:
+                loop.close()
+        except Exception as e:
+            logger.error(f"Image generation failed: {e}")
+            return {
+                "success": False,
+                "error": str(e),
+                "status": "error"
+            }
+
     def _get_video_from_url_or_path(self, video_source: Union[str, Path]) -> str:
         """Get video as data URI from either a file path or URL."""
         if isinstance(video_source, (str, Path)):
@@ -900,6 +928,16 @@ def upscale_video_sync(
     """Convenience function to upscale video (synchronous)."""
     return runwayml_manager.upscale_video_sync(
         video_path, **kwargs
+    )
+
+
+def generate_image_from_text_sync(
+    prompt_text: str,
+    **kwargs
+) -> Dict[str, Any]:
+    """Convenience function to generate image from text (synchronous)."""
+    return runwayml_manager.generate_image_from_text_sync(
+        prompt_text, **kwargs
     )
 
 

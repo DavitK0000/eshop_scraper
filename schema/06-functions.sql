@@ -364,6 +364,94 @@ BEGIN
 END;
 $$ LANGUAGE plpgsql;
 
+-- Function to initialize user on signup with free plan
+CREATE OR REPLACE FUNCTION initialize_user_on_signup(
+    user_uuid UUID,
+    user_email TEXT
+)
+RETURNS BOOLEAN AS $$
+DECLARE
+    free_plan_id UUID;
+BEGIN
+    -- Get the free plan ID
+    SELECT id INTO free_plan_id
+    FROM public.subscription_plans
+    WHERE name = 'free' AND is_active = true
+    LIMIT 1;
+    
+    -- Create user profile if it doesn't exist
+    INSERT INTO public.user_profiles (
+        user_id,
+        email,
+        role,
+        is_active,
+        credits_total,
+        credits_remaining
+    ) VALUES (
+        user_uuid,
+        user_email,
+        'user',
+        true,
+        10, -- Free tier credits
+        10
+    )
+    ON CONFLICT (user_id) DO NOTHING;
+    
+    -- Create user subscription for free plan if it doesn't exist
+    IF free_plan_id IS NOT NULL THEN
+        INSERT INTO public.user_subscriptions (
+            user_id,
+            plan_id,
+            status,
+            current_period_start,
+            current_period_end,
+            cancel_at_period_end
+        ) VALUES (
+            user_uuid,
+            free_plan_id,
+            'active',
+            NOW(),
+            NOW() + INTERVAL '1 year', -- 1 year from now
+            false
+        )
+        ON CONFLICT (user_id) DO NOTHING;
+    END IF;
+    
+    -- Initialize user credits if they don't exist
+    INSERT INTO public.user_credits (
+        user_id,
+        total_credits,
+        used_credits
+    ) VALUES (
+        user_uuid,
+        50, -- Free tier credits
+        0
+    )
+    ON CONFLICT (user_id) DO NOTHING;
+    
+    -- Log the user registration activity
+    INSERT INTO public.user_activities (
+        user_id,
+        action,
+        resource_type,
+        resource_id,
+        details
+    ) VALUES (
+        user_uuid,
+        'user_registered',
+        'user',
+        user_uuid,
+        jsonb_build_object(
+            'email', user_email,
+            'plan', 'free',
+            'signup_method', 'email'
+        )
+    );
+    
+    RETURN true;
+END;
+$$ LANGUAGE plpgsql;
+
 -- Create trigger on user_credits table
 DROP TRIGGER IF EXISTS sync_user_credits_trigger ON public.user_credits;
 CREATE TRIGGER sync_user_credits_trigger

@@ -34,6 +34,9 @@ class TaskType(str, Enum):
     DATA_EXTRACTION = "data_extraction"
     MEDIA_PROCESSING = "media_processing"
     FINALIZE_SHORT = "finalize_short"
+    IMAGE_ANALYSIS = "image_analysis"
+    SCENARIO_GENERATION = "scenario_generation"
+    SAVE_SCENARIO = "save_scenario"
 
 
 class TaskStatus(str, Enum):

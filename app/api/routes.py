@@ -3,17 +3,21 @@ from fastapi.responses import JSONResponse, HTMLResponse
 from fastapi.staticfiles import StaticFiles
 from fastapi.responses import FileResponse
 from typing import Optional, List
-from datetime import datetime
+from datetime import datetime, timezone
 import os
 
 from app.models import (
     ScrapeRequest, TaskStatusResponse, HealthResponse,
     TaskStatus, VideoGenerationRequest, VideoGenerationResponse,
-    FinalizeShortRequest, FinalizeShortResponse
+    FinalizeShortRequest, FinalizeShortResponse, ImageAnalysisRequest, ImageAnalysisResponse,
+    ScenarioGenerationRequest, ScenarioGenerationResponse, SaveScenarioRequest, SaveScenarioResponse
 )
 from app.services.scraping_service import scraping_service
 from app.services.video_generation_service import video_generation_service
 from app.services.merging_service import merging_service
+from app.services.image_analysis_service import image_analysis_service
+from app.services.scenario_generation_service import scenario_generation_service
+from app.services.save_scenario_service import save_scenario_service
 from app.services.scheduler_service import get_scheduler_status, run_cleanup_now
 from app.config import settings
 from app.security import (
@@ -581,6 +585,438 @@ def cleanup_short_finalization_tasks():
         raise HTTPException(status_code=500, detail=f"Failed to cleanup short finalization tasks: {str(e)}")
 
 
+# ============================================================================
+# Image Analysis Endpoints
+# ============================================================================
+
+@router.post("/image/analyze", response_model=ImageAnalysisResponse)
+def analyze_image(
+    request: ImageAnalysisRequest,
+    http_request: Request = None,
+    api_key: Optional[str] = Depends(get_api_key)
+) -> ImageAnalysisResponse:
+    """
+    Analyze images for a product based on product_id.
+    
+    This endpoint accepts a product_id and starts image analysis asynchronously.
+    Returns immediately with a task ID for polling.
+    
+    The analysis includes:
+    1. Finding the product by product_id
+    2. Identifying unanalyzed images
+    3. Analyzing up to 4 images simultaneously using OpenAI Vision API
+    4. Storing results in the product's images field
+    
+    Authentication: Optional API key via Bearer token
+    Rate Limits: Based on API key configuration
+    """
+    try:
+        # Security validation - DISABLED FOR DEVELOPMENT
+        # TODO: Re-enable security checks for production by uncommenting the lines below
+        # validate_request_security(http_request, api_key)
+        
+        logger.info(f"Starting image analysis for product_id {request.product_id} by user {request.user_id}")
+        
+        # Check if all images are already analyzed before creating a task
+        product_data = image_analysis_service._get_product_by_id(request.product_id)
+        if not product_data:
+            raise HTTPException(status_code=404, detail=f"Product not found for product_id: {request.product_id}")
+        
+        images = product_data.get('images', {})
+        if not images:
+            raise HTTPException(status_code=400, detail="No images found for this product")
+        
+        # Check if all images already have analysis data
+        unanalyzed_images = image_analysis_service._get_unanalyzed_images(images)
+        if not unanalyzed_images:
+            # All images already analyzed - return immediate response
+            return ImageAnalysisResponse(
+                task_id="",  # No task created
+                status=TaskStatus.COMPLETED,
+                product_id=request.product_id,
+                user_id=request.user_id,
+                message="All images already analyzed",
+                created_at=datetime.now(),
+                progress=100.0,
+                current_step="Already completed",
+                error_message=None,
+                total_images=len(images),
+                analyzed_images=len(images),
+                failed_images=0,
+                analyzedData=None,
+                completed_at=datetime.now()
+            )
+        
+        # Start image analysis using the service
+        response = image_analysis_service.start_image_analysis_task(
+            product_id=request.product_id,
+            user_id=request.user_id
+        )
+        
+        # Convert response to ImageAnalysisResponse format
+        image_analysis_response = ImageAnalysisResponse(
+            task_id=response['task_id'],
+            status=TaskStatus.PENDING,
+            product_id=request.product_id,
+            user_id=request.user_id,
+            message=response['message'],
+            created_at=datetime.now(),
+            progress=0.0,
+            current_step="Task started",
+            error_message=None,
+            total_images=len(unanalyzed_images),
+            analyzed_images=0,
+            failed_images=0,
+            analyzedData=None,
+            completed_at=None
+        )
+        
+        logger.info(f"Started image analysis task {image_analysis_response.task_id} for product_id {request.product_id}")
+        
+        return image_analysis_response
+        
+    except Exception as e:
+        logger.error(f"Error in image analysis endpoint: {e}", exc_info=True)
+        raise HTTPException(status_code=500, detail=f"Image analysis failed: {str(e)}")
+
+
+@router.get("/image/analyze/tasks/{task_id}", response_model=ImageAnalysisResponse)
+def get_image_analysis_task_status(task_id: str) -> ImageAnalysisResponse:
+    """
+    Get the status of an image analysis task.
+    Returns ImageAnalysisResponse with current status and progress.
+    """
+    try:
+        # Get task status from task management system
+        from app.utils.task_management import get_task_status
+        task_info = get_task_status(task_id)
+        
+        if not task_info:
+            raise HTTPException(status_code=404, detail="Image analysis task not found")
+        
+        # Convert task info to ImageAnalysisResponse
+        return ImageAnalysisResponse(
+            task_id=task_id,
+            status=task_info.task_status,
+            product_id=task_info.task_metadata.get('product_id', ''),
+            user_id=task_info.user_id or '',
+            message=task_info.task_status_message,
+            created_at=task_info.created_at,
+            progress=task_info.progress,
+            current_step=task_info.current_step_name,
+            error_message=task_info.error_message,
+            total_images=task_info.task_metadata.get('total_images'),
+            analyzed_images=task_info.task_metadata.get('analyzed_images'),
+            failed_images=task_info.task_metadata.get('failed_images'),
+            analyzedData=None,  # Don't include analyzed data in task response
+            completed_at=task_info.completed_at
+        )
+        
+    except HTTPException:
+        raise
+    except Exception as e:
+        logger.error(f"Error getting image analysis task status {task_id}: {e}", exc_info=True)
+        raise HTTPException(status_code=500, detail=f"Failed to get image analysis task status: {str(e)}")
+
+
+@router.delete("/image/analyze/tasks/{task_id}")
+def cancel_image_analysis_task(task_id: str):
+    """
+    Cancel a running image analysis task
+    """
+    try:
+        # Get task status from task management system
+        from app.utils.task_management import get_task_status, fail_task
+        task_info = get_task_status(task_id)
+        
+        if not task_info:
+            raise HTTPException(status_code=404, detail="Image analysis task not found")
+        
+        if task_info.task_status not in [TaskStatus.PENDING, TaskStatus.RUNNING]:
+            raise HTTPException(status_code=400, detail="Cannot cancel completed or failed image analysis task")
+        
+        # Update task status to failed with cancellation message
+        fail_task(task_id, "Image analysis task cancelled by user")
+        
+        return {"message": f"Image analysis task {task_id} cancelled successfully"}
+        
+    except HTTPException:
+        raise
+    except Exception as e:
+        logger.error(f"Error cancelling image analysis task {task_id}: {e}", exc_info=True)
+        raise HTTPException(status_code=500, detail=f"Failed to cancel image analysis task: {str(e)}")
+
+
+@router.delete("/image/analyze/tasks")
+def cleanup_image_analysis_tasks():
+    """
+    Clean up old completed/failed image analysis tasks
+    """
+    try:
+        # Use task management system cleanup
+        from app.utils.task_management import task_manager
+        deleted_count = task_manager.cleanup_old_tasks(days_old=30)
+        return {"message": "Image analysis task cleanup completed", "deleted_tasks_count": deleted_count}
+        
+    except Exception as e:
+        logger.error(f"Error cleaning up image analysis tasks: {e}", exc_info=True)
+        raise HTTPException(status_code=500, detail=f"Failed to cleanup image analysis tasks: {str(e)}")
+
+
+# Scenario Generation Endpoints
+@router.post("/scenario/generate", response_model=ScenarioGenerationResponse)
+def generate_scenario(
+    request: ScenarioGenerationRequest,
+    http_request: Request = None,
+    api_key: Optional[str] = Depends(get_api_key)
+) -> ScenarioGenerationResponse:
+    """
+    Generate AI-powered video scenario for a product
+    
+    This endpoint accepts product information and generates a complete video scenario
+    including scenes, audio script, and preview image using OpenAI and RunwayML.
+    Returns immediately with a task ID for polling.
+    
+    Authentication: Optional API key via Bearer token
+    Rate Limits: 
+    - With API key: Based on key configuration
+    - Without API key: 10 requests per minute
+    """
+    try:
+        # Security validation - DISABLED FOR DEVELOPMENT
+        # TODO: Re-enable security checks for production by uncommenting the lines below
+        # validate_request_security(http_request, api_key)
+        # validate_scrape_request(str(request.product_id), api_key)
+        
+        # Check user's credit before starting scenario generation
+        credit_check = can_perform_action(request.user_id, "generate_scenario")
+        if credit_check.get("error"):
+            logger.error(f"Credit check failed for user {request.user_id}: {credit_check['error']}")
+            raise HTTPException(status_code=400, detail=f"Credit check failed: {credit_check['error']}")
+        
+        if not credit_check.get("can_perform", False):
+            reason = credit_check.get("reason", "Insufficient credits")
+            current_credits = credit_check.get("current_credits", 0)
+            required_credits = credit_check.get("required_credits", 1)
+            logger.warning(f"Credit check failed for user {request.user_id}: {reason}. Current: {current_credits}, Required: {required_credits}")
+            raise HTTPException(
+                status_code=402, 
+                detail={
+                    "error": "Insufficient credits",
+                    "reason": reason,
+                    "current_credits": current_credits,
+                    "required_credits": required_credits,
+                    "message": f"You need {required_credits} credit(s) to perform this action. You currently have {current_credits} credit(s)."
+                }
+            )
+        
+        logger.info(f"Credit check passed for user {request.user_id}. Can perform scenario generation action.")
+        
+        # Start scenario generation using threads
+        response = scenario_generation_service.start_scenario_generation_task(request)
+        
+        # Convert response to ScenarioGenerationResponse format
+        return ScenarioGenerationResponse(
+            task_id=response["task_id"],
+            status=TaskStatus.PENDING,
+            short_id="",  # Will be populated when task completes
+            user_id=request.user_id,
+            message=response["message"],
+            created_at=datetime.now(timezone.utc),
+            progress=0.0,
+            current_step="Starting scenario generation",
+            error_message=None,
+            scenario=None,
+            completed_at=None
+        )
+        
+    except HTTPException:
+        raise
+    except Exception as e:
+        logger.error(f"Error starting scenario generation for user {request.user_id}: {e}", exc_info=True)
+        raise HTTPException(status_code=500, detail=f"Failed to start scenario generation: {str(e)}")
+
+
+@router.get("/scenario/generate/tasks/{task_id}", response_model=ScenarioGenerationResponse)
+def get_scenario_generation_task_status(task_id: str):
+    """
+    Get the status of a scenario generation task
+    """
+    try:
+        # Get task status from task management system
+        from app.utils.task_management import get_task_status
+        task_info = get_task_status(task_id)
+        
+        if not task_info:
+            raise HTTPException(status_code=404, detail="Scenario generation task not found")
+        
+        # Convert task info to ScenarioGenerationResponse
+        return ScenarioGenerationResponse(
+            task_id=task_id,
+            status=task_info.task_status,
+            short_id=task_info.task_metadata.get('short_id', ''),
+            user_id=task_info.user_id or '',
+            message=task_info.task_status_message,
+            created_at=task_info.created_at,
+            progress=task_info.progress,
+            current_step=task_info.current_step_name,
+            error_message=task_info.error_message,
+            scenario=task_info.task_metadata.get('scenario') if task_info.task_metadata else None,
+            completed_at=task_info.completed_at
+        )
+        
+    except HTTPException:
+        raise
+    except Exception as e:
+        logger.error(f"Error getting scenario generation task status {task_id}: {e}", exc_info=True)
+        raise HTTPException(status_code=500, detail=f"Failed to get scenario generation task status: {str(e)}")
+
+
+@router.delete("/scenario/generate/tasks/{task_id}")
+def cancel_scenario_generation_task(task_id: str):
+    """
+    Cancel a running scenario generation task
+    """
+    try:
+        # Get task status from task management system
+        from app.utils.task_management import get_task_status, fail_task
+        task_info = get_task_status(task_id)
+        
+        if not task_info:
+            raise HTTPException(status_code=404, detail="Scenario generation task not found")
+        
+        if task_info.task_status not in [TaskStatus.PENDING, TaskStatus.RUNNING]:
+            raise HTTPException(status_code=400, detail="Cannot cancel completed or failed scenario generation task")
+        
+        # Update task status to failed with cancellation message
+        fail_task(task_id, "Scenario generation task cancelled by user")
+        
+        return {"message": f"Scenario generation task {task_id} cancelled successfully"}
+        
+    except HTTPException:
+        raise
+    except Exception as e:
+        logger.error(f"Error cancelling scenario generation task {task_id}: {e}", exc_info=True)
+        raise HTTPException(status_code=500, detail=f"Failed to cancel scenario generation task: {str(e)}")
+
+
+# Save Scenario Endpoints
+@router.post("/scenario/save", response_model=SaveScenarioResponse)
+def save_scenario(
+    request: SaveScenarioRequest,
+    http_request: Request = None,
+    api_key: Optional[str] = Depends(get_api_key)
+) -> SaveScenarioResponse:
+    """
+    Save AI-generated scenario and generate images for scenes
+    
+    This endpoint accepts a scenario JSON string and saves it to the database,
+    then generates images for all scenes (except the first one which is already generated).
+    Returns immediately with a task ID for polling.
+    
+    Authentication: Optional API key via Bearer token
+    Rate Limits: 
+    - With API key: Based on key configuration
+    - Without API key: 10 requests per minute
+    """
+    try:
+        # Security validation - DISABLED FOR DEVELOPMENT
+        # TODO: Re-enable security checks for production by uncommenting the lines below
+        # validate_request_security(http_request, api_key)
+        # validate_scrape_request(str(request.short_id), api_key)
+        
+        # No credit check needed for save_scenario itself
+        # Credits will be deducted for each image generation (scene_count * generate_image)
+        logger.info(f"Starting save scenario for user {request.user_id}")
+        
+        # Start save scenario using threads
+        response = save_scenario_service.start_save_scenario_task(request)
+        
+        # Convert response to SaveScenarioResponse format
+        return SaveScenarioResponse(
+            task_id=response["task_id"],
+            status=TaskStatus.PENDING,
+            short_id=request.short_id,
+            user_id=request.user_id,
+            message=response["message"],
+            created_at=datetime.now(timezone.utc),
+            progress=0.0,
+            current_step="Starting scenario save process",
+            error_message=None,
+            scenario_id=None,
+            completed_at=None
+        )
+        
+    except HTTPException:
+        raise
+    except Exception as e:
+        logger.error(f"Error starting save scenario for user {request.user_id}: {e}", exc_info=True)
+        raise HTTPException(status_code=500, detail=f"Failed to start save scenario: {str(e)}")
+
+
+@router.get("/scenario/save/tasks/{task_id}", response_model=SaveScenarioResponse)
+def get_save_scenario_task_status(task_id: str):
+    """
+    Get the status of a save scenario task
+    """
+    try:
+        # Get task status from task management system
+        from app.utils.task_management import get_task_status
+        task_info = get_task_status(task_id)
+        
+        if not task_info:
+            raise HTTPException(status_code=404, detail="Save scenario task not found")
+        
+        # Convert task info to SaveScenarioResponse
+        return SaveScenarioResponse(
+            task_id=task_id,
+            status=task_info.task_status,
+            short_id=task_info.task_metadata.get('short_id', ''),
+            user_id=task_info.user_id or '',
+            message=task_info.task_status_message,
+            created_at=task_info.created_at,
+            progress=task_info.progress,
+            current_step=task_info.current_step_name,
+            error_message=task_info.error_message,
+            scenario_id=task_info.task_metadata.get('scenario_id') if task_info.task_metadata else None,
+            completed_at=task_info.completed_at
+        )
+        
+    except HTTPException:
+        raise
+    except Exception as e:
+        logger.error(f"Error getting save scenario task status {task_id}: {e}", exc_info=True)
+        raise HTTPException(status_code=500, detail=f"Failed to get save scenario task status: {str(e)}")
+
+
+@router.delete("/scenario/save/tasks/{task_id}")
+def cancel_save_scenario_task(task_id: str):
+    """
+    Cancel a running save scenario task
+    """
+    try:
+        # Get task status from task management system
+        from app.utils.task_management import get_task_status, fail_task
+        task_info = get_task_status(task_id)
+        
+        if not task_info:
+            raise HTTPException(status_code=404, detail="Save scenario task not found")
+        
+        if task_info.task_status not in [TaskStatus.PENDING, TaskStatus.RUNNING]:
+            raise HTTPException(status_code=400, detail="Cannot cancel completed or failed save scenario task")
+        
+        # Update task status to failed with cancellation message
+        fail_task(task_id, "Save scenario task cancelled by user")
+        
+        return {"message": f"Save scenario task {task_id} cancelled successfully"}
+        
+    except HTTPException:
+        raise
+    except Exception as e:
+        logger.error(f"Error cancelling save scenario task {task_id}: {e}", exc_info=True)
+        raise HTTPException(status_code=500, detail=f"Failed to cancel save scenario task: {str(e)}")
+
+
 # Scheduler Management Endpoints
 @router.get("/scheduler/status")
 def get_scheduler_status_endpoint():
@@ -605,7 +1041,7 @@ def trigger_cleanup_now():
         return {
             "message": "Manual cleanup completed successfully",
             "deleted_tasks_count": deleted_count,
-            "timestamp": datetime.utcnow().isoformat()
+            "timestamp": datetime.now(timezone.utc).isoformat()
         }
     except Exception as e:
         logger.error(f"Error triggering manual cleanup: {e}", exc_info=True)
