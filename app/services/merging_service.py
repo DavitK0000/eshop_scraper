@@ -5,7 +5,6 @@ This module provides functionality for:
 - Merging generated video scenes into final videos
 - Merging audio with videos
 - Embedding subtitles into videos
-- Generating thumbnails using RunwayML
 - Upscaling videos using RunwayML
 - Adding watermarks for free plan users
 - Managing the finalization process with task management
@@ -46,7 +45,7 @@ RETRY_DELAY = 5  # Seconds to wait between retries
 
 
 class MergingService:
-    """Service for finalizing shorts by merging videos, audio, and generating thumbnails."""
+    """Service for finalizing shorts by merging videos, audio, and processing final videos."""
 
     def __init__(self):
         self._active_threads: Dict[str, threading.Thread] = {}
@@ -122,32 +121,19 @@ class MergingService:
             update_task_progress(
                 task_id, 0.1, "Fetching video scenes and audio data")
 
-            # Step 1: Fetch video scenes, product info, and audio data
+            # Step 1: Fetch video scenes and audio data
             scenes_data = self._fetch_video_scenes(short_id)
             if not scenes_data:
                 raise Exception("No video scenes found for this short")
 
-            product_info = self._fetch_product_info(short_id)
-            if not product_info:
-                raise Exception("Product information not found")
+            # Product info no longer needed since thumbnail generation is removed
 
             # Fetch audio data
             audio_data = self._fetch_audio_data(short_id)
 
-            update_task_progress(task_id, 0.2, "Generating thumbnail")
+            update_task_progress(task_id, 0.2, "Downloading videos and audio")
 
-            # Step 2: Generate thumbnail
-            thumbnail_url = self._generate_thumbnail(
-                user_id, product_info, task_id, short_id)
-            if not thumbnail_url:
-                raise Exception("Failed to generate thumbnail")
-
-            # Update shorts table with thumbnail
-            self._update_shorts_thumbnail(short_id, thumbnail_url)
-
-            update_task_progress(task_id, 0.4, "Downloading videos and audio")
-
-            # Step 3: Download videos and audio
+            # Step 2: Download videos and audio
             video_files = self._download_videos(scenes_data, user_id)
             if not video_files:
                 raise Exception("Failed to download videos")
@@ -157,34 +143,34 @@ class MergingService:
                 audio_file = self._download_audio(
                     audio_data['generated_audio_url'], task_id)
 
-            update_task_progress(task_id, 0.6, "Merging videos and audio")
+            update_task_progress(task_id, 0.4, "Merging videos and audio")
 
-            # Step 4: Merge videos
+            # Step 3: Merge videos
             merged_video_path = self._merge_videos(video_files, task_id)
             if not merged_video_path:
                 raise Exception("Failed to merge videos")
 
-            # Step 5: Merge audio if available
+            # Step 4: Merge audio if available
             if audio_file:
                 merged_video_path = self._merge_audio_with_video(
                     merged_video_path, audio_file, task_id
                 )
 
-            update_task_progress(task_id, 0.7, "Processing final video")
+            update_task_progress(task_id, 0.5, "Processing final video")
 
-            # Step 7: Add watermark if free plan
+            # Step 5: Add watermark if free plan
             final_video_path = self._add_watermark_if_needed(
                 merged_video_path, user_id, task_id
             )
 
-            # Step 8: Upscale if requested (before subtitles for better quality)
+            # Step 6: Upscale if requested (before subtitles for better quality)
             if upscale:
-                update_task_progress(task_id, 0.8, "Upscaling video")
+                update_task_progress(task_id, 0.6, "Upscaling video")
                 final_video_path = self._upscale_video(
                     final_video_path, user_id, task_id, short_id
                 )
 
-            # Step 9: Add subtitles if available (after upscaling for better quality)
+            # Step 7: Add subtitles if available (after upscaling for better quality)
             if audio_data and audio_data.get('subtitles'):
                 try:
                     final_video_path = self._embed_subtitles(
@@ -195,9 +181,9 @@ class MergingService:
                         f"Failed to embed subtitles, continuing without them: {subtitle_error}")
                     # Continue with the video without subtitles
 
-            update_task_progress(task_id, 0.9, "Adding subtitles and finalizing")
+            update_task_progress(task_id, 0.8, "Adding subtitles and finalizing")
 
-            # Step 10: Upload final video
+            # Step 8: Upload final video
             final_video_url = self._upload_final_video(
                 final_video_path, short_id, task_id)
             if not final_video_url:
@@ -223,7 +209,6 @@ class MergingService:
 
             # Complete task
             complete_task(task_id, {
-                "thumbnail_url": thumbnail_url,
                 "final_video_url": final_video_url,
                 "short_id": short_id
             })
@@ -275,47 +260,10 @@ class MergingService:
             logger.error(f"Failed to fetch video scenes: {e}")
             raise
 
-    def _fetch_product_info(self, short_id: str) -> Dict[str, Any]:
-        """Fetch product information for thumbnail generation."""
-        try:
-            if not supabase_manager.is_connected():
-                raise Exception("Supabase connection not available")
-
-            # Get product info from products table using short_id
-            product_result = supabase_manager.client.table('products').select(
-                'title, description, images'
-            ).eq('short_id', short_id).execute()
-
-            if product_result.data:
-                product_data = product_result.data[0]
-                return {
-                    "title": product_data.get('title'),
-                    "description": product_data.get('description'),
-                    "images": product_data.get('images', [])
-                }
-
-            # Fallback to shorts data if no product found
-            short_result = supabase_manager.client.table('shorts').select(
-                'title, description'
-            ).eq('id', short_id).execute()
-
-            if short_result.data:
-                short_data = short_result.data[0]
-                return {
-                    "title": short_data.get('title', 'Product Video'),
-                    "description": short_data.get('description', 'Product showcase video'),
-                    "images": []
-                }
-
-            return {
-                "title": "Product Video",
-                "description": "Product showcase video",
-                "images": []
-            }
-
-        except Exception as e:
-            logger.error(f"Failed to fetch product info: {e}")
-            raise
+    # def _fetch_product_info(self, short_id: str) -> Dict[str, Any]:
+    #     """Fetch product information for thumbnail generation - REMOVED: No longer generating thumbnails."""
+    #     # This method has been removed as thumbnail generation is no longer needed
+    #     pass
 
     def _fetch_audio_data(self, short_id: str) -> Optional[Dict[str, Any]]:
         """Fetch audio data from audio_info table."""
@@ -350,286 +298,35 @@ class MergingService:
             # Don't fail the entire process if audio fetch fails
             return None
 
-    def _generate_thumbnail(self, user_id: str, product_info: Dict[str, Any], task_id: str, short_id: str) -> str:
-        """Generate thumbnail using RunwayML."""
-        try:
-            # Check credits for image generation
-            credit_check = credit_manager.can_perform_action(
-                user_id, "generate_image")
-            if credit_check.get("error"):
-                raise Exception(
-                    f"Credit check failed: {credit_check['error']}")
+    # def _generate_thumbnail(self, user_id: str, product_info: Dict[str, Any], task_id: str, short_id: str) -> str:
+    #     """Generate thumbnail using RunwayML - REMOVED: No longer generating thumbnails."""
+    #     # This method has been removed as thumbnail generation is no longer needed
+    #     pass
 
-            if not credit_check.get("can_perform", False):
-                raise Exception(
-                    f"Insufficient credits for image generation: {credit_check.get('reason', 'Unknown')}")
+    # def _download_image(self, image_url: str, task_id: str) -> str:
+    #     """Download generated image to temporary file - REMOVED: No longer generating thumbnails."""
+    #     # This method has been removed as thumbnail generation is no longer needed
+    #     pass
 
-            # Generate thumbnail prompt
-            title = product_info.get('title', 'Product')
-            description = product_info.get('description', '')
+    # def _upload_thumbnail_from_url(self, image_url: str, user_id: str, task_id: str) -> str:
+    #     """Upload thumbnail directly from URL to Supabase storage without saving to filesystem - REMOVED: No longer generating thumbnails."""
+    #     # This method has been removed as thumbnail generation is no longer needed
+    #     pass
 
-            prompt = f"Create a professional product thumbnail for: {title}"
-            if description:
-                prompt += f". Description: {description}"
-            prompt += ". Style: Modern, clean, professional, suitable for social media, high contrast, eye-catching"
+    # def _upload_thumbnail(self, thumbnail_path: str, user_id: str, task_id: str) -> str:
+    #     """Upload thumbnail from local file to Supabase storage - REMOVED: No longer generating thumbnails."""
+    #     # This method has been removed as thumbnail generation is no longer needed
+    #     pass
 
-            # Generate image using RunwayML
-            if not runwayml_manager.is_available():
-                raise Exception("RunwayML is not available")
+    # def _upload_thumbnail_fallback(self, image_url: str, user_id: str, task_id: str) -> str:
+    #     """Fallback method: download image to temp file first, then upload - REMOVED: No longer generating thumbnails."""
+    #     # This method has been removed as thumbnail generation is no longer needed
+    #     pass
 
-            # Run the async method in a sync context
-            import asyncio
-            try:
-                loop = asyncio.new_event_loop()
-                asyncio.set_event_loop(loop)
-                result = loop.run_until_complete(
-                    runwayml_manager.generate_image_from_text(
-                        prompt_text=prompt,
-                        ratio="1920:1080"  # 16:9 ratio for thumbnails
-                    )
-                )
-            finally:
-                loop.close()
-
-            if not result.get('success'):
-                raise Exception(
-                    f"Image generation failed: {result.get('error', 'Unknown error')}")
-
-            # Get the generated image URL
-            image_url = result.get('output')
-            if not image_url:
-                raise Exception("No image URL returned from RunwayML")
-
-            # Handle case where output might be a list of URLs
-            if isinstance(image_url, list):
-                if len(image_url) > 0:
-                    image_url = image_url[0]  # Take the first URL
-                else:
-                    raise Exception("No image URLs returned from RunwayML")
-
-            # Ensure image_url is a string
-            if not isinstance(image_url, str):
-                raise Exception(f"Invalid image URL format: {type(image_url)}")
-            # Upload directly from URL to Supabase storage without saving to filesystem
-            thumbnail_url = self._upload_thumbnail_from_url(
-                image_url, user_id, task_id)
-
-            # Deduct credits
-            credit_manager.deduct_credits(
-                user_id=user_id,
-                action_name="generate_image",
-                reference_id=short_id,  # Use short_id instead of task_id
-                reference_type="video_merge",  # Use video_merge instead of thumbnail_generation
-                description="Generated thumbnail for short video"
-            )
-
-            return thumbnail_url
-
-        except Exception as e:
-            logger.error(f"Failed to generate thumbnail: {e}")
-            raise
-
-    def _download_image(self, image_url: str, task_id: str) -> str:
-        """Download generated image to temporary file."""
-        try:
-            with tempfile.NamedTemporaryFile(suffix='.png', delete=False) as temp_file:
-                temp_path = temp_file.name
-
-            # Download image
-            with httpx.Client(timeout=DOWNLOAD_TIMEOUT) as client:
-                response = client.get(image_url)
-                response.raise_for_status()
-
-                with open(temp_path, 'wb') as f:
-                    f.write(response.content)
-
-            logger.info(f"Downloaded image to {temp_path}")
-            return temp_path
-
-        except Exception as e:
-            logger.error(f"Failed to download image: {e}")
-            raise
-
-    def _upload_thumbnail_from_url(self, image_url: str, user_id: str, task_id: str) -> str:
-        """Upload thumbnail directly from URL to Supabase storage without saving to filesystem."""
-        try:
-            if not supabase_manager.is_connected():
-                raise Exception("Supabase connection not available")
-
-            # Create storage path
-            filename = f"thumbnail_images/{user_id}/{uuid.uuid4()}.png"
-
-            # Validate Supabase connection and bucket
-            if not supabase_manager.is_connected():
-                raise Exception("Supabase connection not available")
-
-            # Validate Supabase client
-            if not hasattr(supabase_manager, 'client') or not supabase_manager.client:
-                raise Exception("Supabase client not available")
-
-            if not hasattr(supabase_manager.client, 'storage'):
-                raise Exception("Supabase storage not available")
-
-            # Check if storage bucket exists and is accessible
-            try:
-                buckets = supabase_manager.client.storage.list_buckets()
-                bucket_names = [bucket.name for bucket in buckets]
-
-                if 'generated-content' not in bucket_names:
-                    raise Exception(
-                        "Storage bucket 'generated-content' not found")
-
-            except Exception as bucket_error:
-                logger.error(
-                    f"Failed to check storage buckets: {bucket_error}")
-                raise Exception(f"Storage bucket check failed: {bucket_error}")
-
-            # Download image data directly from URL and upload to Supabase
-            with httpx.Client(timeout=DOWNLOAD_TIMEOUT) as client:
-                response = client.get(image_url)
-                response.raise_for_status()
-
-                # Validate image content
-                if len(response.content) == 0:
-                    raise Exception("Downloaded image content is empty")
-
-                # Validate content size (reasonable limits)
-                if len(response.content) > 10 * 1024 * 1024:  # 10MB limit
-                    raise Exception(
-                        f"Image file too large: {len(response.content)} bytes")
-
-                # Upload the image data directly to Supabase storage
-                try:
-                    result = supabase_manager.client.storage.from_('generated-content').upload(
-                        path=filename,
-                        file=response.content,  # Use the response content directly
-                        file_options={"content-type": "image/png"}
-                    )
-                except json.JSONDecodeError as json_error:
-                    logger.error(
-                        f"Supabase upload failed with JSON decode error: {json_error}")
-                    raise Exception(
-                        f"Supabase upload failed with JSON decode error: {json_error}")
-                except Exception as upload_error:
-                    logger.error(
-                        f"Supabase upload failed with error: {upload_error}")
-                    raise Exception(f"Supabase upload failed: {upload_error}")
-
-            # Check for upload errors
-            if hasattr(result, 'error') and result.error:
-                raise Exception(f"Failed to upload thumbnail: {result.error}")
-
-            # Validate upload result
-            if not result:
-                raise Exception("Upload result is empty or None")
-
-            # Get public URL
-            try:
-                thumbnail_url = supabase_manager.client.storage.from_(
-                    'generated-content').get_public_url(filename)
-            except Exception as url_error:
-                logger.error(f"Failed to generate public URL: {url_error}")
-                raise Exception(f"Public URL generation failed: {url_error}")
-
-            if not thumbnail_url:
-                raise Exception("Generated thumbnail URL is empty")
-
-            return thumbnail_url
-
-        except Exception as e:
-            logger.error(f"Failed to upload thumbnail from URL: {e}")
-
-            # Try fallback method: save to temp file first
-            try:
-                return self._upload_thumbnail_fallback(image_url, user_id, task_id)
-            except Exception as fallback_error:
-                logger.error(
-                    f"Fallback upload method also failed: {fallback_error}")
-                raise Exception(
-                    f"Both upload methods failed. Original: {e}, Fallback: {fallback_error}")
-
-    def _upload_thumbnail(self, thumbnail_path: str, user_id: str, task_id: str) -> str:
-        """Upload thumbnail from local file to Supabase storage."""
-        try:
-            if not supabase_manager.is_connected():
-                raise Exception("Supabase connection not available")
-
-            # Create storage path
-            filename = f"thumbnail_images/{user_id}/{uuid.uuid4()}.png"
-
-            # Upload to Supabase storage
-            with open(thumbnail_path, 'rb') as f:
-                result = supabase_manager.client.storage.from_('generated-content').upload(
-                    path=filename,
-                    file=f,
-                    file_options={"content-type": "image/png"}
-                )
-
-            # Check for upload errors
-            if hasattr(result, 'error') and result.error:
-                raise Exception(f"Failed to upload thumbnail: {result.error}")
-
-            # Get public URL
-            thumbnail_url = supabase_manager.client.storage.from_(
-                'generated-content').get_public_url(filename)
-
-            return thumbnail_url
-
-        except Exception as e:
-            logger.error(f"Failed to upload thumbnail: {e}")
-            raise
-
-    def _upload_thumbnail_fallback(self, image_url: str, user_id: str, task_id: str) -> str:
-        """Fallback method: download image to temp file first, then upload."""
-        try:
-            # Download image to temporary file
-            temp_path = self._download_image(image_url, task_id)
-
-            # Validate downloaded file
-            if not os.path.exists(temp_path):
-                raise Exception(f"Downloaded file not found at {temp_path}")
-
-            file_size = os.path.getsize(temp_path)
-            if file_size == 0:
-                raise Exception(f"Downloaded file is empty (0 bytes)")
-
-            # Upload using the existing method
-            thumbnail_url = self._upload_thumbnail(temp_path, user_id, task_id)
-
-            # Clean up temp file
-            try:
-                os.remove(temp_path)
-            except Exception as cleanup_error:
-                logger.warning(
-                    f"Failed to cleanup temporary file {temp_path}: {cleanup_error}")
-
-            return thumbnail_url
-
-        except Exception as e:
-            logger.error(f"Fallback upload method failed: {e}")
-            raise
-
-    def _update_shorts_thumbnail(self, short_id: str, thumbnail_url: str):
-        """Update shorts table with thumbnail URL."""
-        try:
-            if not supabase_manager.is_connected():
-                raise Exception("Supabase connection not available")
-
-            result = supabase_manager.client.table('shorts').update({
-                'thumbnail_url': thumbnail_url,
-                'updated_at': datetime.utcnow().isoformat()
-            }).eq('id', short_id).execute()
-
-            # Check for update errors
-            if hasattr(result, 'error') and result.error:
-                raise Exception(
-                    f"Failed to update shorts thumbnail: {result.error}")
-
-            logger.info(f"Updated shorts {short_id} with thumbnail URL")
-
-        except Exception as e:
-            logger.error(f"Failed to update shorts thumbnail: {e}")
-            raise
+    # def _update_shorts_thumbnail(self, short_id: str, thumbnail_url: str):
+    #     """Update shorts table with thumbnail URL - REMOVED: No longer generating thumbnails."""
+    #     # This method has been removed as thumbnail generation is no longer needed
+    #     pass
 
     def _download_audio(self, audio_url: str, task_id: str) -> str:
         """Download audio file from URL."""
@@ -755,6 +452,105 @@ class MergingService:
                 f"Failed to create signed URL for audio: {e}, using original URL")
             return audio_url
 
+    def _get_signed_video_url(self, video_url: str) -> str:
+        """Convert Supabase storage URL to signed URL for private video files."""
+        try:
+            # Check if it's a Supabase storage URL
+            if '/storage/v1/object/public/' in video_url:
+                # Extract bucket and path from the URL
+                parts = video_url.split('/storage/v1/object/public/')
+                if len(parts) == 2:
+                    bucket_path = parts[1]
+                    bucket_name, file_path = bucket_path.split('/', 1)
+
+                    # Create signed URL with 1 hour expiration
+                    signed_url_response = supabase_manager.client.storage.from_(bucket_name).create_signed_url(
+                        file_path, 3600
+                    )
+
+                    # Extract the signed URL string from the response
+                    if isinstance(signed_url_response, dict):
+                        if 'signedURL' in signed_url_response:
+                            signed_url = signed_url_response['signedURL']
+                        elif 'signedUrl' in signed_url_response:
+                            signed_url = signed_url_response['signedUrl']
+                        else:
+                            # Try to find any URL-like property
+                            for key, value in signed_url_response.items():
+                                if isinstance(value, str) and value.startswith('http'):
+                                    signed_url = value
+                                    break
+                            else:
+                                logger.warning(
+                                    f"Could not find signed URL in response: {signed_url_response}")
+                                return video_url  # Fallback to original URL
+                    elif isinstance(signed_url_response, str):
+                        signed_url = signed_url_response
+                    else:
+                        signed_url = str(signed_url_response)
+
+                    logger.info(
+                        f"Created signed URL for video file in bucket {bucket_name}")
+                    return signed_url
+
+            # Also check for URLs that might be direct Supabase URLs without the public pattern
+            elif 'supabase.co' in video_url and '/storage/' in video_url:
+                # Try to extract bucket and path from various URL formats
+                try:
+                    # Handle URLs like: https://project.supabase.co/storage/v1/object/public/bucket/path
+                    # or: https://project.supabase.co/storage/v1/object/bucket/path
+                    if '/storage/v1/object/' in video_url:
+                        parts = video_url.split('/storage/v1/object/')
+                        if len(parts) == 2:
+                            bucket_path = parts[1]
+                            # Remove 'public/' prefix if present
+                            if bucket_path.startswith('public/'):
+                                # Remove 'public/' prefix
+                                bucket_path = bucket_path[7:]
+
+                            bucket_name, file_path = bucket_path.split('/', 1)
+
+                            # Create signed URL with 1 hour expiration
+                            signed_url_response = supabase_manager.client.storage.from_(bucket_name).create_signed_url(
+                                file_path, 3600
+                            )
+
+                            # Extract the signed URL string from the response
+                            if isinstance(signed_url_response, dict):
+                                if 'signedURL' in signed_url_response:
+                                    signed_url = signed_url_response['signedURL']
+                                elif 'signedUrl' in signed_url_response:
+                                    signed_url = signed_url_response['signedUrl']
+                                else:
+                                    # Try to find any URL-like property
+                                    for key, value in signed_url_response.items():
+                                        if isinstance(value, str) and value.startswith('http'):
+                                            signed_url = value
+                                            break
+                                    else:
+                                        logger.warning(
+                                            f"Could not find signed URL in response: {signed_url_response}")
+                                        return video_url  # Fallback to original URL
+                            elif isinstance(signed_url_response, str):
+                                signed_url = signed_url_response
+                            else:
+                                signed_url = str(signed_url_response)
+
+                            logger.info(
+                                f"Created signed URL for video file in bucket {bucket_name}")
+                            return signed_url
+                except Exception as parse_error:
+                    logger.warning(
+                        f"Failed to parse Supabase URL format: {parse_error}")
+
+            # If not a Supabase storage URL or parsing failed, return original
+            return video_url
+
+        except Exception as e:
+            logger.warning(
+                f"Failed to create signed URL for video: {e}, using original URL")
+            return video_url
+
     def _handle_expired_url(self, url: str, user_id: str) -> str:
         """
         Handle expired signed URLs by converting them to public URLs or regenerating signed URLs.
@@ -849,8 +645,8 @@ class MergingService:
                 if not video_url:
                     continue
 
-                # Handle potentially expired URLs
-                working_url = self._handle_expired_url(video_url, user_id)
+                # Convert Supabase public URL to signed URL for download
+                working_url = self._get_signed_video_url(video_url)
                 
                 # Create temporary file
                 with tempfile.NamedTemporaryFile(suffix='.mp4', delete=False) as temp_file:
@@ -874,7 +670,7 @@ class MergingService:
                         if e.response.status_code == 400 and 'supabase.co' in working_url:
                             logger.warning(f"Attempt {attempt + 1}: Got 400 error for Supabase URL, trying to refresh: {e}")
                             # Try to refresh the URL
-                            working_url = self._handle_expired_url(video_url, user_id)
+                            working_url = self._get_signed_video_url(video_url)
                             if working_url == video_url:  # No change, break to avoid infinite loop
                                 break
                         else:
