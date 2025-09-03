@@ -29,4 +29,9 @@
 \i schema/08-initial-data.sql
 
 -- Import migration scripts
-\i schema/09-migration-short-id-update.sql 
+\i schema/09-migration-short-id-update.sql
+\i schema/10-update-products-images-structure.sql
+\i schema/11-remove-unused-fields.sql
+\i schema/12-add-category-environments.sql
+\i schema/14-add-environment-field.sql
+\i schema/15-update-category-to-id.sql

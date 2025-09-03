@@ -248,10 +248,13 @@ class ScenarioGenerationService:
                         f"Expected scenario to be a dictionary, got {type(generated_scenario)}: {generated_scenario}")
 
             # Validate that we have the required fields
-            required_fields = ['title', 'description', 'scenes', 'audioScript', 'detectedDemographics', 'thumbnailPrompt']
-            missing_fields = [field for field in required_fields if field not in generated_scenario]
+            required_fields = ['title', 'description', 'scenes',
+                'audioScript', 'detectedDemographics', 'thumbnailPrompt']
+            missing_fields = [
+                field for field in required_fields if field not in generated_scenario]
             if missing_fields:
-                logger.warning(f"Missing required fields: {missing_fields}. Creating fallback values...")
+                logger.warning(
+                    f"Missing required fields: {missing_fields}. Creating fallback values...")
                 # Create fallback values for missing fields
                 if 'title' not in generated_scenario:
                     generated_scenario['title'] = 'Generated Video Scenario'
@@ -260,7 +263,8 @@ class ScenarioGenerationService:
                 if 'scenes' not in generated_scenario:
                     generated_scenario['scenes'] = []
                 if 'audioScript' not in generated_scenario:
-                    generated_scenario['audioScript'] = {'hook': '', 'main': '', 'cta': '', 'hashtags': []}
+                    generated_scenario['audioScript'] = {
+                        'hook': '', 'main': '', 'cta': '', 'hashtags': []}
                 if 'detectedDemographics' not in generated_scenario:
                     generated_scenario['detectedDemographics'] = {
                         'targetGender': 'unisex',
@@ -270,19 +274,21 @@ class ScenarioGenerationService:
                     }
                 if 'thumbnailPrompt' not in generated_scenario:
                     generated_scenario['thumbnailPrompt'] = 'Create an eye-catching thumbnail for this video content'
-            
+
             return await self._transform_openai_response(generated_scenario, request)
-            
+
         except Exception as e:
-            logger.error(f"Failed to generate scenario with OpenAI: {e}", exc_info=True)
+            logger.error(
+                f"Failed to generate scenario with OpenAI: {e}", exc_info=True)
             return None
-    
+
     async def _build_system_message(self, request: ScenarioGenerationRequest) -> str:
         """Build system message for OpenAI"""
         expected_scene_count = request.video_length // 5
         product_data = await self._get_product_by_id(request.product_id)
-        available_images = product_data.get('image_analysis', []) if product_data else []
-        
+        available_images = product_data.get(
+            'image_analysis', []) if product_data else []
+
         image_selection_instructions = ""
         if available_images:
             image_selection_instructions = f"""
@@ -298,14 +304,17 @@ IMAGE SELECTION REQUIREMENTS:
   * Benefits scenes: Use image that highlights key features
   * CTA scenes: Use most compelling product image
 - Ensure image selection enhances the narrative flow and visual consistency"""
-        
+
+        environment_context = f"- Environment: \"{request.environment}\"" if request.environment else ""
+
         return f"""You are an expert TikTok video director. Create a single engaging, viral-worthy scenario that drives conversions.
 
 CRITICAL - FIXED PARAMETERS (DO NOT MODIFY):
 - Style: "{request.style}"
 - Mood: "{request.mood}"  
 - Video Length: {request.video_length} seconds
-- Target Language: "{request.target_language}"
+- Target Language: "{request.target_language}"{f"
+{environment_context}" if environment_context else ""}
 
 DEMOGRAPHIC DETECTION REQUIREMENTS:
 - You MUST analyze the product information and automatically detect the target demographics
@@ -373,7 +382,8 @@ IMPORTANT: Generate content using EXACTLY these parameters:
 - Style: "{request.style}"
 - Mood: "{request.mood}"  
 - Video Length: {request.video_length} seconds
-- Target Language: "{request.target_language}"
+- Target Language: "{request.target_language}"{f"
+- Environment: \"{request.environment}\"" if request.environment else ""}
 
 CRITICAL DEMOGRAPHIC CONSISTENCY:
 - Analyze the product information and available images to detect target demographics
@@ -558,6 +568,7 @@ Ensure all content is family-friendly, professional, and passes content moderati
                  style=request.style,
                  mood=request.mood,
                  resolution=request.resolution,
+                 environment=request.environment,
                  thumbnail_prompt=openai_scenario.get('thumbnailPrompt', 'Create an eye-catching thumbnail for this video content'),
                  thumbnail_url=None  # Will be populated after thumbnail generation
              )

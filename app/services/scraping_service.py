@@ -1164,10 +1164,10 @@ class ScrapingService:
             product_data = {k: v for k, v in product_data.items() if v is not None}
                         
             # Detect category using OpenAI before saving
-            detected_category = self._detect_category_with_openai(product_info)
-            if detected_category:
-                product_data["category"] = detected_category
-                logger.info(f"Detected category for product '{product_info.title}': {detected_category}")
+            detected_category_id = self._detect_category_with_openai(product_info)
+            if detected_category_id:
+                product_data["category_id"] = detected_category_id
+                logger.info(f"Detected category ID for product '{product_info.title}': {detected_category_id}")
             else:
                 logger.warning(f"Failed to detect category for product '{product_info.title}', proceeding without category")
             
@@ -1269,7 +1269,7 @@ class ScrapingService:
             product_info: Extracted product information containing title, description, and specifications
             
         Returns:
-            str: Detected category in format "Parent > Sub-category" or None if detection fails
+            str: Detected category ID (UUID) or None if detection fails
         """
         try:
             from app.utils.supabase_utils import get_categories
@@ -1299,12 +1299,16 @@ class ScrapingService:
                 'specifications': getattr(product_info, 'specifications', {}) or {}
             }
             
-            # Create category list for the prompt
+            # Create category list for the prompt with ID mapping
             category_list = []
+            category_id_map = {}  # Maps "Parent > Sub-category" to category ID
+            
             for sub_cat in sub_categories:
                 parent = next((cat for cat in categories if cat['id'] == sub_cat['parent_id']), None)
                 if parent:
-                    category_list.append(f"{parent['name']} > {sub_cat['name']}")
+                    category_name = f"{parent['name']} > {sub_cat['name']}"
+                    category_list.append(category_name)
+                    category_id_map[category_name] = sub_cat['id']  # Store the sub-category ID
             
             if not category_list:
                 logger.warning("No valid category combinations found, skipping category detection")
@@ -1344,18 +1348,20 @@ Respond with only the sub-category name, nothing else."""
             )
             
             if response.choices and response.choices[0].message.content:
-                detected_category = response.choices[0].message.content.strip()
+                detected_category_name = response.choices[0].message.content.strip()
                 
                 # Validate that the detected category exists in our predefined list
-                if detected_category in category_list:
-                    logger.info(f"Successfully detected category: {detected_category}")
-                    return detected_category
+                if detected_category_name in category_list:
+                    category_id = category_id_map[detected_category_name]
+                    logger.info(f"Successfully detected category: {detected_category_name} (ID: {category_id})")
+                    return category_id
                 else:
-                    logger.warning(f"OpenAI returned invalid category: {detected_category}")
+                    logger.warning(f"OpenAI returned invalid category: {detected_category_name}")
                     # Use the first available sub-category as fallback
-                    fallback_category = category_list[0]
-                    logger.info(f"Using fallback category: {fallback_category}")
-                    return fallback_category
+                    fallback_category_name = category_list[0]
+                    fallback_category_id = category_id_map[fallback_category_name]
+                    logger.info(f"Using fallback category: {fallback_category_name} (ID: {fallback_category_id})")
+                    return fallback_category_id
             else:
                 logger.warning("OpenAI response did not contain valid category")
                 return None

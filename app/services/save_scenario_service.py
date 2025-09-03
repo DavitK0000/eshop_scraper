@@ -200,7 +200,8 @@ class SaveScenarioService:
                 "mood": scenario.mood,
                 "audio_script": json.dumps(scenario.audio_script.dict()),
                 "total_duration": scenario.total_duration,
-                "resolution": scenario.resolution  # Default resolution, can be made configurable
+                "resolution": scenario.resolution,  # Default resolution, can be made configurable
+                "environment": scenario.environment
             }
             
             result = supabase_manager.client.table('video_scenarios').insert(scenario_data).execute()

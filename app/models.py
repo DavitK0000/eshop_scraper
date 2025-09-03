@@ -169,6 +169,7 @@ class ScenarioGenerationRequest(BaseModel):
     video_length: int = Field(..., description="Video length in seconds (15, 20, 30, 45, or 60)")
     resolution: str = Field(..., description="Video resolution (e.g., '720:1280', '1280:720')")
     target_language: str = Field(..., description="Target language for content (e.g., 'en-US', 'es-ES')")
+    environment: Optional[str] = Field(None, description="Environment context for the video (e.g., 'indoor', 'outdoor', 'studio', 'home', 'office')")
 
 
 class DetectedDemographics(BaseModel):
@@ -207,6 +208,7 @@ class GeneratedScenario(BaseModel):
     style: str = Field(..., description="Style of the video")
     mood: str = Field(..., description="Mood of the video")
     resolution: str = Field(..., description="Resolution of the video")
+    environment: Optional[str] = Field(None, description="Environment context for the video")
     thumbnail_prompt: Optional[str] = Field(None, description="AI-generated prompt for thumbnail image generation")
     thumbnail_url: Optional[str] = Field(None, description="Generated thumbnail image URL from RunwayML")
 
