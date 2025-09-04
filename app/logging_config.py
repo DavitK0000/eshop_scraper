@@ -51,15 +51,6 @@ def setup_logging():
         file_handler.setLevel(logging.DEBUG)
         file_handler.setFormatter(detailed_formatter)
         
-        # File handler for debug logs only
-        debug_handler = logging.handlers.RotatingFileHandler(
-            logs_dir / "debug.log",
-            maxBytes=settings.LOG_FILE_MAX_SIZE // 2,  # 5MB
-            backupCount=3,
-            encoding='utf-8'
-        )
-        debug_handler.setLevel(logging.DEBUG)
-        debug_handler.setFormatter(detailed_formatter)
         
         # File handler for errors only
         error_handler = logging.handlers.RotatingFileHandler(
@@ -92,14 +83,6 @@ def setup_logging():
         security_logger.setLevel(logging.WARNING)
         security_logger.propagate = False  # Don't propagate to root logger
         
-        # Create debug logger that only captures debug messages
-        debug_logger = logging.getLogger('debug')
-        debug_logger.addHandler(debug_handler)
-        debug_logger.setLevel(logging.DEBUG)
-        debug_logger.propagate = False  # Don't propagate to root logger
-        
-
-        
         # Set specific loggers to appropriate levels
         logging.getLogger('uvicorn').setLevel(logging.INFO)
         logging.getLogger('uvicorn.access').setLevel(logging.INFO)
@@ -125,30 +108,6 @@ def get_logger(name: str) -> logging.Logger:
     
     logger = logging.getLogger(name)
     
-    # Add debug handler to this specific logger so debug messages go to debug.log
-    # Check if debug handler is already added to avoid duplicates
-    debug_handler = None
-    for handler in logger.handlers:
-        if isinstance(handler, logging.handlers.RotatingFileHandler) and 'debug.log' in str(handler.baseFilename):
-            debug_handler = handler
-            break
-    
-    if not debug_handler:
-        # Get the debug handler from the debug logger
-        debug_logger = logging.getLogger('debug')
-        for handler in debug_logger.handlers:
-            if isinstance(handler, logging.handlers.RotatingFileHandler):
-                # Create a new handler instance to avoid sharing
-                new_debug_handler = logging.handlers.RotatingFileHandler(
-                    handler.baseFilename,
-                    maxBytes=handler.maxBytes,
-                    backupCount=handler.backupCount,
-                    encoding=handler.encoding
-                )
-                new_debug_handler.setLevel(logging.DEBUG)
-                new_debug_handler.setFormatter(handler.formatter)
-                logger.addHandler(new_debug_handler)
-                break
     
     return logger
 

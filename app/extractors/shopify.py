@@ -37,18 +37,18 @@ class ShopifyExtractor(BaseExtractor):
         
         if self.product_data:
             logger.info("Successfully extracted Shopify product data from structured JSON")
-            logger.debug(f"Structured data keys: {list(self.product_data.keys())}")
+            # logger.debug(f"Structured data keys: {list(self.product_data.keys())}")
             if 'images' in self.product_data:
-                logger.debug(f"Images found in structured data: {self.product_data['images']}")
+                pass
         else:
             logger.warning("No structured JSON data found for Shopify product, trying ProductJson fallback")
             # Fallback to direct ProductJson extraction
             self.product_data = self._extract_product_json_fallback()
             if self.product_data:
                 logger.info("Successfully extracted Shopify product data from ProductJson fallback")
-                logger.debug(f"Fallback data keys: {list(self.product_data.keys())}")
+                # logger.debug(f"Fallback data keys: {list(self.product_data.keys())}")
                 if 'images' in self.product_data:
-                    logger.debug(f"Images found in fallback data: {self.product_data['images']}")
+                    pass    
             else:
                 logger.warning("No ProductJson data found for Shopify product")
         
@@ -125,7 +125,7 @@ class ShopifyExtractor(BaseExtractor):
             return None
             
         except Exception as e:
-            logger.debug(f"Error extracting number from Yotpo text: {e}")
+            # logger.debug(f"Error extracting number from Yotpo text: {e}")
             return None
     
     def _extract_product_json_fallback(self) -> Optional[dict]:
@@ -150,9 +150,9 @@ class ShopifyExtractor(BaseExtractor):
                         if isinstance(data, dict) and ('title' in data or 'variants' in data):
                             all_product_data.append(('ProductJson', data))
                             self.fallback_sources.append('ProductJson')
-                            logger.debug(f"Found ProductJson data with keys: {list(data.keys())}")
+                            # logger.debug(f"Found ProductJson data with keys: {list(data.keys())}")
                     except json.JSONDecodeError as e:
-                        logger.debug(f"Failed to parse ProductJson script: {e}")
+                        # logger.debug(f"Failed to parse ProductJson script: {e}")
                         continue
             
             # Method 2: Look for other Shopify-specific script patterns
@@ -169,9 +169,9 @@ class ShopifyExtractor(BaseExtractor):
                                 if product_data and isinstance(product_data, dict):
                                     all_product_data.append(('ShopifyWindow', product_data))
                                     self.fallback_sources.append('ShopifyWindow')
-                                    logger.debug(f"Found Shopify window data with keys: {list(product_data.keys())}")
+                                    # logger.debug(f"Found Shopify window data with keys: {list(product_data.keys())}")
                     except (json.JSONDecodeError, AttributeError) as e:
-                        logger.debug(f"Failed to parse Shopify window script: {e}")
+                        # logger.debug(f"Failed to parse Shopify window script: {e}")
                         continue
             
             # Method 3: Look for meta tags with product information
@@ -179,7 +179,7 @@ class ShopifyExtractor(BaseExtractor):
             if meta_product_data:
                 all_product_data.append(('MetaTags', meta_product_data))
                 self.fallback_sources.append('MetaTags')
-                logger.debug(f"Found meta tag data with keys: {list(meta_product_data.keys())}")
+                # logger.debug(f"Found meta tag data with keys: {list(meta_product_data.keys())}")
             
             # Combine all found data
             if all_product_data:
@@ -237,7 +237,7 @@ class ShopifyExtractor(BaseExtractor):
             return meta_data if meta_data else None
             
         except Exception as e:
-            logger.debug(f"Error extracting meta tag data: {e}")
+            # logger.debug(f"Error extracting meta tag data: {e}")
             return None
     
     def _combine_product_json_data(self, all_product_data: list) -> dict:
@@ -319,7 +319,7 @@ class ShopifyExtractor(BaseExtractor):
             return None
             
         except Exception as e:
-            logger.debug(f"Error extracting price from variant: {e}")
+            # logger.debug(f"Error extracting price from variant: {e}")
             return None
     
     def _detect_yotpo(self) -> bool:
@@ -335,7 +335,7 @@ class ShopifyExtractor(BaseExtractor):
             # Method 1: Check for Yotpo script tags
             yotpo_scripts = soup.find_all('script', src=re.compile(r'yotpo\.com|yotpo'))
             if yotpo_scripts:
-                logger.debug("Yotpo detected via script tags")
+                # logger.debug("Yotpo detected via script tags")
                 return True
             
             # Method 2: Check for Yotpo div elements with various class patterns
@@ -350,32 +350,32 @@ class ShopifyExtractor(BaseExtractor):
             for pattern in yotpo_class_patterns:
                 yotpo_divs = soup.find_all('div', class_=re.compile(pattern, re.IGNORECASE))
                 if yotpo_divs:
-                    logger.debug(f"Yotpo detected via div elements with pattern: {pattern}")
+                    # logger.debug(f"Yotpo detected via div elements with pattern: {pattern}")
                     return True
             
             # Method 3: Check for Yotpo in script content
             scripts = soup.find_all('script')
             for script in scripts:
                 if script.string and ('yotpo' in script.string.lower() or 'Yotpo' in script.string):
-                    logger.debug("Yotpo detected via script content")
+                    # logger.debug("Yotpo detected via script content")
                     return True
             
             # Method 4: Check for Yotpo data attributes
             yotpo_elements = soup.find_all(attrs={'data-yotpo': True})
             if yotpo_elements:
-                logger.debug("Yotpo detected via data attributes")
+                # logger.debug("Yotpo detected via data attributes")
                 return True
             
             # Method 5: Check for Yotpo in meta tags or other attributes
             yotpo_meta = soup.find_all(attrs={'data-yotpo-product-id': True})
             if yotpo_meta:
-                logger.debug("Yotpo detected via product ID attributes")
+                # logger.debug("Yotpo detected via product ID attributes")
                 return True
             
             return False
             
         except Exception as e:
-            logger.debug(f"Error detecting Yotpo: {e}")
+            # logger.debug(f"Error detecting Yotpo: {e}")
             return False
     
     def _extract_yotpo_rating_data(self) -> Dict[str, Any]:
@@ -524,30 +524,30 @@ class ShopifyExtractor(BaseExtractor):
             # Method 1: Script or iframe references to Trustpilot domains
             tp_scripts = soup.find_all('script', src=re.compile(r'trustpilot\.com|tp\.widget', re.IGNORECASE))
             if tp_scripts:
-                logger.debug("Trustpilot detected via script tags")
+                # logger.debug("Trustpilot detected via script tags")
                 return True
                 
             tp_iframes = soup.find_all('iframe', src=re.compile(r'trustpilot\.com|widget\.trustpilot\.com', re.IGNORECASE))
             if tp_iframes:
-                logger.debug("Trustpilot detected via iframe")
+                # logger.debug("Trustpilot detected via iframe")
                 return True
             
             # Method 2: Elements with Trustpilot-related class names
             tp_containers = soup.find_all(attrs={"class": re.compile(r'trustpilot|trustpilot-widget|tp-widget', re.IGNORECASE)})
             if tp_containers:
-                logger.debug("Trustpilot detected via widget class names")
+                # logger.debug("Trustpilot detected via widget class names")
                 return True
             
             # Method 3: Check for Trustpilot mentions in script content
             all_scripts = soup.find_all('script')
             for script in all_scripts:
                 if script.string and re.search(r'trustpilot|widget\.trustpilot\.com', script.string, re.IGNORECASE):
-                    logger.debug("Trustpilot detected via script content")
+                    # logger.debug("Trustpilot detected via script content")
                     return True
             
             return False
         except Exception as e:
-            logger.debug(f"Error detecting Trustpilot: {e}")
+            # logger.debug(f"Error detecting Trustpilot: {e}")
             return False
     
     def _get_trustpilot_data(self) -> Optional[Dict[str, Any]]:
@@ -744,26 +744,26 @@ class ShopifyExtractor(BaseExtractor):
         images = []
         
         # Extract images from structured data (JSON-LD, ProductJson, etc.)
-        logger.debug(f"Product data keys: {list(self.product_data.keys()) if self.product_data else 'None'}")
+        # logger.debug(f"Product data keys: {list(self.product_data.keys()) if self.product_data else 'None'}")
         if self.product_data and self.product_data.get('images'):
             structured_images = self.product_data['images']
-            logger.debug(f"Structured images found: {structured_images}")
-            logger.debug(f"Structured images type: {type(structured_images)}")
+            # logger.debug(f"Structured images found: {structured_images}")
+            # logger.debug(f"Structured images type: {type(structured_images)}")
             
             if isinstance(structured_images, list):
                 # Filter out empty or invalid image URLs and normalize them
                 valid_structured_images = []
                 for img in structured_images:
-                    logger.debug(f"Processing image: {img} (type: {type(img)})")
+                    # logger.debug(f"Processing image: {img} (type: {type(img)})")
                     if img and isinstance(img, str):
                         normalized_url = self._normalize_image_url(img)
                         if normalized_url:
                             valid_structured_images.append(normalized_url)
-                            logger.debug(f"Added normalized image: {normalized_url}")
+                            # logger.debug(f"Added normalized image: {normalized_url}")
                         else:
-                            logger.debug(f"Failed to normalize image: {img}")
+                            pass
                     else:
-                        logger.debug(f"Skipping invalid image: {img}")
+                        pass
                 
                 if valid_structured_images:
                     images.extend(valid_structured_images)
@@ -787,7 +787,7 @@ class ShopifyExtractor(BaseExtractor):
             logger.warning("No images found in product data or product data is None")
         
         # Extract images from Shopify product JSON API
-        logger.debug("Attempting to extract images from Shopify product JSON API...")
+        # logger.debug("Attempting to extract images from Shopify product JSON API...")
         api_images = self._extract_images_from_product_api()
         if api_images:
             images.extend(api_images)
@@ -796,13 +796,13 @@ class ShopifyExtractor(BaseExtractor):
             logger.warning("No images found from Shopify product JSON API")
         
         # Remove duplicates while preserving order
-        logger.debug(f"Total images collected before deduplication: {len(images)}")
-        logger.debug(f"Images array contents: {images}")
+        # logger.debug(f"Total images collected before deduplication: {len(images)}")
+        # logger.debug(f"Images array contents: {images}")
         
         if images:
             unique_images = list(dict.fromkeys(images))
             logger.info(f"Total unique images found: {len(unique_images)}")
-            logger.debug(f"Unique images: {unique_images}")
+            # logger.debug(f"Unique images: {unique_images}")
             return unique_images
         
         logger.warning("No images found from any source")
@@ -819,42 +819,42 @@ class ShopifyExtractor(BaseExtractor):
         Returns:
             Normalized absolute image URL without parameters
         """
-        logger.debug(f"Normalizing image URL: {image_url}")
+        # logger.debug(f"Normalizing image URL: {image_url}")
         
         if not image_url or not isinstance(image_url, str):
-            logger.debug(f"Invalid image URL: {image_url}")
+            # logger.debug(f"Invalid image URL: {image_url}")
             return ""
         
         # Handle protocol-relative URLs (starting with //)
         if image_url.startswith('//'):
             normalized = 'https:' + image_url
-            logger.debug(f"Protocol-relative URL normalized to: {normalized}")
+            # logger.debug(f"Protocol-relative URL normalized to: {normalized}")
         elif image_url.startswith('/'):
             # Handle relative URLs (starting with /)
             from urllib.parse import urlparse
             parsed_url = urlparse(self.url)
             base_url = f"{parsed_url.scheme}://{parsed_url.netloc}"
             normalized = base_url + image_url
-            logger.debug(f"Relative URL normalized to: {normalized}")
+            # logger.debug(f"Relative URL normalized to: {normalized}")
         elif not image_url.startswith(('http://', 'https://')):
             # Handle relative URLs without leading slash
             from urllib.parse import urlparse, urljoin
             parsed_url = urlparse(self.url)
             base_url = f"{parsed_url.scheme}://{parsed_url.netloc}"
             normalized = urljoin(base_url, image_url)
-            logger.debug(f"Relative URL without slash normalized to: {normalized}")
+            # logger.debug(f"Relative URL without slash normalized to: {normalized}")
         else:
             # URL already absolute
             normalized = image_url
-            logger.debug(f"URL already absolute: {image_url}")
+            # logger.debug(f"URL already absolute: {image_url}")
         
         # Remove URL parameters (everything after "?" or "%3F")
         if '?' in normalized:
             normalized = normalized.split('?')[0]
-            logger.debug(f"Removed parameters from URL: {normalized}")
+            # logger.debug(f"Removed parameters from URL: {normalized}")
         elif '%3F' in normalized:
             normalized = normalized.split('%3F')[0]
-            logger.debug(f"Removed URL-encoded parameters from URL: {normalized}")
+            # logger.debug(f"Removed URL-encoded parameters from URL: {normalized}")
         
         return normalized
     
@@ -864,10 +864,10 @@ class ShopifyExtractor(BaseExtractor):
             # Extract product JSON URL from the main URL
             product_json_url = self._build_product_json_url()
             if not product_json_url:
-                logger.debug("No product JSON URL could be built")
+                # logger.debug("No product JSON URL could be built")
                 return []
             
-            logger.debug(f"Fetching images from Shopify API: {product_json_url}")
+            # logger.debug(f"Fetching images from Shopify API: {product_json_url}")
             
             # Fetch JSON data from the API endpoint
             response = requests.get(product_json_url, timeout=10)
@@ -880,7 +880,7 @@ class ShopifyExtractor(BaseExtractor):
             image_objects = product_data.get('product', {}).get('images', [])
             
             if isinstance(image_objects, list):
-                logger.debug(f"Found {len(image_objects)} image objects in product JSON API")
+                # logger.debug(f"Found {len(image_objects)} image objects in product JSON API")
                 for img_obj in image_objects:
                     if isinstance(img_obj, dict):
                         # Try multiple possible image URL fields
@@ -890,13 +890,13 @@ class ShopifyExtractor(BaseExtractor):
                             normalized_src = self._normalize_image_url(src)
                             if normalized_src:
                                 images.append(normalized_src)
-                                logger.debug(f"Added normalized image URL: {normalized_src}")
+                                # logger.debug(f"Added normalized image URL: {normalized_src}")
                             else:
-                                logger.debug(f"Failed to normalize image URL: {src}")
+                                pass
                         else:
-                            logger.debug(f"Image object missing src/url: {img_obj}")
+                            pass
             else:
-                logger.debug(f"Images field is not a list: {type(image_objects)}")
+                pass
             
             logger.info(f"Successfully extracted {len(images)} images from Shopify product JSON API")
             return images
@@ -1426,7 +1426,7 @@ class ShopifyExtractor(BaseExtractor):
             if rating:
                 logger.info(f"Successfully extracted rating {rating} using element-based fallback")
             else:
-                logger.debug("No rating found using element-based fallback")
+                pass
             
             return rating
             
@@ -1510,7 +1510,7 @@ class ShopifyExtractor(BaseExtractor):
             if review_count:
                 logger.info(f"Successfully extracted review count {review_count} using element-based fallback")
             else:
-                logger.debug("No review count found using element-based fallback")
+                pass
             
             return review_count
             

@@ -262,7 +262,7 @@ class BrowserManager:
             try:
                 page.wait_for_load_state('networkidle', timeout=5000)
             except Exception:
-                logger.debug("Network idle timeout, continuing anyway")
+                pass
             
             # Wait for JavaScript execution
             page.wait_for_function(
@@ -323,7 +323,6 @@ class BrowserManager:
                     # Wait for lazy loading to trigger
                     page.wait_for_timeout(1500)
                     
-                    logger.debug(f"Scrolled to {position * 100}% of page")
                 except Exception:
                     logger.warning(f"Scroll timeout at {position * 100}% position")
                     continue

@@ -1187,7 +1187,6 @@ class ScrapingService:
             if result:
                 product_id = result.get('id')
                 logger.info(f"Successfully saved product to Supabase for user {user_id}: {product_data['title']} (ID: {product_id}) linked to short {short_id}")
-                logger.debug(f"Product data saved: {product_data}")
                 
                 return product_id, short_id
             else:
@@ -1250,7 +1249,6 @@ class ScrapingService:
             if result:
                 short_id = result.get('id')
                 logger.info(f"Successfully created shorts entry: Short ID {short_id}")
-                logger.debug(f"Shorts data created: {shorts_data}")
                 return short_id
             else:
                 logger.warning(f"Failed to create shorts entry")

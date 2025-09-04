@@ -566,7 +566,6 @@ class MergingService:
             # Check if this is a Supabase signed URL
             if 'supabase.co' in url and 'token=' in url:
                 logger.info(f"Detected potentially expired Supabase signed URL for user {user_id}, regenerating signed URL for private storage")
-                logger.debug(f"Original URL: {url}")
                 
                 # Extract the file path from the signed URL
                 # URL format: https://.../storage/v1/object/sign/bucket/path?token=...
@@ -610,7 +609,6 @@ class MergingService:
                                     signed_url = str(signed_url_response)
                                 
                                 logger.info(f"Successfully regenerated signed URL for private storage: {signed_url}")
-                                logger.debug(f"Regenerated URL for bucket '{bucket_name}', file path '{file_path}'")
                                 return signed_url
                                 
                             except Exception as regen_error:
@@ -1086,7 +1084,6 @@ class MergingService:
 
             # Don't clean up temporary directory here - let the caller handle cleanup
             # This ensures the file exists when the upload method tries to access it
-            logger.debug(f"Subtitle embedding completed, file available at: {subtitled_path}")
 
             return subtitled_path
 
@@ -1238,14 +1235,12 @@ class MergingService:
             for file_path in file_paths:
                 if os.path.exists(file_path):
                     os.remove(file_path)
-                    logger.debug(f"Cleaned up temporary file: {file_path}")
 
                     # Also remove parent directory if empty
                     parent_dir = os.path.dirname(file_path)
                     if os.path.exists(parent_dir) and not os.listdir(parent_dir):
                         os.rmdir(parent_dir)
-                        logger.debug(
-                            f"Cleaned up empty directory: {parent_dir}")
+                        logger.info(f"Cleaned up empty directory: {parent_dir}")
 
         except Exception as e:
             logger.warning(f"Failed to cleanup some temporary files: {e}")
@@ -1259,7 +1254,6 @@ class MergingService:
             
             if os.path.exists(temp_dir):
                 shutil.rmtree(temp_dir)
-                logger.debug(f"Cleaned up subtitle temp directory: {temp_dir}")
                     
         except Exception as e:
             logger.warning(f"Failed to cleanup subtitle temp directory: {e}")

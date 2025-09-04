@@ -85,7 +85,7 @@ class StructuredDataExtractor:
                 # Check if this is a @graph container
                 if '@graph' in data and isinstance(data['@graph'], list):
                     # Process @graph array
-                    logger.debug("Found @graph array in JSON-LD data")
+                    # logger.debug("Found @graph array in JSON-LD data")
                     for item in data['@graph']:
                         if isinstance(item, dict):
                             item_data = self._extract_data_from_json_ld_item(item)
@@ -99,7 +99,7 @@ class StructuredDataExtractor:
             
             elif isinstance(data, list):
                 # Array of objects
-                logger.debug("Found array in JSON-LD data")
+                # logger.debug("Found array in JSON-LD data")
                 for item in data:
                     if isinstance(item, dict):
                         item_data = self._extract_data_from_json_ld_item(item)
@@ -109,7 +109,7 @@ class StructuredDataExtractor:
             return processed_data
             
         except Exception as e:
-            logger.debug(f"Error processing JSON-LD data: {e}")
+            # logger.debug(f"Error processing JSON-LD data: {e}")
             return []
     
     def _extract_data_from_json_ld_item(self, item: dict) -> List[tuple]:
@@ -143,7 +143,7 @@ class StructuredDataExtractor:
             return extracted_data
             
         except Exception as e:
-            logger.debug(f"Error extracting data from JSON-LD item: {e}")
+            # logger.debug(f"Error extracting data from JSON-LD item: {e}")
             return []
     
     def _normalize_image_url(self, image_url: str) -> str:
@@ -369,7 +369,7 @@ class StructuredDataExtractor:
             return None
             
         except Exception as e:
-            logger.debug(f"Error extracting price from offer: {e}")
+            # logger.debug(f"Error extracting price from offer: {e}")
             return None
     
     def _extract_currency_from_offer(self, offer: dict) -> Optional[str]:
@@ -412,7 +412,7 @@ class StructuredDataExtractor:
             return None
             
         except Exception as e:
-            logger.debug(f"Error extracting currency from offer: {e}")
+            # logger.debug(f"Error extracting currency from offer: {e}")
             return None
     
     def _extract_json_ld_rating_data(self, json_ld_data: dict) -> Optional[dict]:
@@ -442,7 +442,7 @@ class StructuredDataExtractor:
             return rating_data if rating_data else None
             
         except Exception as e:
-            logger.debug(f"Error extracting rating data: {e}")
+            # logger.debug(f"Error extracting rating data: {e}")
             return None
     
     def _extract_price_from_variant(self, variant: dict) -> Optional[str]:

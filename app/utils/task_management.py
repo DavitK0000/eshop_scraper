@@ -591,7 +591,6 @@ class TaskManager:
                     })
                     
                     if success:
-                        logger.debug(f"Updated task {task_id} to step {step_number}: {step_name} in MongoDB")
                         return True
                     else:
                         logger.warning(f"Failed to update progress for task {task_id} in MongoDB, using fallback")
@@ -606,7 +605,6 @@ class TaskManager:
                 task.progress = progress
                 task.task_status_message = step_name
                 task.updated_at = datetime.utcnow()
-                logger.debug(f"Updated task {task_id} to step {step_number}: {step_name} in fallback storage")
                 return True
             else:
                 logger.error(f"Task {task_id} not found in fallback storage")

@@ -404,7 +404,7 @@ class ShopifyExtractor(BaseExtractor):
                 # Check if this is a @graph container
                 if '@graph' in data and isinstance(data['@graph'], list):
                     # Process @graph array
-                    logger.debug("Found @graph array in JSON-LD data")
+                    # logger.debug("Found @graph array in JSON-LD data")
                     for item in data['@graph']:
                         if isinstance(item, dict):
                             item_data = self._extract_data_from_json_ld_item(item)
@@ -418,7 +418,7 @@ class ShopifyExtractor(BaseExtractor):
             
             elif isinstance(data, list):
                 # Array of objects
-                logger.debug("Found array in JSON-LD data")
+                # logger.debug("Found array in JSON-LD data")
                 for item in data:
                     if isinstance(item, dict):
                         item_data = self._extract_data_from_json_ld_item(item)
@@ -428,7 +428,7 @@ class ShopifyExtractor(BaseExtractor):
             return processed_data
             
         except Exception as e:
-            logger.debug(f"Error processing JSON-LD data: {e}")
+            # logger.debug(f"Error processing JSON-LD data: {e}")
             return []
     
     def _extract_data_from_json_ld_item(self, item: dict) -> List[tuple]:
@@ -462,7 +462,7 @@ class ShopifyExtractor(BaseExtractor):
             return extracted_data
             
         except Exception as e:
-            logger.debug(f"Error extracting data from JSON-LD item: {e}")
+            # logger.debug(f"Error extracting data from JSON-LD item: {e}")
             return []
     
     def _combine_product_data(self, all_product_data: list) -> dict:
@@ -932,7 +932,7 @@ class ShopifyExtractor(BaseExtractor):
             return None
             
         except Exception as e:
-            logger.debug(f"Error extracting price from offer: {e}")
+            # logger.debug(f"Error extracting price from offer: {e}")
             return None
     
     def _extract_json_ld_rating_data(self, json_ld_data: dict) -> Optional[dict]:
@@ -1204,9 +1204,9 @@ class ShopifyExtractor(BaseExtractor):
                 found_folder_patterns.add(folder_pattern)
                 # Log the type of pattern found
                 if self._is_image_subdomain(folder_pattern):
-                    logger.debug(f"Found image subdomain pattern: {folder_pattern}")
+                    pass
                 else:
-                    logger.debug(f"Found folder pattern from JSON-LD image: {folder_pattern}")
+                    pass
         
         # If we found folder patterns, search for additional images in img tags
         if found_folder_patterns:
@@ -1264,19 +1264,19 @@ class ShopifyExtractor(BaseExtractor):
             
             # Skip SVG images (icons, logos, graphics)
             if self._is_svg_image(image_url):
-                logger.debug(f"Filtered out SVG image: {image_url}")
+                # logger.debug(f"Filtered out SVG image: {image_url}")
                 continue
             
             # Skip GIF images (animated graphics, icons)
             if self._is_gif_image(image_url):
-                logger.debug(f"Filtered out GIF image: {image_url}")
+                # logger.debug(f"Filtered out GIF image: {image_url}")
                 continue
             
             # Check if image meets minimum width requirement
             if self._check_image_width(image_url, min_width):
                 filtered_images.append(image_url)
             else:
-                logger.debug(f"Filtered out image (width < {min_width}px): {image_url}")
+                pass
         
         return filtered_images
     
@@ -1380,7 +1380,7 @@ class ShopifyExtractor(BaseExtractor):
                 # Multiple URLs, select the best one
                 best_url = self._select_best_image_from_group(url_list)
                 deduplicated_images.append(best_url)
-                logger.debug(f"Deduplicated {len(url_list)} images for base URL: {base_url} -> {best_url}")
+                # logger.debug(f"Deduplicated {len(url_list)} images for base URL: {base_url} -> {best_url}")
         
         return deduplicated_images
     
@@ -1477,7 +1477,7 @@ class ShopifyExtractor(BaseExtractor):
             return None
             
         except Exception as e:
-            logger.debug(f"Error extracting height from URL {image_url}: {e}")
+            # logger.debug(f"Error extracting height from URL {image_url}: {e}")
             return None
     
     def _check_image_width(self, image_url: str, min_width: int) -> bool:
@@ -1520,7 +1520,7 @@ class ShopifyExtractor(BaseExtractor):
             return True
             
         except Exception as e:
-            logger.debug(f"Error checking image width for {image_url}: {e}")
+            # logger.debug(f"Error checking image width for {image_url}: {e}")
             # If we can't check, assume it's acceptable
             return True
     
@@ -1552,7 +1552,7 @@ class ShopifyExtractor(BaseExtractor):
             return None
             
         except Exception as e:
-            logger.debug(f"Error extracting width from URL {image_url}: {e}")
+            # logger.debug(f"Error extracting width from URL {image_url}: {e}")
             return None
     
     def _extract_width_from_img_tag(self, image_url: str) -> Optional[int]:
@@ -1596,7 +1596,7 @@ class ShopifyExtractor(BaseExtractor):
             return None
             
         except Exception as e:
-            logger.debug(f"Error extracting width from img tag for {image_url}: {e}")
+            # logger.debug(f"Error extracting width from img tag for {image_url}: {e}")
             return None
     
     def _extract_width_from_img_tag_attributes(self, img_tag) -> Optional[int]:
@@ -1628,7 +1628,7 @@ class ShopifyExtractor(BaseExtractor):
             return None
             
         except Exception as e:
-            logger.debug(f"Error extracting width from img tag attributes: {e}")
+            # logger.debug(f"Error extracting width from img tag attributes: {e}")
             return None
     
     def _get_shopify_large_image_variant(self, image_url: str) -> Optional[str]:
@@ -1654,7 +1654,7 @@ class ShopifyExtractor(BaseExtractor):
             return None
             
         except Exception as e:
-            logger.debug(f"Error getting Shopify large image variant for {image_url}: {e}")
+            # logger.debug(f"Error getting Shopify large image variant for {image_url}: {e}")
             return None
     
     def _urls_match(self, url1: str, url2: str) -> bool:
@@ -1723,7 +1723,7 @@ class ShopifyExtractor(BaseExtractor):
                 return parsed.netloc
                 
         except Exception as e:
-            logger.debug(f"Error extracting folder pattern from URL {url}: {e}")
+            # logger.debug(f"Error extracting folder pattern from URL {url}: {e}")
             return None
     
     def _is_image_subdomain(self, netloc: str) -> bool:
@@ -1768,7 +1768,7 @@ class ShopifyExtractor(BaseExtractor):
         
         # Find all img tags in the HTML
         img_tags = self.soup.find_all('img')
-        logger.debug(f"Searching {len(img_tags)} img tags for folder patterns: {folder_patterns}")
+        # logger.debug(f"Searching {len(img_tags)} img tags for folder patterns: {folder_patterns}")
         
         for img_tag in img_tags:
             # First check src attribute
@@ -1779,7 +1779,7 @@ class ShopifyExtractor(BaseExtractor):
                 for pattern in folder_patterns:
                     if pattern in src:
                         additional_images.append(src)
-                        logger.debug(f"Found matching image from src: {src} (matches pattern: {pattern})")
+                        # logger.debug(f"Found matching image from src: {src} (matches pattern: {pattern})")
                         break
             
             # Then check srcset attribute (higher priority for responsive images)
@@ -1788,7 +1788,7 @@ class ShopifyExtractor(BaseExtractor):
                 srcset_images = self._parse_srcset_and_filter_by_pattern(srcset, folder_patterns)
                 additional_images.extend(srcset_images)
                 if srcset_images:
-                    logger.debug(f"Found {len(srcset_images)} matching images from srcset")
+                    pass
         
         return additional_images
     
@@ -1824,7 +1824,7 @@ class ShopifyExtractor(BaseExtractor):
                         from urllib.parse import unquote
                         decoded_url = unquote(encoded_url)
                         
-                        logger.debug(f"Extracted Next.js image URL: {decoded_url}")
+                        # logger.debug(f"Extracted Next.js image URL: {decoded_url}")
                         return decoded_url
                 
                 # Alternative: check for 'src' parameter (some Next.js versions use this)
@@ -1835,13 +1835,13 @@ class ShopifyExtractor(BaseExtractor):
                         from urllib.parse import unquote
                         decoded_src = unquote(encoded_src)
                         
-                        logger.debug(f"Extracted Next.js image URL from src: {decoded_src}")
+                        # logger.debug(f"Extracted Next.js image URL from src: {decoded_src}")
                         return decoded_src
             
             return None
             
         except Exception as e:
-            logger.debug(f"Error extracting Next.js image URL from {url}: {e}")
+            # logger.debug(f"Error extracting Next.js image URL from {url}: {e}")
             return None
 
     def _normalize_image_url(self, url: str) -> str:
@@ -1914,7 +1914,7 @@ class ShopifyExtractor(BaseExtractor):
             return [url for url, width in image_groups.values()]
             
         except Exception as e:
-            logger.debug(f"Error parsing srcset: {e}")
+            # logger.debug(f"Error parsing srcset: {e}")
             return []
     
     def _parse_srcset(self, srcset: str) -> List[tuple]:
@@ -1958,7 +1958,7 @@ class ShopifyExtractor(BaseExtractor):
                     items.append((parts[0].strip(), 0))
             
         except Exception as e:
-            logger.debug(f"Error parsing srcset item: {e}")
+            pass
         
         return items
     
@@ -1978,5 +1978,5 @@ class ShopifyExtractor(BaseExtractor):
             return f"{parsed.scheme}://{parsed.netloc}{parsed.path}"
             
         except Exception as e:
-            logger.debug(f"Error getting base URL: {e}")
+            # logger.debug(f"Error getting base URL: {e}")
             return url 

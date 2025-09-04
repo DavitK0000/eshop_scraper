@@ -313,8 +313,7 @@ CRITICAL - FIXED PARAMETERS (DO NOT MODIFY):
 - Style: "{request.style}"
 - Mood: "{request.mood}"  
 - Video Length: {request.video_length} seconds
-- Target Language: "{request.target_language}"{f"
-{environment_context}" if environment_context else ""}
+- Target Language: "{request.target_language}" {environment_context if environment_context else ""}
 
 DEMOGRAPHIC DETECTION REQUIREMENTS:
 - You MUST analyze the product information and automatically detect the target demographics
@@ -382,8 +381,8 @@ IMPORTANT: Generate content using EXACTLY these parameters:
 - Style: "{request.style}"
 - Mood: "{request.mood}"  
 - Video Length: {request.video_length} seconds
-- Target Language: "{request.target_language}"{f"
-- Environment: \"{request.environment}\"" if request.environment else ""}
+- Target Language: "{request.target_language}"
+- Environment: "{request.environment if request.environment else ""}"
 
 CRITICAL DEMOGRAPHIC CONSISTENCY:
 - Analyze the product information and available images to detect target demographics
