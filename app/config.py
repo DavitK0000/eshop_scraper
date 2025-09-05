@@ -301,6 +301,17 @@ class Settings:
     OPENAI_MAX_TOKENS: int = int(os.getenv("OPENAI_MAX_TOKENS", "100"))
     OPENAI_TEMPERATURE: float = float(os.getenv("OPENAI_TEMPERATURE", "0.3"))
     
+    # Google Gemini Settings
+    GEMINI_API_KEY: str = os.getenv("GEMINI_API_KEY", "")
+    GEMINI_ENABLED: bool = os.getenv("GEMINI_ENABLED", "False").lower() == "true"
+    GEMINI_IMAGE_MODEL: str = os.getenv("GEMINI_IMAGE_MODEL", "imagen-4.0-generate-001")
+    GEMINI_VIDEO_MODEL: str = os.getenv("GEMINI_VIDEO_MODEL", "veo-3.0-generate-preview")
+    GEMINI_DEFAULT_IMAGE_SIZE: str = os.getenv("GEMINI_DEFAULT_IMAGE_SIZE", "1K")  # 1K or 2K
+    GEMINI_DEFAULT_ASPECT_RATIO: str = os.getenv("GEMINI_DEFAULT_ASPECT_RATIO", "1:1")  # 1:1, 3:4, 4:3, 9:16, 16:9
+    GEMINI_PERSON_GENERATION: str = os.getenv("GEMINI_PERSON_GENERATION", "allow_adult")  # dont_allow, allow_adult, allow_all
+    GEMINI_MAX_RETRIES: int = int(os.getenv("GEMINI_MAX_RETRIES", "3"))
+    GEMINI_TIMEOUT: int = int(os.getenv("GEMINI_TIMEOUT", "300"))  # 5 minutes
+    
     # MongoDB Settings
     MONGODB_URI: str = os.getenv("MONGODB_URI", "mongodb://localhost:27017")
     MONGODB_DATABASE: str = os.getenv("MONGODB_DATABASE", "eshop_scraper")

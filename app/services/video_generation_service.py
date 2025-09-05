@@ -14,12 +14,13 @@ import uuid
 import threading
 import tempfile
 import httpx
+import base64
 from datetime import datetime
 from typing import Dict, Any, Optional, List
 from pathlib import Path
 
 from app.logging_config import get_logger
-from app.utils.runwayml_utils import runwayml_manager
+from app.utils.gemini_utils import gemini_manager, generate_video_with_prompt_and_image
 from app.utils.supabase_utils import supabase_manager
 from app.utils.credit_utils import credit_manager
 from app.utils.task_management import (
@@ -48,7 +49,7 @@ class VideoGenerationService:
 
     def _get_resolution_mapping(self, video_resolution: str) -> Dict[str, str]:
         """
-        Map video generation ratios to closest image generation ratios.
+        Map video generation ratios to Gemini's supported aspect ratios.
 
         Args:
             video_resolution: Resolution from video_scenarios table (e.g., "1280:720")
@@ -58,24 +59,24 @@ class VideoGenerationService:
         """
         mapping = {
             # 16:9 landscape
-            "1280:720": {"video_ratio": "1280:720", "image_ratio": "1920:1080"},
+            "1280:720": {"video_ratio": "16:9", "image_ratio": "16:9"},
             # 9:16 portrait
-            "720:1280": {"video_ratio": "720:1280", "image_ratio": "1080:1920"},
+            "720:1280": {"video_ratio": "9:16", "image_ratio": "9:16"},
             # 4:3 landscape
-            "1104:832": {"video_ratio": "1104:832", "image_ratio": "1168:880"},
+            "1104:832": {"video_ratio": "4:3", "image_ratio": "4:3"},
             # 3:4 portrait
-            "832:1104": {"video_ratio": "832:1104", "image_ratio": "1080:1440"},
+            "832:1104": {"video_ratio": "3:4", "image_ratio": "3:4"},
             # 1:1 square
-            "960:960": {"video_ratio": "960:960", "image_ratio": "1024:1024"},
+            "960:960": {"video_ratio": "1:1", "image_ratio": "1:1"},
             # 21:9 ultra-wide -> 16:9
-            "1584:672": {"video_ratio": "1584:672", "image_ratio": "1920:1080"},
+            "1584:672": {"video_ratio": "16:9", "image_ratio": "16:9"},
             # 16:9 landscape HD+ -> 16:9
-            "1280:768": {"video_ratio": "1280:768", "image_ratio": "1920:1080"},
+            "1280:768": {"video_ratio": "16:9", "image_ratio": "16:9"},
             # 9:16 portrait HD -> 9:16
-            "768:1280": {"video_ratio": "768:1280", "image_ratio": "1080:1920"},
+            "768:1280": {"video_ratio": "9:16", "image_ratio": "9:16"},
         }
 
-        return mapping.get(video_resolution, {"video_ratio": "720:1280", "image_ratio": "1080:1920"})
+        return mapping.get(video_resolution, {"video_ratio": "9:16", "image_ratio": "9:16"})
 
     def _get_scenario_resolution(self, scene_id: str) -> str:
         """
@@ -438,44 +439,47 @@ class VideoGenerationService:
         # Update progress - starting AI image generation
         update_task_progress(task_id, 2, 'Generating scene image with AI', 35.0)
         
-        # Generate image using RunwayML
+        # Generate image using Gemini
         try:
-            if product_reference_image_url:
-                # Use reference image for style
-                result = self._run_sync(runwayml_manager.generate_image_with_reference_style(
-                    prompt_text=image_prompt,
-                    reference_image=product_reference_image_url,
-                    ratio=image_ratio
-                ))
-            else:
-                # Generate from text only
-                result = self._run_sync(runwayml_manager.generate_image_from_text(
-                    prompt_text=image_prompt,
-                    ratio=image_ratio,
-                    model="gen4_image_turbo"
-                ))
+            # Use the new image generation function that supports both text and reference image
+            result = gemini_manager.generate_image_with_prompt_and_image(
+                prompt=image_prompt,
+                input_image=product_reference_image_url if product_reference_image_url else None,
+                model="gemini-2.5-flash-image-preview",
+                output_path=f"temp_image_{uuid.uuid4()}.png"
+            )
             
-            if not result or not result.get('success') or not result.get('output'):
-                raise Exception("Failed to generate image with RunwayML")
+            if not result or not result.get('success'):
+                error_msg = result.get('error', 'Unknown error') if result else 'No result returned'
+                raise Exception(f"Failed to generate image with Gemini: {error_msg}")
             
-            # Extract image URL from the output
-            image_url = result['output'][0] if isinstance(result['output'], list) else result['output']
+            # Check if image was saved locally
+            if not result.get('image_saved') or not result.get('output_path'):
+                raise Exception("Image was not saved to local storage")
             
-            # Log if fallback methods were used
-            if result.get('retry_success'):
-                logger.info(f"Image generated successfully on retry with fetched images for scene {scene_data['id']}")
-            elif result.get('text_only_fallback'):
-                logger.info(f"Image generated successfully using text-only fallback for scene {scene_data['id']}")
+            # Get the local image path
+            local_image_path = result['output_path']
+            if not os.path.exists(local_image_path):
+                raise Exception(f"Generated image file not found at {local_image_path}")
+            
+            logger.info(f"Successfully generated image for scene {scene_data['id']}")
             
         except Exception as e:
             logger.error(f"Unexpected error during image generation: {e}")
-            raise Exception(f"Failed to generate image with RunwayML: {e}")
+            raise Exception(f"Failed to generate image with Gemini: {e}")
         
-        # Update progress - downloading and storing image
+        # Update progress - uploading image to Supabase
         update_task_progress(task_id, 2, 'Storing generated image', 40.0)
         
-        # Download and store image in Supabase
-        image_url = self._store_image_in_supabase(image_url, user_id)
+        # Upload local image to Supabase
+        image_url = self._store_local_image_in_supabase(local_image_path, user_id)
+        
+        # Clean up local image file
+        try:
+            os.unlink(local_image_path)
+            logger.info(f"Cleaned up temporary image file: {local_image_path}")
+        except Exception as cleanup_error:
+            logger.warning(f"Failed to clean up temporary image file {local_image_path}: {cleanup_error}")
         
         # Deduct credits after successful generation
         credit_manager.deduct_credits(
@@ -488,8 +492,9 @@ class VideoGenerationService:
         
         return image_url
     
-    def _generate_video(self, scene_data: Dict[str, Any], image_url: str, user_id: str, task_id: str) -> str:
+    def _generate_video(self, scene_data: Dict[str, Any], image_url: str, user_id: str, task_id: str) -> tuple[str, str]:
         """Generate video using the image and visual prompt."""
+        temp_video_path = None
         try:
             visual_prompt = scene_data.get('visual_prompt')
             duration = scene_data.get('duration', 5)  # Default 5 seconds
@@ -513,25 +518,37 @@ class VideoGenerationService:
             # Update progress - starting AI video generation
             update_task_progress(task_id, 3, 'Creating video from generated image', 70.0)
             
-            # Generate video using RunwayML
-            result = self._run_sync(runwayml_manager.generate_video_from_image(
-                prompt_image=image_url,
-                prompt_text=visual_prompt,
-                duration=duration,
-                ratio=video_ratio
-            ))
+            # Create temporary file path for video
+            temp_video_path = f"temp_video_{uuid.uuid4()}.mp4"
             
-            if not result or not result.get('success') or not result.get('output'):
-                raise Exception("Failed to generate video with RunwayML")
+            # Generate video using new Gemini function
+            result = generate_video_with_prompt_and_image(
+                prompt=visual_prompt,
+                image_url=image_url,
+                model=settings.GEMINI_VIDEO_MODEL,
+                file_path=temp_video_path,
+                aspect_ratio=video_ratio,
+                number_of_videos=1
+            )
             
-            # Extract video URL from the output
-            video_url = result['output'][0] if isinstance(result['output'], list) else result['output']
+            if not result or not result.get('success'):
+                error_msg = result.get('error', 'Unknown error') if result else 'No result returned'
+                raise Exception(f"Failed to generate video with Gemini: {error_msg}")
             
-            # Update progress - downloading and storing video
+            # Check if video was saved locally
+            if not result.get('video_paths') or not result['video_paths']:
+                raise Exception("Video was not saved to local storage")
+            
+            # Get the video path (should be the temp file we created)
+            video_path = result['video_paths'][0]
+            if not os.path.exists(video_path):
+                raise Exception(f"Generated video file not found at {video_path}")
+            
+            # Update progress - uploading video to Supabase
             update_task_progress(task_id, 3, 'Storing generated video', 75.0)
             
-            # Download and store video in Supabase (returns tuple of public_url, signed_url)
-            public_url, signed_url = self._store_video_in_supabase(video_url, user_id)
+            # Upload the local video file to Supabase
+            public_url, signed_url = self._store_local_video_in_supabase(video_path, user_id)
             
             # Deduct credits after successful generation
             credit_manager.deduct_credits(
@@ -547,16 +564,93 @@ class VideoGenerationService:
         except Exception as e:
             logger.error(f"Failed to generate video for scene {scene_data['id']}: {e}")
             raise
+        finally:
+            # Clean up temporary video file
+            if temp_video_path and os.path.exists(temp_video_path):
+                try:
+                    os.unlink(temp_video_path)
+                    logger.info(f"Cleaned up temporary video file: {temp_video_path}")
+                except Exception as cleanup_error:
+                    logger.warning(f"Failed to clean up temporary video file {temp_video_path}: {cleanup_error}")
     
-    def _store_image_in_supabase(self, image_url: str, user_id: str) -> str:
-        """Download image from RunwayML and store it in Supabase storage."""
+    def _store_local_image_in_supabase(self, image_path: str, user_id: str) -> str:
+        """
+        Upload a local image file to Supabase storage.
+        
+        Args:
+            image_path: Path to the local image file
+            user_id: User ID for organizing files
+            
+        Returns:
+            str: Public URL of the uploaded image
+        """
         for attempt in range(MAX_RETRIES):
             try:
-                # Download image from RunwayML
-                with httpx.Client(timeout=DOWNLOAD_TIMEOUT) as client:
-                    response = client.get(image_url)
-                    response.raise_for_status()
-                    image_data = response.content
+                # Read the local image file
+                with open(image_path, 'rb') as f:
+                    image_data = f.read()
+                
+                # Generate unique filename
+                filename = f"generated_images/{user_id}/{uuid.uuid4()}.png"
+                
+                # Upload to Supabase storage
+                if not supabase_manager.is_connected():
+                    raise Exception("Supabase connection not available")
+                
+                # Upload to generated-content bucket (create if doesn't exist)
+                try:
+                    result = supabase_manager.client.storage.from_('generated-content').upload(
+                        path=filename,
+                        file=image_data,
+                        file_options={'content-type': 'image/png'}
+                    )
+                except Exception as bucket_error:
+                    if "Bucket not found" in str(bucket_error):
+                        logger.warning("Bucket 'generated-content' not found, trying to create it...")
+                        try:
+                            # Try to create the bucket
+                            supabase_manager.client.storage.create_bucket('generated-content', options={"public": True})
+                            logger.info("Created 'generated-content' bucket")
+                            # Retry upload
+                            result = supabase_manager.client.storage.from_('generated-content').upload(
+                                path=filename,
+                                file=image_data,
+                                file_options={'content-type': 'image/png'}
+                            )
+                        except Exception as create_error:
+                            logger.error(f"Failed to create bucket 'generated-content': {create_error}")
+                            raise Exception(f"Storage bucket 'generated-content' not available and could not be created: {create_error}")
+                    else:
+                        raise bucket_error
+                
+                # Get public URL
+                public_url = supabase_manager.client.storage.from_('generated-content').get_public_url(filename)
+                
+                logger.info(f"Stored local image in Supabase: {public_url}")
+                return public_url
+                
+            except Exception as e:
+                if attempt < MAX_RETRIES - 1:
+                    logger.warning(f"Attempt {attempt + 1} failed for local image storage: {e}. Retrying in {RETRY_DELAY} seconds...")
+                    import time
+                    time.sleep(RETRY_DELAY)
+                else:
+                    logger.error(f"Failed to store local image in Supabase after {MAX_RETRIES} attempts: {e}")
+                    raise
+
+    def _store_image_in_supabase(self, image_url: str, user_id: str) -> str:
+        """Download image from RunwayML/Gemini and store it in Supabase storage. Handles both regular URLs and data URIs."""
+        for attempt in range(MAX_RETRIES):
+            try:
+                # Check if it's a data URI
+                if image_url.startswith('data:'):
+                    image_data = self._extract_data_from_uri(image_url)
+                else:
+                    # Download image from URL
+                    with httpx.Client(timeout=DOWNLOAD_TIMEOUT) as client:
+                        response = client.get(image_url)
+                        response.raise_for_status()
+                        image_data = response.content
                 
                 # Generate unique filename
                 filename = f"generated_images/{user_id}/{uuid.uuid4()}.png"
@@ -606,20 +700,117 @@ class VideoGenerationService:
                     logger.error(f"Failed to store image in Supabase after {MAX_RETRIES} attempts: {e}")
                     raise
     
+    def _store_local_video_in_supabase(self, video_path: str, user_id: str) -> tuple[str, str]:
+        """
+        Upload a local video file to Supabase storage.
+        
+        Args:
+            video_path: Path to the local video file
+            user_id: User ID for organizing files
+            
+        Returns:
+            tuple: (public_url, signed_url) - public URL for database, signed URL for immediate access
+        """
+        for attempt in range(MAX_RETRIES):
+            try:
+                # Read the local video file
+                with open(video_path, 'rb') as f:
+                    video_data = f.read()
+                
+                # Generate unique filename
+                filename = f"video-files/{user_id}/{uuid.uuid4()}.mp4"
+                
+                # Upload to Supabase storage
+                if not supabase_manager.is_connected():
+                    raise Exception("Supabase connection not available")
+                
+                # Upload to video-files bucket (create if doesn't exist)
+                try:
+                    result = supabase_manager.client.storage.from_('video-files').upload(
+                        path=filename,
+                        file=video_data,
+                        file_options={'content-type': 'video/mp4'}
+                    )
+                except Exception as bucket_error:
+                    if "Bucket not found" in str(bucket_error):
+                        logger.warning("Bucket 'video-files' not found, trying to create it...")
+                        try:
+                            # Try to create the bucket
+                            supabase_manager.client.storage.create_bucket('video-files', options={"public": False})
+                            logger.info("Created 'video-files' bucket")
+                            # Retry upload
+                            result = supabase_manager.client.storage.from_('video-files').upload(
+                                path=filename,
+                                file=video_data,
+                                file_options={'content-type': 'video/mp4'}
+                            )
+                        except Exception as create_error:
+                            logger.error(f"Failed to create bucket 'video-files': {create_error}")
+                            raise Exception(f"Storage bucket 'video-files' not available and could not be created: {create_error}")
+                    else:
+                        raise bucket_error
+                
+                # Get public URL for storage in database
+                public_url = supabase_manager.client.storage.from_('video-files').get_public_url(filename)
+                
+                # Get signed URL for immediate access
+                signed_url_response = supabase_manager.client.storage.from_('video-files').create_signed_url(
+                    filename, 3600  # 1 hour expiration
+                )
+                
+                # Extract the signed URL string from the response
+                if isinstance(signed_url_response, dict):
+                    if 'signedURL' in signed_url_response:
+                        signed_url = signed_url_response['signedURL']
+                    elif 'signedUrl' in signed_url_response:
+                        signed_url = signed_url_response['signedUrl']
+                    else:
+                        # Try to find any URL-like property
+                        for key, value in signed_url_response.items():
+                            if isinstance(value, str) and value.startswith('http'):
+                                signed_url = value
+                                logger.info(f"Found URL in property '{key}': {signed_url}")
+                                break
+                        else:
+                            raise Exception(f"Could not find signed URL in response: {signed_url_response}")
+                elif isinstance(signed_url_response, str):
+                    signed_url = signed_url_response
+                else:
+                    # Fallback: try to get the first value if it's a different structure
+                    signed_url = str(signed_url_response)
+                    logger.warning(f"Unexpected signed URL response format: {signed_url_response}")
+                
+                logger.info(f"Stored local video in Supabase: public={public_url}, signed={signed_url}")
+                return public_url, signed_url
+                
+            except Exception as e:
+                if attempt < MAX_RETRIES - 1:
+                    logger.warning(f"Attempt {attempt + 1} failed for local video storage: {e}. Retrying in {RETRY_DELAY} seconds...")
+                    import time
+                    time.sleep(RETRY_DELAY)
+                else:
+                    logger.error(f"Failed to store local video in Supabase after {MAX_RETRIES} attempts: {e}")
+                    raise
+
     def _store_video_in_supabase(self, video_url: str, user_id: str) -> tuple[str, str]:
         """
-        Download video from RunwayML and store it in Supabase storage.
+        Download video from RunwayML/Gemini and store it in Supabase storage.
+        Handles both regular URLs and data URIs.
         
         Returns:
             tuple: (public_url, signed_url) - public URL for database, signed URL for immediate access
         """
         for attempt in range(MAX_RETRIES):
             try:
-                # Download video from RunwayML
-                with httpx.Client(timeout=DOWNLOAD_TIMEOUT) as client:
-                    response = client.get(video_url)
-                    response.raise_for_status()
-                    video_data = response.content
+                # Check if it's a data URI
+                if video_url.startswith('data:'):
+                    video_data = self._extract_data_from_uri(video_url)
+                else:
+                    # Download video from URL
+                    with httpx.Client(timeout=DOWNLOAD_TIMEOUT) as client:
+                        response = client.get(video_url)
+                        response.raise_for_status()
+                        video_data = response.content
                 
                 # Generate unique filename
                 filename = f"video-files/{user_id}/{uuid.uuid4()}.mp4"
@@ -696,6 +887,41 @@ class VideoGenerationService:
                     logger.error(f"Failed to store video in Supabase after {MAX_RETRIES} attempts: {e}")
                     raise
     
+    def _extract_data_from_uri(self, data_uri: str) -> bytes:
+        """
+        Extract binary data from a data URI.
+        
+        Args:
+            data_uri: Data URI string (e.g., "data:video/mp4;base64,AAAA...")
+            
+        Returns:
+            Binary data as bytes
+        """
+        try:
+            # Check if it's a valid data URI
+            if not data_uri.startswith('data:'):
+                raise ValueError("Invalid data URI format")
+            
+            # Split the data URI
+            header, data = data_uri.split(',', 1)
+            
+            # Extract MIME type and encoding
+            mime_type = header.split(';')[0].split(':')[1] if ':' in header else 'application/octet-stream'
+            encoding = 'base64' if 'base64' in header else 'url'
+            
+            if encoding != 'base64':
+                raise ValueError(f"Unsupported data URI encoding: {encoding}")
+            
+            # Decode base64 data
+            binary_data = base64.b64decode(data)
+            
+            logger.info(f"Successfully extracted {len(binary_data)} bytes from data URI (MIME: {mime_type})")
+            return binary_data
+            
+        except Exception as e:
+            logger.error(f"Failed to extract data from URI: {e}")
+            raise
+
     def _update_scene_urls(self, scene_id: str, image_url: str, video_url: str):
         """Update the scene with generated image and video URLs."""
         try:
