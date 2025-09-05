@@ -271,9 +271,9 @@ class GeminiManager:
                 # Compress the downloaded image to reduce file size
                 temp_file_path = self._compress_image(temp_file_path)
                 
-                # Convert temporary file to data URI
-                image_uri = self._get_image_as_data_uri(temp_file_path)
-                contents.append(image_uri)
+                # Open image with Pillow and add to contents
+                image = Image.open(temp_file_path)
+                contents.append(image)
             
             # Generate content using Gemini
             response = self.client.models.generate_content(
