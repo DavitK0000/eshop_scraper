@@ -2,8 +2,8 @@
 Video Generation Service
 
 This module provides video generation capabilities including:
-- Image generation using RunwayML
-- Video generation from images using RunwayML
+- Image generation using Google Gemini
+- Video generation from images using Google Gemini
 - Credit management and deduction
 - Supabase storage integration
 - Task management integration
@@ -639,7 +639,7 @@ class VideoGenerationService:
                     raise
 
     def _store_image_in_supabase(self, image_url: str, user_id: str) -> str:
-        """Download image from RunwayML/Gemini and store it in Supabase storage. Handles both regular URLs and data URIs."""
+        """Download image from Gemini and store it in Supabase storage. Handles both regular URLs and data URIs."""
         for attempt in range(MAX_RETRIES):
             try:
                 # Check if it's a data URI
@@ -794,7 +794,7 @@ class VideoGenerationService:
 
     def _store_video_in_supabase(self, video_url: str, user_id: str) -> tuple[str, str]:
         """
-        Download video from RunwayML/Gemini and store it in Supabase storage.
+        Download video from Gemini and store it in Supabase storage.
         Handles both regular URLs and data URIs.
         
         Returns:

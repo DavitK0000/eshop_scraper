@@ -161,6 +161,75 @@ class GeminiManager:
             logger.error(f"Unexpected error downloading image bytes from URL {image_url}: {e}")
             raise
     
+    def _compress_image(self, image_path: str, quality: int = 85, max_size_mb: float = 5.0) -> str:
+        """
+        Compress an image file to reduce file size while maintaining dimensions.
+        
+        Args:
+            image_path: Path to the input image file
+            quality: JPEG quality (1-100, default: 85)
+            max_size_mb: Maximum file size in MB (default: 5.0)
+            
+        Returns:
+            Path to the compressed image file (may be the same as input if already small enough)
+        """
+        try:
+            if not PIL_AVAILABLE:
+                logger.warning("Pillow not available, skipping image compression")
+                return image_path
+            
+            # Check current file size
+            current_size_mb = os.path.getsize(image_path) / (1024 * 1024)
+            logger.info(f"Original image size: {current_size_mb:.2f} MB")
+            
+            # If already small enough, return original path
+            if current_size_mb <= max_size_mb:
+                logger.info(f"Image size ({current_size_mb:.2f} MB) is already within limit ({max_size_mb} MB)")
+                return image_path
+            
+            # Open the image
+            with Image.open(image_path) as img:
+                # Convert to RGB if necessary (JPEG doesn't support RGBA)
+                if img.mode in ('RGBA', 'LA', 'P'):
+                    # Create white background for transparent images
+                    background = Image.new('RGB', img.size, (255, 255, 255))
+                    if img.mode == 'P':
+                        img = img.convert('RGBA')
+                    background.paste(img, mask=img.split()[-1] if img.mode == 'RGBA' else None)
+                    img = background
+                elif img.mode != 'RGB':
+                    img = img.convert('RGB')
+                
+                # Create compressed version
+                compressed_path = image_path.replace('.', '_compressed.')
+                
+                # Try different quality levels until we get under the size limit
+                current_quality = quality
+                while current_quality > 10 and os.path.getsize(image_path) / (1024 * 1024) > max_size_mb:
+                    img.save(compressed_path, 'JPEG', quality=current_quality, optimize=True)
+                    
+                    compressed_size_mb = os.path.getsize(compressed_path) / (1024 * 1024)
+                    logger.info(f"Compressed with quality {current_quality}: {compressed_size_mb:.2f} MB")
+                    
+                    if compressed_size_mb <= max_size_mb:
+                        break
+                    
+                    current_quality -= 10
+                
+                # Replace original with compressed version
+                if os.path.exists(compressed_path):
+                    os.replace(compressed_path, image_path)
+                    final_size_mb = os.path.getsize(image_path) / (1024 * 1024)
+                    logger.info(f"Image compressed successfully: {current_size_mb:.2f} MB -> {final_size_mb:.2f} MB")
+                else:
+                    logger.warning("Compression failed, using original image")
+            
+            return image_path
+            
+        except Exception as e:
+            logger.error(f"Failed to compress image {image_path}: {e}")
+            return image_path
+    
     def generate_image_with_prompt_and_image(
         self,
         prompt: str,
@@ -198,6 +267,9 @@ class GeminiManager:
             if input_image:
                 # Download image from URL to temporary file
                 temp_file_path = self._download_image_from_url(str(input_image))
+                
+                # Compress the downloaded image to reduce file size
+                temp_file_path = self._compress_image(temp_file_path)
                 
                 # Convert temporary file to data URI
                 image_uri = self._get_image_as_data_uri(temp_file_path)
