@@ -312,6 +312,14 @@ class Settings:
     GEMINI_MAX_RETRIES: int = int(os.getenv("GEMINI_MAX_RETRIES", "3"))
     GEMINI_TIMEOUT: int = int(os.getenv("GEMINI_TIMEOUT", "300"))  # 5 minutes
     
+    # Flux API Settings (Black Forest Labs)
+    BFL_API_KEY: str = os.getenv("BFL_API_KEY", "")
+    BFL_ENABLED: bool = os.getenv("BFL_ENABLED", "False").lower() == "true"
+    BFL_DEFAULT_MODEL: str = os.getenv("BFL_DEFAULT_MODEL", "flux-kontext-pro")
+    BFL_MAX_RETRIES: int = int(os.getenv("BFL_MAX_RETRIES", "3"))
+    BFL_TIMEOUT: int = int(os.getenv("BFL_TIMEOUT", "300"))  # 5 minutes
+    BFL_POLLING_INTERVAL: float = float(os.getenv("BFL_POLLING_INTERVAL", "0.5"))  # 0.5 seconds
+    
     # MongoDB Settings
     MONGODB_URI: str = os.getenv("MONGODB_URI", "mongodb://localhost:27017")
     MONGODB_DATABASE: str = os.getenv("MONGODB_DATABASE", "eshop_scraper")

@@ -1,6 +1,6 @@
 """
 Scenario Generation Service for creating AI-powered video scenarios.
-Handles OpenAI API calls for scenario generation and RunwayML for image generation.
+Handles OpenAI API calls for scenario generation and Flux API for image generation.
 """
 
 import threading
@@ -15,7 +15,7 @@ from app.models import (
     Scene, AudioScript, DetectedDemographics, TaskStatus
 )
 
-from app.utils.runwayml_utils import RunwayMLManager
+from app.utils.flux_utils import flux_manager
 from app.utils.task_management import (
     create_task, start_task, update_task_progress,
     complete_task, fail_task, TaskType, TaskStatus as TMStatus
@@ -33,7 +33,6 @@ class ScenarioGenerationService:
 
     def __init__(self):
         self.openai_client = None
-        self.runwayml_manager = RunwayMLManager()
         self._initialize_openai()
 
     def _initialize_openai(self):
@@ -582,10 +581,10 @@ Ensure all content is family-friendly, professional, and passes content moderati
 
     
     async def _generate_thumbnail_image(self, request: ScenarioGenerationRequest, scenario: GeneratedScenario) -> Optional[str]:
-        """Generate thumbnail image for the scenario using RunwayML"""
+        """Generate thumbnail image for the scenario using Flux API"""
         try:
-            if not self.runwayml_manager.is_available():
-                logger.warning("RunwayML not available, skipping thumbnail generation")
+            if not flux_manager.is_available():
+                logger.warning("Flux API not available, skipping thumbnail generation")
                 return None
             
             # Use the AI-generated thumbnail prompt from the scenario
@@ -594,71 +593,86 @@ Ensure all content is family-friendly, professional, and passes content moderati
                 logger.warning("No thumbnail prompt found in scenario, using fallback")
                 thumbnail_prompt = f"Create an eye-catching thumbnail for a video about {scenario.title}"
             
-            # Map resolution to RunwayML ratio for thumbnail
-            runway_ratio = self._map_resolution_to_runway_ratio(request.resolution)
-            logger.info(f"Generating thumbnail with ratio: {runway_ratio}")
+            # Enhance the prompt with style and mood
+            enhanced_prompt = self._enhance_image_prompt(thumbnail_prompt, request.style, request.mood)
             
             # Use the first available product image as reference if available
-            reference_images = []
+            reference_image_url = None
             if scenario.scenes and len(scenario.scenes) > 0:
                 first_scene = scenario.scenes[0]
                 if first_scene.product_reference_image_url:
-                    reference_images = [{"uri": first_scene.product_reference_image_url, "tag": "reference"}]
-                    logger.info(f"Using product reference image for thumbnail: {first_scene.product_reference_image_url}")
+                    reference_image_url = first_scene.product_reference_image_url
+                    logger.info(f"Using product reference image for thumbnail: {reference_image_url}")
             
-            enhanced_prompt = self._enhance_image_prompt(thumbnail_prompt, request.style, request.mood)
+            logger.info("Calling Flux API for thumbnail generation...")
             
-            logger.info("Calling RunwayML generate_image_from_text for thumbnail...")
-            result = await self.runwayml_manager.generate_image_from_text(
-                prompt_text=enhanced_prompt,
-                ratio=runway_ratio,
-                model="gen4_image_turbo",
-                reference_images=reference_images
+            # Generate image using Flux API
+            result = flux_manager.generate_image_with_prompt_and_image(
+                prompt=enhanced_prompt,
+                input_image=reference_image_url,
+                model=settings.BFL_DEFAULT_MODEL,
+                output_path=f"temp_thumbnail_{scenario.title.replace(' ', '_')}.png"
             )
             
-            logger.info(f"RunwayML thumbnail result: {result}")
+            logger.info(f"Flux API thumbnail result: {result}")
             
-            if result and isinstance(result, dict):
-                if result.get('success') and result.get('output'):
-                    if isinstance(result['output'], list) and len(result['output']) > 0:
-                        generated_url = result['output'][0]
-                        logger.info(f"Successfully generated thumbnail: {generated_url}")
-                        return generated_url
-                    elif isinstance(result['output'], str):
-                        logger.info(f"Successfully generated thumbnail: {result['output']}")
-                        return result['output']
-                    else:
-                        logger.warning(f"Unexpected thumbnail output format: {type(result['output'])}")
+            if result and result.get('success'):
+                if result.get('image_saved') and result.get('output_path'):
+                    # Upload the generated image to Supabase and return the URL
+                    try:
+                        import uuid
+                        from app.utils.supabase_utils import supabase_manager
+                        
+                        # Read the generated image file
+                        with open(result['output_path'], 'rb') as f:
+                            image_data = f.read()
+                        
+                        # Generate unique filename
+                        filename = f"thumbnails/{uuid.uuid4()}.png"
+                        
+                        # Upload to Supabase storage
+                        if supabase_manager.is_connected():
+                            # Upload to generated-content bucket
+                            try:
+                                supabase_manager.client.storage.from_('generated-content').upload(
+                                    path=filename,
+                                    file=image_data,
+                                    file_options={'content-type': 'image/png'}
+                                )
+                                
+                                # Get public URL
+                                public_url = supabase_manager.client.storage.from_('generated-content').get_public_url(filename)
+                                
+                                # Clean up local file
+                                import os
+                                os.unlink(result['output_path'])
+                                
+                                logger.info(f"Successfully generated and uploaded thumbnail: {public_url}")
+                                return public_url
+                                
+                            except Exception as upload_error:
+                                logger.error(f"Failed to upload thumbnail to Supabase: {upload_error}")
+                                # Clean up local file
+                                import os
+                                if os.path.exists(result['output_path']):
+                                    os.unlink(result['output_path'])
+                        else:
+                            logger.error("Supabase not connected, cannot upload thumbnail")
+                            # Clean up local file
+                            import os
+                            if os.path.exists(result['output_path']):
+                                os.unlink(result['output_path'])
+                    except Exception as upload_error:
+                        logger.error(f"Failed to process generated thumbnail: {upload_error}")
+                        # Clean up local file
+                        import os
+                        if os.path.exists(result['output_path']):
+                            os.unlink(result['output_path'])
                 else:
-                    error_msg = result.get('error', 'Unknown error') if result else 'No result returned'
-                    logger.warning(f"Thumbnail generation failed: {error_msg}")
-                    
-                    # If reference images failed, try text-only generation
-                    if reference_images and "referenceImages" in str(error_msg):
-                        logger.info("Reference image thumbnail generation failed, trying text-only generation...")
-                        try:
-                            text_only_result = await self.runwayml_manager.generate_image_from_text(
-                                prompt_text=enhanced_prompt,
-                                ratio=runway_ratio,
-                                model="gen4_image",
-                                reference_images=[]  # No reference images
-                            )
-                            
-                            if text_only_result and isinstance(text_only_result, dict):
-                                if text_only_result.get('success') and text_only_result.get('output'):
-                                    if isinstance(text_only_result['output'], list) and len(text_only_result['output']) > 0:
-                                        generated_url = text_only_result['output'][0]
-                                        logger.info(f"Text-only thumbnail generation successful: {generated_url}")
-                                        return generated_url
-                                    elif isinstance(text_only_result['output'], str):
-                                        logger.info(f"Text-only thumbnail generation successful: {text_only_result['output']}")
-                                        return text_only_result['output']
-                            
-                            logger.warning("Text-only thumbnail generation also failed")
-                        except Exception as text_only_error:
-                            logger.warning(f"Text-only thumbnail generation failed: {text_only_error}")
+                    logger.warning("Thumbnail generation succeeded but image was not saved locally")
             else:
-                logger.warning(f"Unexpected thumbnail result type: {type(result)}")
+                error_msg = result.get('error', 'Unknown error') if result else 'No result returned'
+                logger.warning(f"Thumbnail generation failed: {error_msg}")
             
             return None
             
@@ -666,16 +680,6 @@ Ensure all content is family-friendly, professional, and passes content moderati
             logger.error(f"Failed to generate thumbnail image: {e}", exc_info=True)
             return None
     
-    def _map_resolution_to_runway_ratio(self, resolution: str) -> str:
-        """Map video resolution to RunwayML image generation ratios"""
-        ratio_mapping = {
-            "1280:720": "1920:1080",
-            "720:1280": "1080:1920",
-            "1104:832": "1168:880",
-            "832:1104": "1080:1440",
-            "960:960": "1024:1024",
-        }
-        return ratio_mapping.get(resolution, "1080:1920")
     
     def _enhance_image_prompt(self, base_prompt: str, style: str, mood: str) -> str:
         """Enhance image prompt with style and mood specific details"""

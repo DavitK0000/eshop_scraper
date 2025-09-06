@@ -2,7 +2,7 @@
 Video Generation Service
 
 This module provides video generation capabilities including:
-- Image generation using Google Gemini
+- Image generation using Flux API (Black Forest Labs)
 - Video generation from images using Google Gemini
 - Credit management and deduction
 - Supabase storage integration
@@ -20,7 +20,8 @@ from typing import Dict, Any, Optional, List
 from pathlib import Path
 
 from app.logging_config import get_logger
-from app.utils.gemini_utils import gemini_manager, generate_video_with_prompt_and_image
+from app.utils.gemini_utils import generate_video_with_prompt_and_image
+from app.utils.flux_utils import flux_manager
 from app.utils.supabase_utils import supabase_manager
 from app.utils.credit_utils import credit_manager
 from app.utils.task_management import (
@@ -439,19 +440,19 @@ class VideoGenerationService:
         # Update progress - starting AI image generation
         update_task_progress(task_id, 2, 'Generating scene image with AI', 35.0)
         
-        # Generate image using Gemini
+        # Generate image using Flux API
         try:
-            # Use the new image generation function that supports both text and reference image
-            result = gemini_manager.generate_image_with_prompt_and_image(
+            # Use Flux API for image generation with both text and reference image
+            result = flux_manager.generate_image_with_prompt_and_image(
                 prompt=image_prompt,
                 input_image=product_reference_image_url if product_reference_image_url else None,
-                model="gemini-2.5-flash-image-preview",
+                model=settings.BFL_DEFAULT_MODEL,
                 output_path=f"temp_image_{uuid.uuid4()}.png"
             )
             
             if not result or not result.get('success'):
                 error_msg = result.get('error', 'Unknown error') if result else 'No result returned'
-                raise Exception(f"Failed to generate image with Gemini: {error_msg}")
+                raise Exception(f"Failed to generate image with Flux API: {error_msg}")
             
             # Check if image was saved locally
             if not result.get('image_saved') or not result.get('output_path'):
@@ -466,7 +467,7 @@ class VideoGenerationService:
             
         except Exception as e:
             logger.error(f"Unexpected error during image generation: {e}")
-            raise Exception(f"Failed to generate image with Gemini: {e}")
+            raise Exception(f"Failed to generate image with Flux API: {e}")
         
         # Update progress - uploading image to Supabase
         update_task_progress(task_id, 2, 'Storing generated image', 40.0)
