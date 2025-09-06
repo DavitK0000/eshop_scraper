@@ -230,9 +230,13 @@ class FluxManager:
                 if result_data['status'] == 'Ready':
                     logger.info(f"Image generation completed successfully: {result_data['result']['sample']}")
                     return result_data
-                elif result_data['status'] in ['Error', 'Failed']:
-                    error_msg = f"Image generation failed: {result_data}"
-                    logger.error(error_msg)
+                elif result_data['status'] in ['Error', 'Failed', 'Request Moderated', 'Content Moderated']:
+                    if result_data['status'] in ['Request Moderated', 'Content Moderated']:
+                        error_msg = f"Image generation failed due to content moderation: {result_data['status']}"
+                        logger.warning(error_msg)
+                    else:
+                        error_msg = f"Image generation failed: {result_data}"
+                        logger.error(error_msg)
                     raise Exception(error_msg)
                 else:
                     # Still processing, wait and continue
@@ -246,7 +250,7 @@ class FluxManager:
                 logger.error(f"Unexpected error during polling: {e}")
                 raise
     
-    def generate_image_with_prompt_and_image(
+    def _generate_image_core(
         self,
         prompt: str,
         input_image: Union[str, Path, None] = None,
@@ -255,7 +259,7 @@ class FluxManager:
         aspect_ratio: str = "16:9"
     ) -> Dict[str, Any]:
         """
-        Generate an image using Flux API with a text prompt and optional input image.
+        Core image generation logic without retry mechanism.
         
         Args:
             prompt: Text prompt for image generation
@@ -266,6 +270,9 @@ class FluxManager:
             
         Returns:
             Dictionary containing generation results and image path
+            
+        Raises:
+            Exception: If image generation fails
         """
         if not self.is_available():
             raise RuntimeError("Flux API is not available or properly configured")
@@ -387,6 +394,104 @@ class FluxManager:
                     logger.info(f"Cleaned up temporary file: {temp_file_path}")
                 except Exception as e:
                     logger.warning(f"Failed to clean up temporary file {temp_file_path}: {e}")
+
+    def generate_image_with_prompt_and_image(
+        self,
+        prompt: str,
+        input_image: Union[str, Path, None] = None,
+        model: Optional[str] = None,
+        output_path: str = "generated_image.png",
+        aspect_ratio: str = "16:9"
+    ) -> Dict[str, Any]:
+        """
+        Generate an image using Flux API with retry logic.
+        
+        Args:
+            prompt: Text prompt for image generation
+            input_image: Optional URL or path to input image
+            model: Flux model to use (default: flux-kontext-pro)
+            output_path: Path to save the generated image
+            aspect_ratio: Aspect ratio for the generated image (default: "16:9")
+            
+        Returns:
+            Dictionary containing generation results and image path
+        """
+        last_exception = None
+        
+        for attempt in range(self.max_retries):
+            try:
+                logger.info(f"Image generation attempt {attempt + 1}/{self.max_retries}")
+                
+                result = self._generate_image_core(
+                    prompt=prompt,
+                    input_image=input_image,
+                    model=model,
+                    output_path=output_path,
+                    aspect_ratio=aspect_ratio
+                )
+                
+                # If we get here, generation was successful
+                if attempt > 0:
+                    logger.info(f"Image generation succeeded on attempt {attempt + 1}")
+                return result
+                
+            except Exception as e:
+                last_exception = e
+                logger.warning(f"Image generation attempt {attempt + 1} failed: {e}")
+                
+                # Don't retry for certain types of errors
+                if self._should_not_retry(e):
+                    logger.error(f"Non-retryable error encountered: {e}")
+                    break
+                
+                # If this was the last attempt, don't wait
+                if attempt < self.max_retries - 1:
+                    wait_time = min(2 ** attempt, 30)  # Exponential backoff, max 30 seconds
+                    logger.info(f"Waiting {wait_time} seconds before retry...")
+                    time.sleep(wait_time)
+        
+        # All retries failed
+        logger.error(f"Image generation failed after {self.max_retries} attempts")
+        return {
+            "success": False,
+            "error": f"Failed after {self.max_retries} attempts. Last error: {str(last_exception)}",
+            "model": model,
+            "prompt": prompt,
+            "input_image": str(input_image) if input_image else None,
+            "aspect_ratio": aspect_ratio,
+            "status": "error",
+            "attempts": self.max_retries
+        }
+    
+    def _should_not_retry(self, exception: Exception) -> bool:
+        """
+        Determine if an exception should not trigger a retry.
+        
+        Args:
+            exception: The exception that occurred
+            
+        Returns:
+            True if the exception should not trigger a retry
+        """
+        error_message = str(exception).lower()
+        
+        # Don't retry for configuration errors
+        if "not available" in error_message or "not configured" in error_message:
+            return True
+        
+        # Don't retry for content moderation errors
+        if "moderated" in error_message:
+            return True
+        
+        # Don't retry for invalid input errors
+        if "invalid" in error_message and ("prompt" in error_message or "aspect" in error_message):
+            return True
+        
+        # Don't retry for authentication errors
+        if "unauthorized" in error_message or "forbidden" in error_message:
+            return True
+        
+        return False
 
 
 # Global instance for easy access
