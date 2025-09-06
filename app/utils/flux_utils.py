@@ -325,7 +325,7 @@ class FluxManager:
             # Make the initial API request
             logger.info("Submitting image generation request to Flux API...")
             response = requests.post(
-                'https://api.bfl.ai/v1/flux-kontext-max',
+                'https://api.bfl.ai/v1/flux-kontext-pro',
                 headers={
                     'accept': 'application/json',
                     'x-key': self.api_key,

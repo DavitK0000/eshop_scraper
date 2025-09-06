@@ -250,9 +250,12 @@ class VideoGenerationService:
                 raise Exception(f"Invalid task_id returned: {task_id}")
 
             # Start processing in background thread
+            def run_async_task():
+                import asyncio
+                asyncio.run(self._process_video_generation_task(task_id, scene_id, user_id))
+            
             thread = threading.Thread(
-                target=self._process_video_generation_task,
-                args=(task_id, scene_id, user_id),
+                target=run_async_task,
                 daemon=True
             )
             thread.start()
@@ -353,7 +356,7 @@ class VideoGenerationService:
         except Exception as e:
             logger.error(f"Failed to update task {task_id}: {e}")
     
-    def _process_video_generation_task(self, task_id: str, scene_id: str, user_id: str):
+    async def _process_video_generation_task(self, task_id: str, scene_id: str, user_id: str):
         """Process the video generation task in a background thread."""
         try:
             logger.info(f"Starting video generation task {task_id} for scene {scene_id}")
@@ -368,7 +371,7 @@ class VideoGenerationService:
             
             # Step 2: Generate image if needed
             update_task_progress(task_id, 2, 'Generating scene image with AI', 45.0)
-            image_url = self._generate_image_if_needed(scene_data, user_id, task_id)
+            image_url = await self._generate_image_if_needed(scene_data, user_id, task_id)
             
             # Step 3: Generate video
             update_task_progress(task_id, 3, 'Creating video from generated image', 80.0)
@@ -411,7 +414,7 @@ class VideoGenerationService:
             logger.error(f"Failed to fetch scene data for {scene_id}: {e}")
             raise
     
-    def _generate_image_if_needed(self, scene_data: Dict[str, Any], user_id: str, task_id: str) -> str:
+    async def _generate_image_if_needed(self, scene_data: Dict[str, Any], user_id: str, task_id: str) -> str:
         """Generate image if it doesn't exist, otherwise return existing image URL."""
         # Check if image already exists
         if scene_data.get('image_url'):
@@ -496,7 +499,8 @@ class VideoGenerationService:
                         # Continue without reference image
                 
                 # Generate image using RunwayML
-                runwayml_result = generate_image_from_text(
+                import asyncio
+                runwayml_result = await generate_image_from_text(
                     prompt_text=image_prompt,
                     ratio=runwayml_ratio,
                     model="gen4_image",

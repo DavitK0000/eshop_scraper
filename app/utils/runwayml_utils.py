@@ -279,7 +279,7 @@ class RunwayMLManager:
             
             # Prepare request parameters
             request_params = {
-                "promptText": prompt_text,
+                "prompt_text": prompt_text,
                 "ratio": ratio,
                 "model": model
             }
@@ -289,10 +289,10 @@ class RunwayMLManager:
                 request_params["seed"] = seed
             
             if reference_images:
-                request_params["referenceImages"] = reference_images
+                request_params["reference_images"] = reference_images
             
             if content_moderation:
-                request_params["contentModeration"] = content_moderation
+                request_params["content_moderation"] = content_moderation
             
             # Add any additional kwargs
             request_params.update(kwargs)
