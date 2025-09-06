@@ -244,3 +244,19 @@ class SaveScenarioResponse(BaseModel):
     error_message: Optional[str] = Field(None, description="Error message if failed")
     scenario_id: Optional[str] = Field(None, description="Generated scenario ID when task is completed")
     completed_at: Optional[datetime] = Field(None, description="When the task was completed")
+
+
+# Test Audio Models
+class TestAudioRequest(BaseModel):
+    voice_id: str = Field(..., description="ElevenLabs voice ID for test audio")
+    language: str = Field(..., description="Language code for the test audio (e.g., 'en-US', 'es', 'fr')")
+    user_id: str = Field(..., description="User ID associated with the request")
+
+class TestAudioResponse(BaseModel):
+    voice_id: str = Field(..., description="Voice ID used for test audio")
+    language: str = Field(..., description="Language code used")
+    audio_url: str = Field(..., description="URL of the test audio")
+    user_id: str = Field(..., description="User ID who requested the audio")
+    created_at: datetime = Field(..., description="When the test audio was generated")
+    is_cached: bool = Field(False, description="Whether this was a cached result")
+    message: str = Field(..., description="Status message")

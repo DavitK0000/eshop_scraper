@@ -10,7 +10,8 @@ from app.models import (
     ScrapeRequest, TaskStatusResponse, HealthResponse,
     TaskStatus, VideoGenerationRequest, VideoGenerationResponse,
     FinalizeShortRequest, FinalizeShortResponse, ImageAnalysisRequest, ImageAnalysisResponse,
-    ScenarioGenerationRequest, ScenarioGenerationResponse, SaveScenarioRequest, SaveScenarioResponse
+    ScenarioGenerationRequest, ScenarioGenerationResponse, SaveScenarioRequest, SaveScenarioResponse,
+    TestAudioRequest, TestAudioResponse
 )
 from app.services.scraping_service import scraping_service
 from app.services.video_generation_service import video_generation_service
@@ -18,6 +19,7 @@ from app.services.merging_service import merging_service
 from app.services.image_analysis_service import image_analysis_service
 from app.services.scenario_generation_service import scenario_generation_service
 from app.services.save_scenario_service import save_scenario_service
+from app.services.test_audio_service import test_audio_service
 from app.services.scheduler_service import get_scheduler_status, run_cleanup_now
 from app.config import settings
 from app.security import (
@@ -1045,4 +1047,51 @@ def trigger_cleanup_now():
         }
     except Exception as e:
         logger.error(f"Error triggering manual cleanup: {e}", exc_info=True)
-        raise HTTPException(status_code=500, detail=f"Failed to trigger cleanup: {str(e)}") 
+        raise HTTPException(status_code=500, detail=f"Failed to trigger cleanup: {str(e)}")
+
+
+# ============================================================================
+# Test Audio Endpoints
+# ============================================================================
+
+@router.post("/test-audio", response_model=TestAudioResponse)
+def get_test_audio(
+    request: TestAudioRequest,
+    http_request: Request = None,
+    api_key: Optional[str] = Depends(get_api_key)
+) -> TestAudioResponse:
+    """
+    Get or generate test audio for a specific voice and language.
+    
+    This endpoint checks if test audio already exists in MongoDB for the given
+    voice_id and language combination. If it exists, it returns the cached URL.
+    If not, it generates new test audio using ElevenLabs and stores it for future use.
+    
+    Supported languages:
+    - en-US, en-CA, en-GB (English variants)
+    - es, es-MX (Spanish variants)
+    - pt-BR (Portuguese - Brazil)
+    - fr (French)
+    - de (German)
+    - nl (Dutch)
+    
+    Authentication: Optional API key via Bearer token
+    Rate Limits: Based on API key configuration
+    """
+    try:
+        # Security validation - DISABLED FOR DEVELOPMENT
+        # TODO: Re-enable security checks for production by uncommenting the lines below
+        # validate_request_security(http_request, api_key)
+        
+        logger.info(f"Getting test audio for voice {request.voice_id} in language {request.language} by user {request.user_id}")
+        
+        # Get test audio using the service
+        response = test_audio_service.get_test_audio(request)
+        
+        logger.info(f"Test audio request completed for voice {request.voice_id}")
+        
+        return response
+        
+    except Exception as e:
+        logger.error(f"Error in test audio endpoint: {e}", exc_info=True)
+        raise HTTPException(status_code=500, detail=f"Test audio request failed: {str(e)}") 

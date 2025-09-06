@@ -375,7 +375,7 @@ class GeminiManager:
             # Generate content using Gemini with only text prompt
             response = self.client.models.generate_content(
                 model=model,
-                contents=[prompt],
+                contents=[prompt]
             )
             
             # Process the response

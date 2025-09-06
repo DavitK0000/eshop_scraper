@@ -321,6 +321,14 @@ class Settings:
     MONGODB_CONNECT_TIMEOUT: int = int(os.getenv("MONGODB_CONNECT_TIMEOUT", "20000"))
     MONGODB_SOCKET_TIMEOUT: int = int(os.getenv("MONGODB_SOCKET_TIMEOUT", "30000"))
     
+    # ElevenLabs Settings
+    ELEVENLABS_API_KEY: str = os.getenv("ELEVENLABS_API_KEY", "")
+    ELEVENLABS_ENABLED: bool = os.getenv("ELEVENLABS_ENABLED", "False").lower() == "true"
+    ELEVENLABS_DEFAULT_MODEL: str = os.getenv("ELEVENLABS_DEFAULT_MODEL", "eleven_multilingual_v2")
+    ELEVENLABS_DEFAULT_OUTPUT_FORMAT: str = os.getenv("ELEVENLABS_DEFAULT_OUTPUT_FORMAT", "mp3_44100_128")
+    ELEVENLABS_MAX_RETRIES: int = int(os.getenv("ELEVENLABS_MAX_RETRIES", "3"))
+    ELEVENLABS_TIMEOUT: int = int(os.getenv("ELEVENLABS_TIMEOUT", "60"))  # 1 minute
+    
     # Scheduler Settings
     CLEANUP_INTERVAL_HOURS: int = int(os.getenv("CLEANUP_INTERVAL_HOURS", "24"))
     CLEANUP_DAYS_THRESHOLD: int = int(os.getenv("CLEANUP_DAYS_THRESHOLD", "2"))
