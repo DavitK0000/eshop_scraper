@@ -475,6 +475,9 @@ class VideoGenerationService:
         # Upload local image to Supabase
         image_url = self._store_local_image_in_supabase(local_image_path, user_id)
         
+        # Update the scene with the generated image URL
+        self._update_scene_image_url(scene_data['id'], image_url)
+        
         # Clean up local image file
         try:
             os.unlink(local_image_path)
@@ -921,6 +924,27 @@ class VideoGenerationService:
             
         except Exception as e:
             logger.error(f"Failed to extract data from URI: {e}")
+            raise
+
+    def _update_scene_image_url(self, scene_id: str, image_url: str):
+        """Update the scene with generated image URL."""
+        try:
+            if not supabase_manager.is_connected():
+                raise Exception("Supabase connection not available")
+            
+            # Update scene with image URL
+            result = supabase_manager.client.table('video_scenes').update({
+                'image_url': image_url,
+                'updated_at': datetime.now().isoformat()
+            }).eq('id', scene_id).execute()
+            
+            if not result.data:
+                raise Exception("Failed to update scene with image URL")
+            
+            logger.info(f"Updated scene {scene_id} with image URL: {image_url}")
+            
+        except Exception as e:
+            logger.error(f"Failed to update scene {scene_id} with image URL: {e}")
             raise
 
     def _update_scene_urls(self, scene_id: str, image_url: str, video_url: str):
