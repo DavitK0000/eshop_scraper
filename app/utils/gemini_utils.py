@@ -390,11 +390,12 @@ class GeminiManager:
                 image=image_obj,
                 config=types.GenerateVideosConfig(
                     # Split aspect_ratio and compare width/height to set 16:9 or 9:16
-                    aspect_ratio = (
-                        "9:16"
-                        if (aspect_ratio and ":" in aspect_ratio and int(aspect_ratio.split(":")[0]) < int(aspect_ratio.split(":")[1]))
-                        else "16:9"
-                    ),
+                    # aspect_ratio = (
+                    #     "9:16"
+                    #     if (aspect_ratio and ":" in aspect_ratio and int(aspect_ratio.split(":")[0]) < int(aspect_ratio.split(":")[1]))
+                    #     else "16:9"
+                    # ),
+                    aspect_ratio="16:9"
                     number_of_videos=number_of_videos,
                     negative_prompt=negative_prompt,
                 ),
