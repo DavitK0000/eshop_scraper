@@ -1,7 +1,11 @@
 """
-RunwayML utility functions for AI-powered video generation.
-Provides easy-to-use interfaces for creating videos using RunwayML's API.
-Note: Image generation has been moved to Flux API (flux_utils.py).
+RunwayML utility functions for AI-powered image and video processing.
+Provides easy-to-use interfaces for image generation and video upscaling using RunwayML's API.
+Features:
+- Image generation with reference images using Gen-4 model
+- Video upscaling using RunwayML's upscaling models
+Note: Basic image generation has been moved to Flux API (flux_utils.py).
+Video generation functionality has been removed from this module.
 """
 
 import os
@@ -201,85 +205,133 @@ class RunwayMLManager:
             logger.error(f"Failed to fetch and convert image from {image_url}: {e}")
             return None
     
-    async def generate_video_from_image(
+    def _create_reference_image(self, image_source: Union[str, Path], tag: str = "reference") -> Dict[str, str]:
+        """
+        Create a reference image object for RunwayML API.
+        
+        Args:
+            image_source: Path to image file or image URL
+            tag: Tag name for the reference image (3-16 characters, alphanumeric + underscore, starts with letter)
+            
+        Returns:
+            Dictionary with uri and tag for reference image
+        """
+        # Validate tag
+        if not (3 <= len(tag) <= 16):
+            raise ValueError("Tag must be 3-16 characters long")
+        
+        if not tag[0].isalpha():
+            raise ValueError("Tag must start with a letter")
+        
+        if not all(c.isalnum() or c == '_' for c in tag):
+            raise ValueError("Tag must contain only alphanumeric characters and underscores")
+        
+        # Convert image to data URI if it's a local file
+        uri = self._get_image_from_url_or_path(image_source)
+        
+        return {
+            "uri": uri,
+            "tag": tag
+        }
+    
+    async def generate_image_from_text(
         self,
-        prompt_image: Union[str, Path],
-        prompt_text: str = "Generate a video",
-        model: str = None,
-        ratio: str = None,
-        duration: int = None,
+        prompt_text: str,
+        ratio: str = "1920:1080",
+        model: str = "gen4_image",
+        seed: Optional[int] = None,
+        reference_images: Optional[List[Dict[str, str]]] = None,
+        content_moderation: Optional[Dict[str, str]] = None,
         **kwargs
     ) -> Dict[str, Any]:
         """
-        Generate a video from an image using RunwayML's image-to-video model.
+        Generate an image from text using RunwayML's text-to-image API.
         
         Args:
-            prompt_image: Path to image file or image URL
-            prompt_text: Text prompt for video generation
-            model: Model to use (default: gen4_turbo)
-            ratio: Video aspect ratio (default: 1280:720)
-            duration: Video duration in seconds (default: 5)
-            **kwargs: Additional parameters for video generation
+            prompt_text: Text prompt describing the desired image (max 1000 characters)
+            ratio: Resolution ratio for the output image (default: "1920:1080")
+            model: Model variant to use - "gen4_image" or "gen4_image_turbo" (default: "gen4_image")
+            seed: Random seed for reproducible results (0-4294967295)
+            reference_images: List of reference images with uri and tag
+            content_moderation: Content moderation settings
+            **kwargs: Additional parameters for image generation
             
         Returns:
-            Dictionary containing task results and video URL
+            Dictionary containing task results and generated image URL
         """
         if not self.is_available():
             raise RuntimeError("RunwayML is not available or properly configured")
         
-        # Set defaults
-        model = model or settings.RUNWAYML_DEFAULT_MODEL
-        ratio = ratio or settings.RUNWAYML_DEFAULT_RATIO
-        duration = duration or settings.RUNWAYML_DEFAULT_DURATION
+        # Validate prompt length
+        if len(prompt_text) > 1000:
+            raise ValueError("Prompt text must be 1000 characters or less")
+        
+        # Validate model
+        if model not in ["gen4_image", "gen4_image_turbo"]:
+            raise ValueError("Model must be 'gen4_image' or 'gen4_image_turbo'")
+        
+        # For gen4_image_turbo, at least one reference image is required
+        if model == "gen4_image_turbo" and (not reference_images or len(reference_images) == 0):
+            raise ValueError("gen4_image_turbo requires at least one reference image")
         
         try:
-            # Convert image to data URI if it's a local file
-            image_uri = self._get_image_from_url_or_path(prompt_image)
+            logger.info(f"Starting image generation with model {model}")
             
-            logger.info(f"Starting video generation with model {model}")
+            # Prepare request parameters
+            request_params = {
+                "promptText": prompt_text,
+                "ratio": ratio,
+                "model": model
+            }
             
-            # Create video generation task
-            task = self.client.image_to_video.create(
-                model=model,
-                prompt_image=image_uri,
-                prompt_text=prompt_text,
-                ratio=ratio,
-                duration=duration,
-                **kwargs
-            )
+            # Add optional parameters
+            if seed is not None:
+                request_params["seed"] = seed
+            
+            if reference_images:
+                request_params["referenceImages"] = reference_images
+            
+            if content_moderation:
+                request_params["contentModeration"] = content_moderation
+            
+            # Add any additional kwargs
+            request_params.update(kwargs)
+            
+            # Create image generation task using text-to-image endpoint
+            task = self.client.text_to_image.create(**request_params)
             
             # Wait for task completion
             result = task.wait_for_task_output()
             
-            logger.info("Video generation completed successfully")
+            logger.info("Image generation completed successfully")
             
             return {
                 "success": True,
-                "model": model,
                 "prompt_text": prompt_text,
                 "ratio": ratio,
-                "duration": duration,
+                "model": model,
+                "seed": seed,
                 "output": result.output,
                 "task_id": result.id,
                 "status": "completed"
             }
             
         except TaskFailedError as e:
-            logger.error(f"Video generation failed: {e}")
+            logger.error(f"Image generation failed: {e}")
             return {
                 "success": False,
-                "error": "Video generation failed",
+                "error": "Image generation failed",
                 "task_details": e.task_details,
                 "status": "failed"
             }
         except Exception as e:
-            logger.error(f"Unexpected error during video generation: {e}")
+            logger.error(f"Unexpected error during image generation: {e}")
             return {
                 "success": False,
                 "error": str(e),
                 "status": "error"
             }
-
+    
     async def upscale_video(
         self,
         video_path: Union[str, Path],
@@ -404,7 +456,6 @@ class RunwayMLManager:
                 "status": "error"
             }
 
-
     def _get_video_from_url_or_path(self, video_source: Union[str, Path]) -> str:
         """Get video as data URI from either a file path or URL."""
         if isinstance(video_source, (str, Path)):
@@ -432,33 +483,48 @@ class RunwayMLManager:
         except Exception as e:
             logger.error(f"Failed to convert video to data URI: {e}")
             raise
-    
-    
-    
+
     
     def get_available_models(self) -> Dict[str, List[str]]:
         """Get available models for different generation types."""
         return {
-            "image_to_video": ["gen4_turbo"],
+            "image_generation": ["gen4_image", "gen4_image_turbo"],
+            "video_upscaling": ["upscale_v1"],
             "default_models": {
-                "video": "gen4_turbo"
+                "image": "gen4_image",
+                "video_upscale": "upscale_v1"
             }
         }
     
     def get_supported_ratios(self) -> List[str]:
-        """Get supported aspect ratios."""
+        """Get supported aspect ratios for image generation."""
         return [
-            "1280:720",   # 16:9 landscape
             "1920:1080",  # 16:9 HD
-            "1080:1920",  # 9:16 portrait
-            "720:1280",   # 9:16 mobile
-            "1024:1024",  # 1:1 square
-            "1920:1920"   # 1:1 high-res square
+            "1080:1920",  # 9:16 Portrait
+            "1024:1024",  # 1:1 Square
+            "1360:768",   # 16:9 Widescreen
+            "1080:1080",  # 1:1 Square HD
+            "1168:880",   # 4:3 Standard
+            "1440:1080",  # 4:3 HD
+            "1080:1440",  # 3:4 Portrait HD
+            "1808:768",   # 21:9 Ultra-wide
+            "2112:912",   # 21:9 Ultra-wide HD
+            "1280:720",   # 16:9 HD
+            "720:1280",   # 9:16 Mobile
+            "720:720",    # 1:1 Square
+            "960:720",    # 4:3 Standard
+            "720:960",    # 3:4 Portrait
+            "1680:720"    # 21:9 Ultra-wide
         ]
     
-    def get_supported_durations(self) -> List[int]:
-        """Get supported video durations in seconds."""
-        return [5, 10]
+    def get_supported_resolutions(self) -> List[str]:
+        """Get supported resolutions for image generation."""
+        return [
+            "720p",   # 1280x720
+            "1080p",  # 1920x1080
+            "1440p",  # 2560x1440
+            "4K"      # 3840x2160
+        ]
 
 
 # Global instance for easy access
@@ -466,17 +532,24 @@ runwayml_manager = RunwayMLManager()
 
 
 # Convenience functions for easy usage
-async def generate_video_from_image(
-    prompt_image: Union[str, Path],
-    prompt_text: str = "Generate a video",
+async def generate_image_from_text(
+    prompt_text: str,
+    ratio: str = "1920:1080",
+    model: str = "gen4_image",
     **kwargs
 ) -> Dict[str, Any]:
-    """Convenience function to generate video from image."""
-    return await runwayml_manager.generate_video_from_image(
-        prompt_image, prompt_text, **kwargs
+    """Convenience function to generate image from text."""
+    return await runwayml_manager.generate_image_from_text(
+        prompt_text, ratio, model, **kwargs
     )
 
 
+def create_reference_image(
+    image_source: Union[str, Path],
+    tag: str = "reference"
+) -> Dict[str, str]:
+    """Convenience function to create reference image object."""
+    return runwayml_manager._create_reference_image(image_source, tag)
 
 
 async def upscale_video(
@@ -499,8 +572,6 @@ def upscale_video_sync(
     )
 
 
-
-
 def is_runwayml_available() -> bool:
     """Check if RunwayML is available and configured."""
     return runwayml_manager.is_available()
@@ -521,5 +592,5 @@ def get_runwayml_status() -> Dict[str, Any]:
         "pillow_available": runwayml_manager.is_pillow_available(),
         "models": runwayml_manager.get_available_models() if runwayml_manager.is_available() else None,
         "supported_ratios": runwayml_manager.get_supported_ratios() if runwayml_manager.is_available() else None,
-        "supported_durations": runwayml_manager.get_supported_durations() if runwayml_manager.is_available() else None
+        "supported_resolutions": runwayml_manager.get_supported_resolutions() if runwayml_manager.is_available() else None
     }

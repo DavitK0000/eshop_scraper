@@ -22,6 +22,7 @@ from pathlib import Path
 from app.logging_config import get_logger
 from app.utils.gemini_utils import generate_video_with_prompt_and_image
 from app.utils.flux_utils import flux_manager
+from app.utils.runwayml_utils import runwayml_manager, generate_image_from_text, create_reference_image
 from app.utils.supabase_utils import supabase_manager
 from app.utils.credit_utils import credit_manager
 from app.utils.task_management import (
@@ -440,8 +441,11 @@ class VideoGenerationService:
         # Update progress - starting AI image generation
         update_task_progress(task_id, 2, 'Generating scene image with AI', 35.0)
         
-        # Generate image using Flux API
+        local_image_path = None
+        
+        # Try Flux API first
         try:
+            logger.info("Attempting image generation with Flux API")
             # Use Flux API for image generation with both text and reference image
             result = flux_manager.generate_image_with_prompt_and_image(
                 prompt=image_prompt,
@@ -463,11 +467,54 @@ class VideoGenerationService:
             if not os.path.exists(local_image_path):
                 raise Exception(f"Generated image file not found at {local_image_path}")
             
-            logger.info(f"Successfully generated image for scene {scene_data['id']}")
+            logger.info(f"Successfully generated image with Flux API for scene {scene_data['id']}")
             
-        except Exception as e:
-            logger.error(f"Unexpected error during image generation: {e}")
-            raise Exception(f"Failed to generate image with Flux API: {e}")
+        except Exception as flux_error:
+            logger.warning(f"Flux API image generation failed: {flux_error}")
+            
+            # Try RunwayML as fallback
+            try:
+                logger.info("Attempting image generation with RunwayML as fallback")
+                
+                # Convert image ratio to RunwayML format
+                runwayml_ratio = self._convert_to_runwayml_ratio(image_ratio)
+                
+                # Prepare reference images if available
+                reference_images = None
+                if product_reference_image_url:
+                    try:
+                        reference_images = [create_reference_image(product_reference_image_url, "product_ref")]
+                        # Update prompt to reference the image
+                        image_prompt = f"{image_prompt} @product_ref"
+                    except Exception as ref_error:
+                        logger.warning(f"Failed to create reference image for RunwayML: {ref_error}")
+                        # Continue without reference image
+                
+                # Generate image using RunwayML
+                runwayml_result = generate_image_from_text(
+                    prompt_text=image_prompt,
+                    ratio=runwayml_ratio,
+                    model="gen4_image",
+                    reference_images=reference_images
+                )
+                
+                if not runwayml_result or not runwayml_result.get('success'):
+                    error_msg = runwayml_result.get('error', 'Unknown error') if runwayml_result else 'No result returned'
+                    raise Exception(f"Failed to generate image with RunwayML: {error_msg}")
+                
+                # Download the generated image
+                image_url = runwayml_result['output']
+                if isinstance(image_url, list) and len(image_url) > 0:
+                    image_url = image_url[0]  # Take the first URL if it's a list
+                
+                # Download image to local file
+                local_image_path = self._download_image_from_url(image_url, f"temp_image_{uuid.uuid4()}.png")
+                
+                logger.info(f"Successfully generated image with RunwayML for scene {scene_data['id']}")
+                
+            except Exception as runwayml_error:
+                logger.error(f"Both Flux API and RunwayML failed: Flux error: {flux_error}, RunwayML error: {runwayml_error}")
+                raise Exception(f"Image generation failed with both Flux API and RunwayML. Flux error: {flux_error}, RunwayML error: {runwayml_error}")
         
         # Update progress - uploading image to Supabase
         update_task_progress(task_id, 2, 'Storing generated image', 40.0)
@@ -495,6 +542,41 @@ class VideoGenerationService:
         )
         
         return image_url
+    
+    def _convert_to_runwayml_ratio(self, flux_ratio: str) -> str:
+        """Convert Flux ratio format to RunwayML ratio format."""
+        # Mapping from common Flux ratios to RunwayML ratios
+        ratio_mapping = {
+            "16:9": "1920:1080",
+            "9:16": "1080:1920", 
+            "1:1": "1024:1024",
+            "4:3": "1440:1080",
+            "3:4": "1080:1440",
+            "21:9": "1920:1080",  # Fallback to 16:9 for ultra-wide
+        }
+        
+        # Return mapped ratio or default to 1920:1080
+        return ratio_mapping.get(flux_ratio, "1920:1080")
+    
+    def _download_image_from_url(self, image_url: str, filename: str) -> str:
+        """Download image from URL to local file."""
+        try:
+            logger.info(f"Downloading image from URL: {image_url}")
+            
+            with httpx.Client(timeout=DOWNLOAD_TIMEOUT) as client:
+                response = client.get(image_url)
+                response.raise_for_status()
+                
+                # Save to local file
+                with open(filename, 'wb') as f:
+                    f.write(response.content)
+                
+                logger.info(f"Successfully downloaded image to: {filename}")
+                return filename
+                
+        except Exception as e:
+            logger.error(f"Failed to download image from {image_url}: {e}")
+            raise Exception(f"Failed to download image: {e}")
     
     def _generate_video(self, scene_data: Dict[str, Any], image_url: str, user_id: str, task_id: str) -> tuple[str, str]:
         """Generate video using the image and visual prompt."""
