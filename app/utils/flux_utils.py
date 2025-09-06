@@ -298,7 +298,8 @@ class FluxManager:
             # Prepare the request payload
             payload = {
                 'prompt': prompt,
-                'aspect_ratio': aspect_ratio
+                'aspect_ratio': aspect_ratio,
+                'safety_filter': 6
             }
             
             # Handle input image if provided
