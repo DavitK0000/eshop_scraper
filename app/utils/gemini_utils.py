@@ -94,72 +94,186 @@ class GeminiManager:
             logger.error(f"Failed to convert image to data URI: {e}")
             raise
     
-    def _download_image_from_url(self, image_url: str) -> str:
+    def _download_image_from_url(self, image_url: str, max_retries: int = 3) -> str:
         """
         Download image from URL to a temporary file and return the file path.
+        Handles 403 Forbidden errors with different strategies and retries.
         
         Args:
             image_url: URL of the image to download
+            max_retries: Maximum number of retry attempts
             
         Returns:
             Path to the temporary file containing the downloaded image
+            
+        Raises:
+            Exception: If all download attempts fail
         """
-        try:
-            logger.info(f"Downloading image from URL: {image_url}")
-            response = requests.get(image_url, timeout=30)
-            response.raise_for_status()
+        headers_list = [
+            # Standard browser headers
+            {
+                'User-Agent': 'Mozilla/5.0 (Windows NT 10.0; Win64; x64) AppleWebKit/537.36 (KHTML, like Gecko) Chrome/91.0.4472.124 Safari/537.36',
+                'Accept': 'image/webp,image/apng,image/*,*/*;q=0.8',
+                'Accept-Language': 'en-US,en;q=0.9',
+                'Accept-Encoding': 'gzip, deflate, br',
+                'DNT': '1',
+                'Connection': 'keep-alive',
+                'Upgrade-Insecure-Requests': '1',
+            },
+            # Mobile browser headers
+            {
+                'User-Agent': 'Mozilla/5.0 (iPhone; CPU iPhone OS 14_6 like Mac OS X) AppleWebKit/605.1.15 (KHTML, like Gecko) Version/14.0 Mobile/15E148 Safari/604.1',
+                'Accept': 'image/webp,image/apng,image/*,*/*;q=0.8',
+                'Accept-Language': 'en-US,en;q=0.9',
+            },
+            # Simple headers
+            {
+                'User-Agent': 'Mozilla/5.0 (compatible; ImageDownloader/1.0)',
+                'Accept': '*/*',
+            }
+        ]
+        
+        last_exception = None
+        
+        for attempt in range(max_retries):
+            headers = headers_list[attempt % len(headers_list)]
             
-            # Check if response contains image data
-            content_type = response.headers.get('content-type', '')
-            if not content_type.startswith('image/'):
-                logger.warning(f"URL does not contain image data: {content_type}")
-                raise ValueError(f"URL does not contain image data: {content_type}")
-            
-            # Create temporary file
-            temp_file = tempfile.NamedTemporaryFile(delete=False, suffix='.jpg')
-            temp_file.write(response.content)
-            temp_file.close()
-            
-            logger.info(f"Successfully downloaded image to temporary file: {temp_file.name}")
-            return temp_file.name
-            
-        except requests.exceptions.RequestException as e:
-            logger.error(f"Failed to download image from URL {image_url}: {e}")
-            raise
-        except Exception as e:
-            logger.error(f"Unexpected error downloading image from URL {image_url}: {e}")
-            raise
+            try:
+                logger.info(f"Downloading image from URL (attempt {attempt + 1}/{max_retries}): {image_url}")
+                logger.debug(f"Using headers: {headers}")
+                
+                response = requests.get(image_url, headers=headers, timeout=30, allow_redirects=True)
+                response.raise_for_status()
+                
+                # Check if response contains image data
+                content_type = response.headers.get('content-type', '')
+                if not content_type.startswith('image/'):
+                    logger.warning(f"URL does not contain image data: {content_type}")
+                    raise ValueError(f"URL does not contain image data: {content_type}")
+                
+                # Create temporary file
+                temp_file = tempfile.NamedTemporaryFile(delete=False, suffix='.jpg')
+                temp_file.write(response.content)
+                temp_file.close()
+                
+                logger.info(f"Successfully downloaded image to temporary file: {temp_file.name}")
+                return temp_file.name
+                
+            except requests.exceptions.HTTPError as e:
+                if e.response.status_code == 403:
+                    logger.warning(f"403 Forbidden error on attempt {attempt + 1}: {e}")
+                    last_exception = e
+                    if attempt < max_retries - 1:
+                        logger.info(f"Retrying with different headers...")
+                        time.sleep(1)  # Brief delay before retry
+                        continue
+                else:
+                    logger.error(f"HTTP error downloading image from URL {image_url}: {e}")
+                    raise
+            except requests.exceptions.RequestException as e:
+                logger.error(f"Request error downloading image from URL {image_url} (attempt {attempt + 1}): {e}")
+                last_exception = e
+                if attempt < max_retries - 1:
+                    time.sleep(1)  # Brief delay before retry
+                    continue
+            except Exception as e:
+                logger.error(f"Unexpected error downloading image from URL {image_url} (attempt {attempt + 1}): {e}")
+                last_exception = e
+                if attempt < max_retries - 1:
+                    time.sleep(1)  # Brief delay before retry
+                    continue
+        
+        # If all attempts failed, raise the last exception
+        logger.error(f"Failed to download image from URL {image_url} after {max_retries} attempts")
+        raise last_exception or Exception(f"Failed to download image from URL {image_url} after {max_retries} attempts")
     
-    def _get_image_bytes_from_url(self, image_url: str) -> Tuple[bytes, str]:
+    def _get_image_bytes_from_url(self, image_url: str, max_retries: int = 3) -> Tuple[bytes, str]:
         """
         Download image from URL and return bytes data and MIME type.
+        Handles 403 Forbidden errors with different strategies and retries.
         
         Args:
             image_url: URL of the image to download
+            max_retries: Maximum number of retry attempts
             
         Returns:
             Tuple of (image_bytes, mime_type)
+            
+        Raises:
+            Exception: If all download attempts fail
         """
-        try:
-            logger.info(f"Downloading image bytes from URL: {image_url}")
-            response = requests.get(image_url, timeout=30)
-            response.raise_for_status()
+        headers_list = [
+            # Standard browser headers
+            {
+                'User-Agent': 'Mozilla/5.0 (Windows NT 10.0; Win64; x64) AppleWebKit/537.36 (KHTML, like Gecko) Chrome/91.0.4472.124 Safari/537.36',
+                'Accept': 'image/webp,image/apng,image/*,*/*;q=0.8',
+                'Accept-Language': 'en-US,en;q=0.9',
+                'Accept-Encoding': 'gzip, deflate, br',
+                'DNT': '1',
+                'Connection': 'keep-alive',
+                'Upgrade-Insecure-Requests': '1',
+            },
+            # Mobile browser headers
+            {
+                'User-Agent': 'Mozilla/5.0 (iPhone; CPU iPhone OS 14_6 like Mac OS X) AppleWebKit/605.1.15 (KHTML, like Gecko) Version/14.0 Mobile/15E148 Safari/604.1',
+                'Accept': 'image/webp,image/apng,image/*,*/*;q=0.8',
+                'Accept-Language': 'en-US,en;q=0.9',
+            },
+            # Simple headers
+            {
+                'User-Agent': 'Mozilla/5.0 (compatible; ImageDownloader/1.0)',
+                'Accept': '*/*',
+            }
+        ]
+        
+        last_exception = None
+        
+        for attempt in range(max_retries):
+            headers = headers_list[attempt % len(headers_list)]
             
-            # Check if response contains image data
-            content_type = response.headers.get('content-type', '')
-            if not content_type.startswith('image/'):
-                logger.warning(f"URL does not contain image data: {content_type}")
-                raise ValueError(f"URL does not contain image data: {content_type}")
-            
-            logger.info(f"Successfully downloaded image bytes from URL: {image_url}")
-            return response.content, content_type
-            
-        except requests.exceptions.RequestException as e:
-            logger.error(f"Failed to download image bytes from URL {image_url}: {e}")
-            raise
-        except Exception as e:
-            logger.error(f"Unexpected error downloading image bytes from URL {image_url}: {e}")
-            raise
+            try:
+                logger.info(f"Downloading image bytes from URL (attempt {attempt + 1}/{max_retries}): {image_url}")
+                logger.debug(f"Using headers: {headers}")
+                
+                response = requests.get(image_url, headers=headers, timeout=30, allow_redirects=True)
+                response.raise_for_status()
+                
+                # Check if response contains image data
+                content_type = response.headers.get('content-type', '')
+                if not content_type.startswith('image/'):
+                    logger.warning(f"URL does not contain image data: {content_type}")
+                    raise ValueError(f"URL does not contain image data: {content_type}")
+                
+                logger.info(f"Successfully downloaded image bytes from URL: {image_url}")
+                return response.content, content_type
+                
+            except requests.exceptions.HTTPError as e:
+                if e.response.status_code == 403:
+                    logger.warning(f"403 Forbidden error on attempt {attempt + 1}: {e}")
+                    last_exception = e
+                    if attempt < max_retries - 1:
+                        logger.info(f"Retrying with different headers...")
+                        time.sleep(1)  # Brief delay before retry
+                        continue
+                else:
+                    logger.error(f"HTTP error downloading image bytes from URL {image_url}: {e}")
+                    raise
+            except requests.exceptions.RequestException as e:
+                logger.error(f"Request error downloading image bytes from URL {image_url} (attempt {attempt + 1}): {e}")
+                last_exception = e
+                if attempt < max_retries - 1:
+                    time.sleep(1)  # Brief delay before retry
+                    continue
+            except Exception as e:
+                logger.error(f"Unexpected error downloading image bytes from URL {image_url} (attempt {attempt + 1}): {e}")
+                last_exception = e
+                if attempt < max_retries - 1:
+                    time.sleep(1)  # Brief delay before retry
+                    continue
+        
+        # If all attempts failed, raise the last exception
+        logger.error(f"Failed to download image bytes from URL {image_url} after {max_retries} attempts")
+        raise last_exception or Exception(f"Failed to download image bytes from URL {image_url} after {max_retries} attempts")
     
     def _compress_image(self, image_path: str, quality: int = 85, max_size_mb: float = 5.0) -> str:
         """
@@ -230,21 +344,93 @@ class GeminiManager:
             logger.error(f"Failed to compress image {image_path}: {e}")
             return image_path
     
+    def generate_image_with_text_only(
+        self,
+        prompt: str,
+        model: str = "gemini-2.5-flash-image-preview",
+        output_path: str = "generated_image.png"
+    ) -> Dict[str, Any]:
+        """
+        Generate an image using Google Gemini with only a text prompt (no input image).
+        This is used as a fallback when image download fails.
+        
+        Args:
+            prompt: Text prompt for image generation
+            model: Gemini model to use (default: gemini-2.5-flash-image-preview)
+            output_path: Path to save the generated image
+            
+        Returns:
+            Dictionary containing generation results and image path
+        """
+        if not self.is_available():
+            raise RuntimeError("Gemini is not available or properly configured")
+        
+        if not PIL_AVAILABLE:
+            raise RuntimeError("Pillow is required for image processing")
+        
+        try:
+            logger.info(f"Starting text-only image generation with model {model}")
+            logger.info(f"Fallback prompt: {prompt}")
+            
+            # Generate content using Gemini with only text prompt
+            response = self.client.models.generate_content(
+                model=model,
+                contents=[prompt],
+            )
+            
+            # Process the response
+            generated_text = ""
+            image_saved = False
+            
+            for part in response.candidates[0].content.parts:
+                if part.text is not None:
+                    generated_text += part.text
+                elif part.inline_data is not None:
+                    # Save the generated image
+                    image = Image.open(BytesIO(part.inline_data.data))
+                    image.save(output_path)
+                    image_saved = True
+                    logger.info(f"Fallback generated image saved to: {output_path}")
+            
+            return {
+                "success": True,
+                "model": model,
+                "prompt": prompt,
+                "generated_text": generated_text,
+                "image_saved": image_saved,
+                "output_path": output_path if image_saved else None,
+                "status": "completed",
+                "fallback_used": True
+            }
+            
+        except Exception as e:
+            logger.error(f"Text-only image generation failed: {e}")
+            return {
+                "success": False,
+                "error": str(e),
+                "status": "error",
+                "fallback_used": True
+            }
+    
     def generate_image_with_prompt_and_image(
         self,
         prompt: str,
         input_image: Union[str, Path, None] = None,
         model: str = "gemini-2.5-flash-image-preview",
-        output_path: str = "generated_image.png"
+        output_path: str = "generated_image.png",
+        use_fallback_on_download_failure: bool = True
     ) -> Dict[str, Any]:
         """
         Generate an image using Google Gemini with a text prompt and optional input image.
+        If image download fails and use_fallback_on_download_failure is True, 
+        falls back to text-only generation.
         
         Args:
             prompt: Text prompt for image generation
             input_image: Optional URL to input image (will be downloaded to temp folder)
             model: Gemini model to use (default: gemini-2.5-flash-image-preview)
             output_path: Path to save the generated image
+            use_fallback_on_download_failure: Whether to use text-only fallback if image download fails
             
         Returns:
             Dictionary containing generation results and image path
@@ -265,21 +451,43 @@ class GeminiManager:
             
             # Handle input image if provided
             if input_image:
-                # Download image from URL to temporary file
-                temp_file_path = self._download_image_from_url(str(input_image))
-                
-                # Compress the downloaded image to reduce file size
-                temp_file_path = self._compress_image(temp_file_path)
-                
-                # Open image with Pillow and add to contents
-                image = Image.open(temp_file_path)
-                contents.append(image)
+                try:
+                    # Download image from URL to temporary file
+                    temp_file_path = self._download_image_from_url(str(input_image))
+                    
+                    # Compress the downloaded image to reduce file size
+                    temp_file_path = self._compress_image(temp_file_path)
+                    
+                    # Open image with Pillow and add to contents
+                    image = Image.open(temp_file_path)
+                    contents.append(image)
+                    logger.info(f"Successfully loaded input image: {input_image}")
+                    
+                except Exception as download_error:
+                    logger.warning(f"Failed to download input image {input_image}: {download_error}")
+                    
+                    if use_fallback_on_download_failure:
+                        logger.info("Image download failed, falling back to text-only generation")
+                        # Clean up any partial temp file
+                        if temp_file_path and os.path.exists(temp_file_path):
+                            try:
+                                os.unlink(temp_file_path)
+                            except Exception:
+                                pass
+                        temp_file_path = None
+                        
+                        # Use text-only generation as fallback
+                        return self.generate_image_with_text_only(prompt, model, output_path)
+                    else:
+                        # Re-raise the download error if fallback is disabled
+                        raise download_error
             
             # Generate content using Gemini
             response = self.client.models.generate_content(
                 model=model,
                 contents=contents,
             )
+            
             # Process the response
             generated_text = ""
             image_saved = False
@@ -301,7 +509,8 @@ class GeminiManager:
                 "generated_text": generated_text,
                 "image_saved": image_saved,
                 "output_path": output_path if image_saved else None,
-                "status": "completed"
+                "status": "completed",
+                "fallback_used": False
             }
             
         except Exception as e:
@@ -309,7 +518,8 @@ class GeminiManager:
             return {
                 "success": False,
                 "error": str(e),
-                "status": "error"
+                "status": "error",
+                "fallback_used": False
             }
         finally:
             # Clean up temporary file if it was created
@@ -434,12 +644,22 @@ def generate_image_with_prompt_and_image(
     prompt: str,
     input_image: Union[str, Path, None] = None,
     model: str = "gemini-2.5-flash-image-preview",
-    output_path: str = "generated_image.png"
+    output_path: str = "generated_image.png",
+    use_fallback_on_download_failure: bool = True
 ) -> Dict[str, Any]:
     """Convenience function to generate image with prompt and optional input image URL."""
     return gemini_manager.generate_image_with_prompt_and_image(
-        prompt, input_image, model, output_path
+        prompt, input_image, model, output_path, use_fallback_on_download_failure
     )
+
+
+def generate_image_with_text_only(
+    prompt: str,
+    model: str = "gemini-2.5-flash-image-preview",
+    output_path: str = "generated_image.png"
+) -> Dict[str, Any]:
+    """Convenience function to generate image with text-only prompt."""
+    return gemini_manager.generate_image_with_text_only(prompt, model, output_path)
 
 
 def generate_video_with_prompt_and_image(
