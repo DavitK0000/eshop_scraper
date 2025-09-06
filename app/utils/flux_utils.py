@@ -299,7 +299,7 @@ class FluxManager:
             payload = {
                 'prompt': prompt,
                 'aspect_ratio': aspect_ratio,
-                'safety_filter': 6
+                'safety_tolerance': 6
             }
             
             # Handle input image if provided
