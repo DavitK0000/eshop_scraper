@@ -442,8 +442,10 @@ class VideoGenerationService:
         update_task_progress(task_id, 2, 'Generating scene image with AI', 35.0)
         
         local_image_path = None
+        flux_success = False
+        flux_errors = []
         
-        # Try Flux API first
+        # Try Flux API (flux_utils already has its own retry logic)
         try:
             logger.info("Attempting image generation with Flux API")
             # Use Flux API for image generation with both text and reference image
@@ -468,13 +470,16 @@ class VideoGenerationService:
                 raise Exception(f"Generated image file not found at {local_image_path}")
             
             logger.info(f"Successfully generated image with Flux API for scene {scene_data['id']}")
+            flux_success = True
             
         except Exception as flux_error:
-            logger.warning(f"Flux API image generation failed: {flux_error}")
-            
-            # Try RunwayML as fallback
+            flux_errors.append(str(flux_error))
+            logger.warning(f"Flux API failed: {flux_error}")
+        
+        # If Flux failed, try RunwayML as fallback
+        if not flux_success:
             try:
-                logger.info("Attempting image generation with RunwayML as fallback")
+                logger.info("Flux API failed after all attempts, trying RunwayML as fallback")
                 
                 # Convert image ratio to RunwayML format
                 runwayml_ratio = self._convert_to_runwayml_ratio(image_ratio)
@@ -513,8 +518,9 @@ class VideoGenerationService:
                 logger.info(f"Successfully generated image with RunwayML for scene {scene_data['id']}")
                 
             except Exception as runwayml_error:
-                logger.error(f"Both Flux API and RunwayML failed: Flux error: {flux_error}, RunwayML error: {runwayml_error}")
-                raise Exception(f"Image generation failed with both Flux API and RunwayML. Flux error: {flux_error}, RunwayML error: {runwayml_error}")
+                all_flux_errors = "; ".join(flux_errors)
+                logger.error(f"Both Flux API and RunwayML failed. Flux errors: {all_flux_errors}, RunwayML error: {runwayml_error}")
+                raise Exception(f"Image generation failed with both Flux API and RunwayML. Flux errors: {all_flux_errors}, RunwayML error: {runwayml_error}")
         
         # Update progress - uploading image to Supabase
         update_task_progress(task_id, 2, 'Storing generated image', 40.0)
