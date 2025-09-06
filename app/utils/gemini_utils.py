@@ -395,7 +395,7 @@ class GeminiManager:
                     #     if (aspect_ratio and ":" in aspect_ratio and int(aspect_ratio.split(":")[0]) < int(aspect_ratio.split(":")[1]))
                     #     else "16:9"
                     # ),
-                    aspect_ratio="16:9"
+                    aspect_ratio="16:9",
                     number_of_videos=number_of_videos,
                     negative_prompt=negative_prompt,
                 ),
