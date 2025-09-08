@@ -350,7 +350,7 @@ class TaskDatabaseOperations:
             cutoff_date_iso = cutoff_date.isoformat()
             
             result = self.mongodb.tasks_collection.delete_many({
-                "task_status": {"$in": [TaskStatus.COMPLETED, TaskStatus.FAILED, TaskStatus.CANCELLED]},
+                "task_status": {"$in": [TaskStatus.COMPLETED, TaskStatus.FAILED, TaskStatus.CANCELLED, TaskStatus.RUNNING]},
                 "created_at": {"$lt": cutoff_date_iso}
             })
             
