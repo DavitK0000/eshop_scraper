@@ -300,18 +300,7 @@ class Settings:
     OPENAI_MODEL: str = os.getenv("OPENAI_MODEL", "gpt-3.5-turbo")
     OPENAI_MAX_TOKENS: int = int(os.getenv("OPENAI_MAX_TOKENS", "100"))
     OPENAI_TEMPERATURE: float = float(os.getenv("OPENAI_TEMPERATURE", "0.3"))
-    
-    # Google Gemini Settings
-    GEMINI_API_KEY: str = os.getenv("GEMINI_API_KEY", "")
-    GEMINI_ENABLED: bool = os.getenv("GEMINI_ENABLED", "False").lower() == "true"
-    GEMINI_IMAGE_MODEL: str = os.getenv("GEMINI_IMAGE_MODEL", "imagen-4.0-generate-001")
-    GEMINI_VIDEO_MODEL: str = os.getenv("GEMINI_VIDEO_MODEL", "veo-3.0-generate-preview")
-    GEMINI_DEFAULT_IMAGE_SIZE: str = os.getenv("GEMINI_DEFAULT_IMAGE_SIZE", "1K")  # 1K or 2K
-    GEMINI_DEFAULT_ASPECT_RATIO: str = os.getenv("GEMINI_DEFAULT_ASPECT_RATIO", "1:1")  # 1:1, 3:4, 4:3, 9:16, 16:9
-    GEMINI_PERSON_GENERATION: str = os.getenv("GEMINI_PERSON_GENERATION", "allow_adult")  # dont_allow, allow_adult, allow_all
-    GEMINI_MAX_RETRIES: int = int(os.getenv("GEMINI_MAX_RETRIES", "3"))
-    GEMINI_TIMEOUT: int = int(os.getenv("GEMINI_TIMEOUT", "300"))  # 5 minutes
-    
+        
     # Flux API Settings (Black Forest Labs)
     BFL_API_KEY: str = os.getenv("BFL_API_KEY", "")
     BFL_ENABLED: bool = os.getenv("BFL_ENABLED", "False").lower() == "true"

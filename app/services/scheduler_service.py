@@ -8,7 +8,7 @@ periodic tasks at specified intervals.
 import logging
 import threading
 import time
-from datetime import datetime, timedelta
+from datetime import datetime, timedelta, timezone
 from typing import Optional, Callable, Dict, Any
 import asyncio
 
@@ -99,11 +99,11 @@ class SchedulerService:
                     self._run_cleanup()
                 
                 # Calculate next cleanup time
-                next_cleanup = datetime.utcnow() + timedelta(hours=self.cleanup_interval_hours)
+                next_cleanup = datetime.now(timezone.utc) + timedelta(hours=self.cleanup_interval_hours)
                 logger.info(f"Next cleanup scheduled for: {next_cleanup}")
                 
                 # Sleep until next cleanup time or until stopped
-                while self.running and datetime.utcnow() < next_cleanup:
+                while self.running and datetime.now(timezone.utc) < next_cleanup:
                     time.sleep(60)  # Check every minute
                 
                 # Run cleanup if still running
@@ -128,13 +128,13 @@ class SchedulerService:
             # Run cleanup
             deleted_count = task_manager.db_ops.cleanup_old_tasks(self.cleanup_days_threshold)
             
-            self.last_cleanup = datetime.utcnow()
+            self.last_cleanup = datetime.now(timezone.utc)
             logger.info(f"Cleanup completed: removed {deleted_count} old tasks. "
                        f"Next cleanup in {self.cleanup_interval_hours} hours")
             
         except Exception as e:
             logger.error(f"Failed to run cleanup: {e}")
-            self.last_cleanup = datetime.utcnow()  # Still update timestamp to avoid immediate retry
+            self.last_cleanup = datetime.now(timezone.utc)  # Still update timestamp to avoid immediate retry
     
     def run_cleanup_now(self) -> int:
         """Manually trigger cleanup now and return number of deleted tasks"""
@@ -146,7 +146,7 @@ class SchedulerService:
                 return 0
             
             deleted_count = task_manager.db_ops.cleanup_old_tasks(self.cleanup_days_threshold)
-            self.last_cleanup = datetime.utcnow()
+            self.last_cleanup = datetime.now(timezone.utc)
             
             logger.info(f"Manual cleanup completed: removed {deleted_count} old tasks")
             return deleted_count

@@ -8,7 +8,7 @@ This module provides a comprehensive interface for managing scraping tasks inclu
 """
 
 import logging
-from datetime import datetime, timedelta
+from datetime import datetime, timedelta, timezone
 from typing import Dict, Optional, Any
 from enum import Enum
 from dataclasses import dataclass, asdict
@@ -86,9 +86,9 @@ class Task:
     
     def __post_init__(self):
         if self.created_at is None:
-            self.created_at = datetime.utcnow()
+            self.created_at = datetime.now(timezone.utc)
         if self.updated_at is None:
-            self.updated_at = datetime.utcnow()
+            self.updated_at = datetime.now(timezone.utc)
         if self.task_metadata is None:
             self.task_metadata = {}
     
@@ -306,7 +306,7 @@ class TaskDatabaseOperations:
                 return False
                 
             # Add updated_at timestamp
-            update_data["updated_at"] = datetime.utcnow()
+            update_data["updated_at"] = datetime.now(timezone.utc)
             
             result = self.mongodb.tasks_collection.update_one(
                 {"task_id": task_id},
@@ -346,16 +346,19 @@ class TaskDatabaseOperations:
             if not self.mongodb.ensure_connection():
                 return 0
                 
-            cutoff_date = datetime.utcnow() - timedelta(days=days_old)
+            cutoff_date = datetime.now(timezone.utc) - timedelta(days=days_old)
+            cutoff_date_iso = cutoff_date.isoformat()
             
             result = self.mongodb.tasks_collection.delete_many({
                 "task_status": {"$in": [TaskStatus.COMPLETED, TaskStatus.FAILED, TaskStatus.CANCELLED]},
-                "created_at": {"$lt": cutoff_date}
+                "created_at": {"$lt": cutoff_date_iso}
             })
             
             deleted_count = result.deleted_count
             if deleted_count > 0:
                 logger.info(f"Cleaned up {deleted_count} old tasks")
+            else:
+                logger.info("No old tasks found to clean up")
             
             return deleted_count
                 
@@ -482,7 +485,7 @@ class TaskManager:
             logger.info(f"Creating {task_type} task with metadata: {task_metadata}")
             
             # Generate task ID
-            task_id = generate_task_id(f"{task_type}_{datetime.utcnow().timestamp()}")
+            task_id = generate_task_id(f"{task_type}_{datetime.now(timezone.utc).timestamp()}")
             logger.info(f"Generated task ID: {task_id}")
             
             # Extract common fields from metadata
@@ -535,7 +538,7 @@ class TaskManager:
                 success = self.db_ops.update_task(task_id, {
                     "task_status": TaskStatus.RUNNING,
                     "task_status_message": "Task started",
-                    "started_at": datetime.utcnow(),
+                    "started_at": datetime.now(timezone.utc),
                     "progress": 0.0
                 })
                 
@@ -550,9 +553,9 @@ class TaskManager:
                 task = self.fallback_tasks[task_id]
                 task.task_status = TaskStatus.RUNNING
                 task.task_status_message = "Task started"
-                task.started_at = datetime.utcnow()
+                task.started_at = datetime.now(timezone.utc)
                 task.progress = 0.0
-                task.updated_at = datetime.utcnow()
+                task.updated_at = datetime.now(timezone.utc)
                 logger.info(f"Started task {task_id} in fallback storage")
                 return True
             else:
@@ -604,7 +607,7 @@ class TaskManager:
                     progress = (step_number / task.total_steps) * 100 if task.total_steps > 0 else 0
                 task.progress = progress
                 task.task_status_message = step_name
-                task.updated_at = datetime.utcnow()
+                task.updated_at = datetime.now(timezone.utc)
                 return True
             else:
                 logger.error(f"Task {task_id} not found in fallback storage")
@@ -628,7 +631,7 @@ class TaskManager:
                     "task_status": TaskStatus.COMPLETED,
                     "task_status_message": "Task completed successfully",
                     "progress": 100.0,
-                    "completed_at": datetime.utcnow()
+                    "completed_at": datetime.now(timezone.utc)
                 }
                 
                 # Add metadata to task if provided
@@ -651,7 +654,7 @@ class TaskManager:
                 task.task_status = TaskStatus.COMPLETED
                 task.task_status_message = "Task completed successfully"
                 task.progress = 100.0
-                task.completed_at = datetime.utcnow()
+                task.completed_at = datetime.now(timezone.utc)
                 
                 # Store metadata in task if provided
                 if metadata:
@@ -661,7 +664,7 @@ class TaskManager:
                         if value is not None:
                             task.task_metadata[key] = value
                 
-                task.updated_at = datetime.utcnow()
+                task.updated_at = datetime.now(timezone.utc)
                 logger.info(f"Completed task {task_id} in fallback storage")
                 return True
             else:
@@ -708,7 +711,7 @@ class TaskManager:
                     "task_status": TaskStatus.FAILED,
                     "task_status_message": "Task failed",
                     "error_message": error_message,
-                    "completed_at": datetime.utcnow()
+                    "completed_at": datetime.now(timezone.utc)
                 })
                 
                 if success:
@@ -734,7 +737,7 @@ class TaskManager:
                 task.task_status = TaskStatus.FAILED
                 task.task_status_message = "Task failed"
                 task.error_message = error_message
-                task.completed_at = datetime.utcnow()
+                task.completed_at = datetime.now(timezone.utc)
                 task.updated_at = datetime.utcnow()
                 logger.info(f"Failed task {task_id} in fallback storage: {error_message}")
                 return True
@@ -752,7 +755,7 @@ class TaskManager:
             success = self.db_ops.update_task(task_id, {
                 "task_status": TaskStatus.CANCELLED,
                 "task_status_message": "Task cancelled by user",
-                "completed_at": datetime.utcnow()
+                "completed_at": datetime.now(timezone.utc)
             })
             
             if success:

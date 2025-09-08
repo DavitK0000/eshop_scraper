@@ -20,7 +20,7 @@ from typing import Dict, Any, Optional, List
 from pathlib import Path
 
 from app.logging_config import get_logger
-from app.utils.gemini_utils import generate_video_with_prompt_and_image
+from app.utils.vertex_utils import generate_video_with_prompt_and_image
 from app.utils.flux_utils import flux_manager
 from app.utils.runwayml_utils import runwayml_manager, generate_image_from_text, create_reference_image
 from app.utils.supabase_utils import supabase_manager
@@ -621,7 +621,7 @@ class VideoGenerationService:
             result = generate_video_with_prompt_and_image(
                 prompt=visual_prompt,
                 image_url=image_url,
-                model=settings.GEMINI_VIDEO_MODEL,
+                model="veo-3.0-fast-generate-preview",
                 file_path=temp_video_path,
                 aspect_ratio=video_ratio,
                 number_of_videos=1

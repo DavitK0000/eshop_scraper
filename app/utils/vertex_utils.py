@@ -1,6 +1,6 @@
 """
-Google Gemini utility functions for AI-powered image generation.
-Provides easy-to-use interfaces for creating images using Google's Gemini API.
+Google Vertex AI utility functions for AI-powered image generation.
+Provides easy-to-use interfaces for creating images using Google's Vertex AI API.
 """
 
 import os
@@ -24,52 +24,71 @@ except ImportError:
 try:
     from google import genai
     from google.genai import types
-    GEMINI_AVAILABLE = True
+    from google.oauth2 import service_account
+    VERTEX_AVAILABLE = True
 except ImportError:
-    GEMINI_AVAILABLE = False
-    logging.warning("Google Gemini package not available. Install with: pip install google-generativeai")
+    VERTEX_AVAILABLE = False
+    logging.warning("Google Vertex AI package not available. Install with: pip install google-generativeai")
 
 from app.config import settings
 
 logger = logging.getLogger(__name__)
 
 
-class GeminiManager:
-    """Manages Google Gemini client and provides utility methods for AI generation."""
+class VertexManager:
+    """Manages Google Vertex AI client and provides utility methods for AI generation."""
     
     def __init__(self):
-        """Initialize Gemini client with API credentials."""
+        """Initialize Vertex AI client with API credentials."""
         self.client: Optional[genai.Client] = None
         self._initialize_client()
     
     def _initialize_client(self):
-        """Initialize the Gemini client with API credentials."""
-        if not GEMINI_AVAILABLE:
-            logger.warning("Google Gemini package not available. AI generation will be disabled.")
+        """Initialize the Vertex AI client with API credentials."""
+        if not VERTEX_AVAILABLE:
+            logger.warning("Google Vertex AI package not available. AI generation will be disabled.")
             return
-            
-        if not settings.GEMINI_ENABLED:
-            logger.warning("Gemini is disabled in configuration. AI generation will be disabled.")
-            return
-            
-        if not settings.GEMINI_API_KEY:
-            logger.warning("Gemini API key not configured. AI generation will be disabled.")
+                        
+        # Get the project root directory (parent of app directory)
+        project_root = Path(__file__).parent.parent.parent
+        key_file_path = project_root / "promo-nex-ai-vertex-ai-key.json"
+        
+        if not os.path.exists(key_file_path):
+            logger.warning("Vertex AI service account key file not found. AI generation will be disabled.")
             return
         
         try:
-            # Initialize Gemini client
-            self.client = genai.Client(api_key=settings.GEMINI_API_KEY)
-            logger.info("Gemini client initialized successfully")
+            # Set the GOOGLE_APPLICATION_CREDENTIALS environment variable
+            # This is required for Google Cloud libraries to find the service account key
+            os.environ['GOOGLE_APPLICATION_CREDENTIALS'] = str(key_file_path)
+            os.environ['GOOGLE_CLOUD_PROJECT'] = 'promo-nex-ai-466218'
+            
+            logger.info(f"Set GOOGLE_APPLICATION_CREDENTIALS to: {key_file_path}")
+            print(f"Set GOOGLE_APPLICATION_CREDENTIALS to: {key_file_path}")
+            
+            # Initialize Vertex AI client
+            self.client = genai.Client(
+                vertexai=True,
+                http_options=types.HttpOptions(api_version='v1'),
+                credentials=service_account.Credentials.from_service_account_file(
+                    str(key_file_path),
+                    scopes=['https://www.googleapis.com/auth/cloud-platform']
+                )
+            )
+            logger.info("Vertex AI client initialized successfully")
             
         except Exception as e:
-            logger.error(f"Failed to initialize Gemini client: {e}")
+            logger.error(f"Failed to initialize Vertex AI client: {e}")
             self.client = None
     
     def is_available(self) -> bool:
-        """Check if Gemini is available and properly configured."""
-        return (GEMINI_AVAILABLE and 
-                settings.GEMINI_ENABLED and 
-                settings.GEMINI_API_KEY and 
+        """Check if Vertex AI is available and properly configured."""
+        # Get the project root directory (parent of app directory)
+        project_root = Path(__file__).parent.parent.parent
+        key_file_path = project_root / "promo-nex-ai-vertex-ai-key.json"
+        
+        return (VERTEX_AVAILABLE and 
+                os.path.exists(key_file_path) and 
                 self.client is not None)
     
     def is_pillow_available(self) -> bool:
@@ -357,12 +376,12 @@ class GeminiManager:
         negative_prompt: Optional[str] = None
     ) -> Dict[str, Any]:
         """
-        Generate a video using Google Gemini with a text prompt and image URL.
+        Generate a video using Google Vertex AI with a text prompt and image URL.
         
         Args:
             prompt: Text prompt for video generation
             image_url: URL of the input image
-            model: Gemini model to use (default: veo-3.0-generate-preview)
+            model: Vertex AI model to use (default: veo-3.0-generate-preview)
             file_path: Optional path to save the generated video(s)
             aspect_ratio: Aspect ratio for the video (default: "16:9")
             number_of_videos: Number of videos to generate (default: 1)
@@ -372,7 +391,7 @@ class GeminiManager:
             Dictionary containing generation results and video paths
         """
         if not self.is_available():
-            raise RuntimeError("Gemini is not available or properly configured")
+            raise RuntimeError("Vertex AI is not available or properly configured")
         
         try:
             logger.info(f"Starting video generation with model {model}")
@@ -390,12 +409,12 @@ class GeminiManager:
                 image=image_obj,
                 config=types.GenerateVideosConfig(
                     # Split aspect_ratio and compare width/height to set 16:9 or 9:16
-                    # aspect_ratio = (
-                    #     "9:16"
-                    #     if (aspect_ratio and ":" in aspect_ratio and int(aspect_ratio.split(":")[0]) < int(aspect_ratio.split(":")[1]))
-                    #     else "16:9"
-                    # ),
-                    aspect_ratio="16:9",
+                    aspect_ratio = (
+                        "9:16"
+                        if (aspect_ratio and ":" in aspect_ratio and int(aspect_ratio.split(":")[0]) < int(aspect_ratio.split(":")[1]))
+                        else "16:9"
+                    ),
+                    # aspect_ratio="16:9",
                     number_of_videos=number_of_videos,
                     negative_prompt=negative_prompt,
                 ),
@@ -416,7 +435,7 @@ class GeminiManager:
             
             for n, generated_video in enumerate(generated_videos):
                 # Download the video file
-                self.client.files.download(file=generated_video.video)
+                # operation.result.generated_videos[0].video.save(str(file_path))
                 
                 # Save video if file_path is provided
                 if file_path:
@@ -458,7 +477,7 @@ class GeminiManager:
 
 
 # Global instance for easy access
-gemini_manager = GeminiManager()
+vertex_manager = VertexManager()
 
 def generate_video_with_prompt_and_image(
     prompt: str,
@@ -470,27 +489,30 @@ def generate_video_with_prompt_and_image(
     negative_prompt: Optional[str] = None
 ) -> Dict[str, Any]:
     """Convenience function to generate video with prompt and image URL."""
-    return gemini_manager.generate_video_with_prompt_and_image(
+    return vertex_manager.generate_video_with_prompt_and_image(
         prompt, image_url, model, file_path, aspect_ratio, number_of_videos, negative_prompt
     )
 
 
-def is_gemini_available() -> bool:
-    """Check if Gemini is available and configured."""
-    return gemini_manager.is_available()
+def is_vertex_available() -> bool:
+    """Check if Vertex AI is available and configured."""
+    return vertex_manager.is_available()
 
 
 def is_pillow_available() -> bool:
     """Check if Pillow is available for image processing."""
-    return gemini_manager.is_pillow_available()
+    return vertex_manager.is_pillow_available()
 
 
-def get_gemini_status() -> Dict[str, Any]:
-    """Get Gemini service status and configuration."""
+def get_vertex_status() -> Dict[str, Any]:
+    """Get Vertex AI service status and configuration."""
+    # Get the project root directory (parent of app directory)
+    project_root = Path(__file__).parent.parent.parent
+    key_file_path = project_root / "promo-nex-ai-vertex-ai-key.json"
+    
     return {
-        "available": gemini_manager.is_available(),
-        "enabled": settings.GEMINI_ENABLED,
-        "configured": bool(settings.GEMINI_API_KEY),
-        "package_available": GEMINI_AVAILABLE,
-        "pillow_available": gemini_manager.is_pillow_available()
+        "available": vertex_manager.is_available(),
+        "configured": os.path.exists(key_file_path),
+        "package_available": VERTEX_AVAILABLE,
+        "pillow_available": vertex_manager.is_pillow_available()
     }
