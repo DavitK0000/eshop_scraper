@@ -23,6 +23,7 @@ except ImportError:
 
 from ..config import settings
 from .url_utils import generate_task_id
+from ..services.session_service import session_service
 
 logger = logging.getLogger(__name__)
 
@@ -32,7 +33,7 @@ class TaskType(str, Enum):
     SCRAPING = "scraping"
     CONTENT_ANALYSIS = "content_analysis"
     DATA_EXTRACTION = "data_extraction"
-    MEDIA_PROCESSING = "media_processing"
+    VIDEO_GENERATION = "video_generation"
     FINALIZE_SHORT = "finalize_short"
     IMAGE_ANALYSIS = "image_analysis"
     SCENARIO_GENERATION = "scenario_generation"
@@ -403,7 +404,7 @@ class TaskManager:
                 "Formatting output",
                 "Finalizing results"
             ],
-            TaskType.MEDIA_PROCESSING: [
+            TaskType.VIDEO_GENERATION: [
                 "Initializing",
                 "Downloading media files",
                 "Processing media content",
@@ -513,6 +514,20 @@ class TaskManager:
                 task_created = self.db_ops.create_task(task)
                 if task_created:
                     logger.info(f"Created {task_type} task {task_id} in MongoDB")
+                    
+                    # Create session for the task if short_id is available and task is not scraping
+                    short_id = task_metadata.get('short_id')
+                    if short_id and task_type != TaskType.SCRAPING:
+                        logger.info(f"Creating session for task {task_id} with short_id {short_id}")
+                        session_service.create_session(
+                            short_id=short_id,
+                            task_type=task_type.value,
+                            task_id=task_id,
+                            user_id=user_id
+                        )
+                    elif task_type == TaskType.SCRAPING:
+                        logger.info(f"Skipping session creation for scraping task {task_id}")
+                    
                     return task_id
                 else:
                     logger.warning(f"Failed to create task {task_id} in MongoDB, using fallback storage")
@@ -623,6 +638,13 @@ class TaskManager:
     ) -> bool:
         """Mark a task as completed with optional metadata"""
         try:
+            # Get task info first to check task type
+            task = None
+            if self.mongodb_available:
+                task = self.db_ops.get_task(task_id)
+            elif task_id in self.fallback_tasks:
+                task = self.fallback_tasks[task_id]
+            
             # Try MongoDB first
             if self.mongodb_available:
                 # Update task status to completed
@@ -643,6 +665,12 @@ class TaskManager:
                 
                 if success:
                     logger.info(f"Completed task {task_id} in MongoDB")
+                    
+                    # Remove session if task is not scenario_generation and not scraping
+                    if task and task.task_type != TaskType.SCENARIO_GENERATION and task.task_type != TaskType.SCRAPING:
+                        logger.info(f"Removing session for completed task {task_id} (type: {task.task_type})")
+                        session_service.remove_session(task_id)
+                    
                     return True
                 else:
                     logger.warning(f"Failed to complete task {task_id} in MongoDB, using fallback")
@@ -665,6 +693,12 @@ class TaskManager:
                 
                 task.updated_at = datetime.now(timezone.utc)
                 logger.info(f"Completed task {task_id} in fallback storage")
+                
+                # Remove session if task is not scenario_generation and not scraping
+                if task.task_type != TaskType.SCENARIO_GENERATION and task.task_type != TaskType.SCRAPING:
+                    logger.info(f"Removing session for completed task {task_id} (type: {task.task_type})")
+                    session_service.remove_session(task_id)
+                
                 return True
             else:
                 logger.error(f"Task {task_id} not found in fallback storage")
@@ -682,6 +716,13 @@ class TaskManager:
     ) -> bool:
         """Mark a task as failed"""
         try:
+            # Get task info first to check task type
+            task = None
+            if self.mongodb_available:
+                task = self.db_ops.get_task(task_id)
+            elif task_id in self.fallback_tasks:
+                task = self.fallback_tasks[task_id]
+            
             # Try MongoDB first
             if self.mongodb_available:
                 if retry:
@@ -715,6 +756,12 @@ class TaskManager:
                 
                 if success:
                     logger.info(f"Failed task {task_id} in MongoDB: {error_message}")
+                    
+                    # Remove session if task is not scenario_generation and not scraping
+                    if task and task.task_type != TaskType.SCENARIO_GENERATION and task.task_type != TaskType.SCRAPING:
+                        logger.info(f"Removing session for failed task {task_id} (type: {task.task_type})")
+                        session_service.remove_session(task_id)
+                    
                     return True
                 else:
                     logger.warning(f"Failed to mark task {task_id} as failed in MongoDB, using fallback")
@@ -737,8 +784,14 @@ class TaskManager:
                 task.task_status_message = "Task failed"
                 task.error_message = error_message
                 task.completed_at = datetime.now(timezone.utc)
-                task.updated_at = datetime.utcnow()
+                task.updated_at = datetime.now(timezone.utc)
                 logger.info(f"Failed task {task_id} in fallback storage: {error_message}")
+                
+                # Remove session if task is not scenario_generation and not scraping
+                if task.task_type != TaskType.SCENARIO_GENERATION and task.task_type != TaskType.SCRAPING:
+                    logger.info(f"Removing session for failed task {task_id} (type: {task.task_type})")
+                    session_service.remove_session(task_id)
+                
                 return True
             else:
                 logger.error(f"Task {task_id} not found in fallback storage")
@@ -751,6 +804,13 @@ class TaskManager:
     def cancel_task(self, task_id: str) -> bool:
         """Cancel a running or pending task"""
         try:
+            # Get task info first to check task type
+            task = None
+            if self.mongodb_available:
+                task = self.db_ops.get_task(task_id)
+            elif task_id in self.fallback_tasks:
+                task = self.fallback_tasks[task_id]
+            
             success = self.db_ops.update_task(task_id, {
                 "task_status": TaskStatus.CANCELLED,
                 "task_status_message": "Task cancelled by user",
@@ -759,6 +819,12 @@ class TaskManager:
             
             if success:
                 logger.info(f"Cancelled task {task_id}")
+                
+                # Remove session if task is not scenario_generation and not scraping
+                if task and task.task_type != TaskType.SCENARIO_GENERATION and task.task_type != TaskType.SCRAPING:
+                    logger.info(f"Removing session for cancelled task {task_id} (type: {task.task_type})")
+                    session_service.remove_session(task_id)
+                
                 return True
             else:
                 logger.error(f"Failed to cancel task {task_id}")

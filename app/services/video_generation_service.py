@@ -233,13 +233,23 @@ class VideoGenerationService:
             Dict containing task information
         """
         try:
+            # First fetch scene data to get short_id
+            scene_data = self._fetch_scene_data(scene_id)
+            if not scene_data:
+                raise Exception(f"Scene {scene_id} not found")
+            
+            short_id = scene_data.get('short_id')
+            if not short_id:
+                raise Exception(f"Short ID not found for scene {scene_id}")
+            
             # Create task using task management system
             logger.info(
                 f"Creating video generation task for scene {scene_id} and user {user_id}")
             task_id = create_task(
-                task_type=TaskType.MEDIA_PROCESSING,
+                task_type=TaskType.VIDEO_GENERATION,
                 user_id=user_id,
                 scene_id=scene_id,
+                short_id=short_id,  # Include short_id for session creation
                 task_name="Video Generation",
                 description=f"Generate video for scene {scene_id}"
             )
@@ -399,15 +409,22 @@ class VideoGenerationService:
             fail_task(task_id, error_msg)
     
     def _fetch_scene_data(self, scene_id: str) -> Optional[Dict[str, Any]]:
-        """Fetch scene data from the database."""
+        """Fetch scene data from the database including short_id."""
         try:
             if not supabase_manager.is_connected():
                 raise Exception("Supabase connection not available")
             
-            result = supabase_manager.client.table('video_scenes').select('*').eq('id', scene_id).execute()
+            # Join video_scenes with video_scenarios to get short_id
+            result = supabase_manager.client.table('video_scenes').select(
+                '*, video_scenarios!inner(short_id)'
+            ).eq('id', scene_id).execute()
             
             if result.data:
-                return result.data[0]
+                scene_data = result.data[0]
+                # Extract short_id from the joined data
+                if 'video_scenarios' in scene_data and scene_data['video_scenarios']:
+                    scene_data['short_id'] = scene_data['video_scenarios']['short_id']
+                return scene_data
             return None
             
         except Exception as e:

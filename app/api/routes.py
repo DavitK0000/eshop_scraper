@@ -21,6 +21,7 @@ from app.services.scenario_generation_service import scenario_generation_service
 from app.services.save_scenario_service import save_scenario_service
 from app.services.test_audio_service import test_audio_service
 from app.services.scheduler_service import get_scheduler_status, run_cleanup_now
+from app.services.session_service import session_service
 from app.config import settings
 from app.security import (
     get_api_key, validate_request_security, validate_scrape_request,
@@ -1048,6 +1049,110 @@ def trigger_cleanup_now():
     except Exception as e:
         logger.error(f"Error triggering manual cleanup: {e}", exc_info=True)
         raise HTTPException(status_code=500, detail=f"Failed to trigger cleanup: {str(e)}")
+
+
+# ============================================================================
+# Session Management Endpoints
+# ============================================================================
+
+@router.get("/sessions/{short_id}")
+def get_sessions_by_short_id(short_id: str):
+    """
+    Get all sessions for a specific short_id
+    
+    This endpoint returns all active and completed sessions associated with a short_id.
+    Useful for tracking task progress and session management.
+    
+    Authentication: Optional API key via Bearer token
+    """
+    try:
+        sessions = session_service.get_sessions_by_short_id(short_id)
+        
+        # Convert sessions to response format
+        session_data = []
+        for session in sessions:
+            session_data.append({
+                "short_id": session.short_id,
+                "task_type": session.task_type,
+                "task_id": session.task_id,
+                "user_id": session.user_id,
+                "status": session.status,
+                "created_at": session.created_at.isoformat() if session.created_at else None,
+                "updated_at": session.updated_at.isoformat() if session.updated_at else None
+            })
+        
+        return {
+            "short_id": short_id,
+            "sessions": session_data,
+            "total_sessions": len(session_data),
+            "timestamp": datetime.now(timezone.utc).isoformat()
+        }
+        
+    except Exception as e:
+        logger.error(f"Error getting sessions for short_id {short_id}: {e}", exc_info=True)
+        raise HTTPException(status_code=500, detail=f"Failed to get sessions: {str(e)}")
+
+
+@router.get("/sessions/task/{task_id}")
+def get_session_by_task_id(task_id: str):
+    """
+    Get session information for a specific task_id
+    
+    This endpoint returns session information for a specific task.
+    Useful for checking if a task has an associated session.
+    
+    Authentication: Optional API key via Bearer token
+    """
+    try:
+        session = session_service.get_session(task_id)
+        
+        if not session:
+            raise HTTPException(status_code=404, detail="Session not found")
+        
+        return {
+            "short_id": session.short_id,
+            "task_type": session.task_type,
+            "task_id": session.task_id,
+            "user_id": session.user_id,
+            "status": session.status,
+            "created_at": session.created_at.isoformat() if session.created_at else None,
+            "updated_at": session.updated_at.isoformat() if session.updated_at else None
+        }
+        
+    except HTTPException:
+        raise
+    except Exception as e:
+        logger.error(f"Error getting session for task_id {task_id}: {e}", exc_info=True)
+        raise HTTPException(status_code=500, detail=f"Failed to get session: {str(e)}")
+
+
+@router.delete("/sessions/task/{task_id}")
+def remove_session(task_id: str):
+    """
+    Remove a session for a specific task_id
+    
+    This endpoint manually removes a session. This is typically done automatically
+    when tasks complete, but can be used for manual cleanup if needed.
+    
+    Authentication: Optional API key via Bearer token
+    """
+    try:
+        success = session_service.remove_session(task_id)
+        
+        if success:
+            return {
+                "message": f"Session for task {task_id} removed successfully",
+                "task_id": task_id,
+                "timestamp": datetime.now(timezone.utc).isoformat()
+            }
+        else:
+            raise HTTPException(status_code=404, detail="Session not found or already removed")
+        
+    except HTTPException:
+        raise
+    except Exception as e:
+        logger.error(f"Error removing session for task_id {task_id}: {e}", exc_info=True)
+        raise HTTPException(status_code=500, detail=f"Failed to remove session: {str(e)}")
 
 
 # ============================================================================

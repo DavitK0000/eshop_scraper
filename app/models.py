@@ -1,7 +1,7 @@
 from pydantic import BaseModel, HttpUrl, Field
 from typing import Optional, Dict, Any, List
 from enum import Enum
-from datetime import datetime
+from datetime import datetime, timezone
 
 
 class TaskStatus(str, Enum):
@@ -260,3 +260,14 @@ class TestAudioResponse(BaseModel):
     created_at: datetime = Field(..., description="When the test audio was generated")
     is_cached: bool = Field(False, description="Whether this was a cached result")
     message: str = Field(..., description="Status message")
+
+
+# Session Management Models
+class SessionInfo(BaseModel):
+    short_id: str = Field(..., description="Short ID associated with the session")
+    task_type: str = Field(..., description="Type of task (e.g., 'scraping', 'scenario_generation')")
+    task_id: str = Field(..., description="Task ID associated with the session")
+    created_at: datetime = Field(default_factory=lambda: datetime.now(timezone.utc), description="When the session was created")
+    updated_at: datetime = Field(default_factory=lambda: datetime.now(timezone.utc), description="When the session was last updated")
+    user_id: Optional[str] = Field(None, description="User ID associated with the session")
+    status: str = Field("active", description="Session status (active, completed, failed)")

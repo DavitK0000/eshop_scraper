@@ -14,6 +14,7 @@ import asyncio
 
 from ..utils.task_management import task_manager
 from ..config import settings
+from .session_service import session_service
 
 logger = logging.getLogger(__name__)
 
@@ -128,8 +129,11 @@ class SchedulerService:
             # Run cleanup
             deleted_count = task_manager.db_ops.cleanup_old_tasks(self.cleanup_days_threshold)
             
+            # Also cleanup old sessions
+            session_deleted_count = session_service.cleanup_old_sessions(7)  # Clean up sessions older than 7 days
+            
             self.last_cleanup = datetime.now(timezone.utc)
-            logger.info(f"Cleanup completed: removed {deleted_count} old tasks. "
+            logger.info(f"Cleanup completed: removed {deleted_count} old tasks and {session_deleted_count} old sessions. "
                        f"Next cleanup in {self.cleanup_interval_hours} hours")
             
         except Exception as e:
@@ -146,10 +150,14 @@ class SchedulerService:
                 return 0
             
             deleted_count = task_manager.db_ops.cleanup_old_tasks(self.cleanup_days_threshold)
+            
+            # Also cleanup old sessions
+            session_deleted_count = session_service.cleanup_old_sessions(7)  # Clean up sessions older than 7 days
+            
             self.last_cleanup = datetime.now(timezone.utc)
             
-            logger.info(f"Manual cleanup completed: removed {deleted_count} old tasks")
-            return deleted_count
+            logger.info(f"Manual cleanup completed: removed {deleted_count} old tasks and {session_deleted_count} old sessions")
+            return deleted_count + session_deleted_count
             
         except Exception as e:
             logger.error(f"Failed to run manual cleanup: {e}")

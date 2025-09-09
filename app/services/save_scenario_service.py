@@ -20,6 +20,7 @@ from app.utils.task_management import (
     create_task, start_task, update_task_progress, 
     complete_task, fail_task, TaskType, TaskStatus as TMStatus
 )
+from app.services.session_service import session_service
 
 from app.config import settings
 from app.logging_config import get_logger
@@ -157,6 +158,15 @@ class SaveScenarioService:
                 "scene_count": len(scene_ids),
                 "thumbnail_processed": thumbnail_url is not None
             })
+            
+            # Remove session for scenario_generation tasks when save_scenario is triggered
+            logger.info(f"[{thread_name}] Removing session for scenario_generation task with short_id {request.short_id}")
+            # Find and remove sessions for scenario_generation tasks with this short_id
+            sessions = session_service.get_sessions_by_short_id(request.short_id)
+            for session in sessions:
+                if session.task_type == "scenario_generation":
+                    logger.info(f"[{thread_name}] Removing session for scenario_generation task {session.task_id}")
+                    session_service.remove_session(session.task_id)
             
             logger.info(f"[{thread_name}] Save scenario task {task_id} completed successfully")
             

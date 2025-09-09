@@ -56,6 +56,7 @@ async def lifespan(app: FastAPI):
     try:
         from app.utils.task_management import initialize_task_manager
         from app.utils.supabase_utils import supabase_manager
+        from app.services.session_service import initialize_session_service
         
         # Initialize Supabase
         if supabase_manager.is_connected():
@@ -68,6 +69,12 @@ async def lifespan(app: FastAPI):
             logger.info("MongoDB connection established successfully")
         else:
             logger.warning("MongoDB connection failed - Task management will be disabled")
+        
+        # Initialize Session Service
+        if initialize_session_service():
+            logger.info("Session service connection established successfully")
+        else:
+            logger.warning("Session service connection failed - Session tracking will be disabled")
             
         # Start background connection monitoring
         threading.Thread(target=monitor_database_connections, daemon=True).start()
@@ -91,7 +98,9 @@ async def lifespan(app: FastAPI):
     # Cleanup database connections
     try:
         from app.utils.task_management import cleanup_task_manager
+        from app.services.session_service import cleanup_session_service
         cleanup_task_manager()
+        cleanup_session_service()
         logger.info("Database connections closed")
     except Exception as e:
         logger.error(f"Error closing database connections: {e}")
