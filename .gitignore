@@ -16,3 +16,4 @@ __pycache__
 logs/
 *.log
 *key*.json
+*temp
