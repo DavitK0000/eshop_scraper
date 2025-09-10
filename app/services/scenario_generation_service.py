@@ -583,9 +583,7 @@ Ensure all content is family-friendly, professional, and passes content moderati
         except Exception as e:
             logger.error(f"Failed to transform OpenAI response: {e}", exc_info=True)
             raise
-    
 
-    
     async def _generate_thumbnail_image(self, request: ScenarioGenerationRequest, scenario: GeneratedScenario) -> Optional[str]:
         """Generate thumbnail image for the scenario using Flux API"""
         try:

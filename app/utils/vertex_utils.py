@@ -409,6 +409,7 @@ class VertexManager:
                 image=image_obj,
                 config=types.GenerateVideosConfig(
                     # Split aspect_ratio and compare width/height to set 16:9 or 9:16
+                    duration_seconds=8,
                     aspect_ratio = (
                         "9:16"
                         if (aspect_ratio and ":" in aspect_ratio and int(aspect_ratio.split(":")[0]) < int(aspect_ratio.split(":")[1]))
