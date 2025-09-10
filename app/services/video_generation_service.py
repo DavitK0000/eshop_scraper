@@ -368,6 +368,9 @@ class VideoGenerationService:
     
     async def _process_video_generation_task(self, task_id: str, scene_id: str, user_id: str):
         """Process the video generation task in a background thread."""
+        max_retries = 2  # Maximum retry attempts for video generation
+        retry_count = 0
+        
         try:
             logger.info(f"Starting video generation task {task_id} for scene {scene_id}")
             start_task(task_id)
@@ -383,10 +386,41 @@ class VideoGenerationService:
             update_task_progress(task_id, 2, 'Generating scene image with AI', 45.0)
             image_url = await self._generate_image_if_needed(scene_data, user_id, task_id)
             
-            # Step 3: Generate video
-            update_task_progress(task_id, 3, 'Creating video from generated image', 80.0)
-            # Get both public URL (for database) and signed URL (for immediate access)
-            public_video_url, signed_video_url = self._generate_video(scene_data, image_url, user_id, task_id)
+            # Step 3: Generate video with retry logic
+            while retry_count <= max_retries:
+                try:
+                    update_task_progress(task_id, 3, f'Creating video from generated image (attempt {retry_count + 1})', 80.0)
+                    # Get both public URL (for database) and signed URL (for immediate access)
+                    public_video_url, signed_video_url = self._generate_video(scene_data, image_url, user_id, task_id)
+                    
+                    # If we get here, video generation was successful
+                    break
+                    
+                except Exception as video_error:
+                    error_msg = str(video_error)
+                    logger.warning(f"Video generation attempt {retry_count + 1} failed: {error_msg}")
+                    
+                    # Check if this is a retryable error
+                    if self._is_retryable_video_error(error_msg) and retry_count < max_retries:
+                        retry_count += 1
+                        logger.info(f"Retryable error detected: {error_msg}")
+                        logger.info(f"Regenerating image and retrying video generation (attempt {retry_count + 1}/{max_retries + 1})")
+                        
+                        # Regenerate image for retry
+                        update_task_progress(task_id, 2, f'Regenerating image due to content policy (attempt {retry_count + 1})', 45.0)
+                        image_url = await self._generate_image_if_needed(scene_data, user_id, task_id, force_regenerate=True)
+                        
+                        # Wait a bit before retrying
+                        import time
+                        time.sleep(2)
+                        continue
+                    else:
+                        # Not retryable or max retries reached
+                        if retry_count >= max_retries:
+                            logger.error(f"Maximum retry attempts ({max_retries}) reached for video generation")
+                        else:
+                            logger.error(f"Non-retryable error: {error_msg}")
+                        raise video_error
             
             # Step 4: Update scene with generated URLs
             update_task_progress(task_id, 4, 'Saving results and finalizing', 95.0)
@@ -431,12 +465,15 @@ class VideoGenerationService:
             logger.error(f"Failed to fetch scene data for {scene_id}: {e}")
             raise
     
-    async def _generate_image_if_needed(self, scene_data: Dict[str, Any], user_id: str, task_id: str) -> str:
+    async def _generate_image_if_needed(self, scene_data: Dict[str, Any], user_id: str, task_id: str, force_regenerate: bool = False) -> str:
         """Generate image if it doesn't exist, otherwise return existing image URL."""
-        # Check if image already exists
-        if scene_data.get('image_url'):
+        # Check if image already exists and we're not forcing regeneration
+        if scene_data.get('image_url') and not force_regenerate:
             logger.info(f"Image already exists for scene {scene_data['id']}: {scene_data['image_url']}")
             return scene_data['image_url']
+        
+        if force_regenerate:
+            logger.info(f"Force regenerating image for scene {scene_data['id']} due to content policy violation")
         
         # Get required data for image generation
         image_prompt = scene_data.get('image_prompt')
@@ -604,6 +641,26 @@ class VideoGenerationService:
         except Exception as e:
             logger.error(f"Failed to download image from {image_url}: {e}")
             raise Exception(f"Failed to download image: {e}")
+    
+    def _is_retryable_video_error(self, error_msg: str) -> bool:
+        """Check if a video generation error is retryable (e.g., usage guidelines violation)."""
+        retryable_errors = [
+            "usage guidelines",
+            "violates Vertex AI's usage guidelines",
+            "content policy",
+            "inappropriate content",
+            "unsafe content",
+            "harmful content",
+            "support codes: 17301594",
+            "support codes: 15236754",
+            "input image violates",
+            "could not generate videos because",
+            "content safety",
+            "policy violation"
+        ]
+        
+        error_lower = error_msg.lower()
+        return any(retryable_error.lower() in error_lower for retryable_error in retryable_errors)
     
     def _generate_video(self, scene_data: Dict[str, Any], image_url: str, user_id: str, task_id: str) -> tuple[str, str]:
         """Generate video using the image and visual prompt."""

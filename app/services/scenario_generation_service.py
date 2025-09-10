@@ -283,7 +283,7 @@ class ScenarioGenerationService:
 
     async def _build_system_message(self, request: ScenarioGenerationRequest) -> str:
         """Build system message for OpenAI"""
-        expected_scene_count = request.video_length // 5
+        expected_scene_count = request.video_length // 8
         product_data = await self._get_product_by_id(request.product_id)
         available_images = product_data.get(
             'image_analysis', []) if product_data else []
@@ -327,7 +327,7 @@ DEMOGRAPHIC DETECTION REQUIREMENTS:
 {image_selection_instructions}
 
  REQUIREMENTS:
- 1. Generate EXACTLY 1 scenario with {expected_scene_count} scenes, each exactly 5 seconds
+ 1. Generate EXACTLY 1 scenario with {expected_scene_count} scenes, each exactly 8 seconds
  2. Each scene needs TWO prompts:
     - imagePrompt: Detailed, descriptive prompt for first frame following RunwayML Gen-4 best practices
     - visualPrompt: Safe video prompt for video generation
@@ -341,8 +341,14 @@ DEMOGRAPHIC DETECTION REQUIREMENTS:
  5. Maintain consistent characters, settings, and visual style throughout
  6. Base content on actual product capabilities - no unrealistic scenarios
  7. Generate content suitable for TikTok vertical format (9:16)
- 8. ALL content in target language: "{request.target_language}"
- 9. Audio script timing: Hook (20-25%), Main (50-60%), CTA (15-20%) of total duration"""
+ 8. Audio script timing: Hook (20-25%), Main (50-60%), CTA (15-20%) of total duration
+ 9. LANGUAGE REQUIREMENTS:
+    - Generate ALL audio script content (hook, main, cta, hashtags) in target language: "{request.target_language}"
+    - Generate ALL text content that appears in images/videos in target language: "{request.target_language}"
+    - This includes any text overlays, captions, product names, descriptions, or visual text elements
+    - Ensure all visual prompts specify text content in the target language
+    - Make sure image prompts include text elements in the target language when relevant
+ """
     
     async def _build_user_message(self, request: ScenarioGenerationRequest) -> str:
         """Build user message for OpenAI"""
@@ -502,7 +508,7 @@ Ensure all content is family-friendly, professional, and passes content moderati
                     scene_id=scene_data.get('sceneId', f"scene-{i}"),
                     scene_number=i+1,
                     description=scene_data.get('description', f'Scene {i+1}'),
-                    duration=scene_data.get('duration', 5),
+                    duration=scene_data.get('duration', 8),
                     image_prompt=scene_data.get('imagePrompt', f'Generate image for scene {i+1}'),
                     visual_prompt=scene_data.get('visualPrompt', f'Video content for scene {i+1}'),
                     product_reference_image_url=product_reference_image_url,  # Use AI-selected image
@@ -520,7 +526,7 @@ Ensure all content is family-friendly, professional, and passes content moderati
                     scene_id="scene-default",
                     scene_number=1,
                     description="Default scene for video",
-                    duration=5,
+                    duration=8,
                     image_prompt="Generate a compelling product image",
                     visual_prompt="Show the product in an engaging way",
                     product_reference_image_url=default_image_url,

@@ -427,6 +427,26 @@ class VertexManager:
                 operation = self.client.operations.get(operation)
                 logger.info(f"Video generation status: {operation}")
             
+            # Check if the operation completed successfully
+            if operation.error:
+                error_msg = f"Video generation failed: {operation.error.get('message', 'Unknown error')}"
+                logger.error(error_msg)
+                return {
+                    "success": False,
+                    "error": error_msg,
+                    "status": "error"
+                }
+            
+            # Check if result is available
+            if not operation.result:
+                error_msg = "Video generation completed but no result was returned"
+                logger.error(error_msg)
+                return {
+                    "success": False,
+                    "error": error_msg,
+                    "status": "error"
+                }
+            
             logger.info("Video generation completed successfully")
             
             # Process generated videos

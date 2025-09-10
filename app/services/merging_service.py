@@ -994,21 +994,31 @@ class MergingService:
             raise
 
     def _merge_audio_with_video(self, video_path: str, audio_path: str, task_id: str) -> str:
-        """Merge audio with video using FFmpeg."""
+        """Merge audio with video using FFmpeg, properly mixing video sound effects with voice script."""
         try:
             # Create temporary directory for merged video
             temp_dir = tempfile.mkdtemp()
             merged_path = os.path.join(temp_dir, "video_with_audio.mp4")
 
-            # Merge audio with video using FFmpeg
-            # Use apad to extend audio if it's shorter than video, ensuring output matches video duration
+            # Get video duration for proper audio mixing
+            video_duration = self._get_video_duration(video_path)
+
+            # Merge audio with video using FFmpeg with proper audio mixing
+            # This command will:
+            # 1. Take video (with its sound effects) as input 0
+            # 2. Take voice script audio as input 1
+            # 3. Mix both audio streams using amix filter with volume adjustments
+            # 4. Ensure the output duration matches the video duration
             cmd = [
                 'ffmpeg', '-y',
-                '-i', video_path,
-                '-i', audio_path,
-                '-c:v', 'copy',  # Copy video codec
-                '-c:a', 'aac',   # Convert audio to AAC
-                '-af', 'apad=whole_dur=' + str(self._get_video_duration(video_path)),  # Pad audio to match video duration
+                '-i', video_path,      # Input 0: video with sound effects
+                '-i', audio_path,      # Input 1: voice script audio
+                '-c:v', 'copy',        # Copy video codec without re-encoding
+                '-filter_complex', f'[0:a]volume=0.3[vid_audio];[1:a]volume=1.0[voice_audio];[vid_audio][voice_audio]amix=inputs=2:duration=first:dropout_transition=2[out]',  # Mix with volume adjustments
+                '-map', '0:v',         # Map video from first input
+                '-map', '[out]',       # Map the mixed audio output
+                '-c:a', 'aac',         # Convert mixed audio to AAC
+                '-shortest',           # End when shortest input ends (video duration)
                 merged_path
             ]
 
@@ -1020,16 +1030,101 @@ class MergingService:
             )
 
             if result.returncode != 0:
-                raise Exception(f"FFmpeg audio merge failed: {result.stderr}")
+                # If the complex filter fails, try a simpler approach
+                logger.warning(f"Complex audio mixing failed, trying simpler approach: {result.stderr}")
+                return self._merge_audio_with_video_simple(video_path, audio_path, task_id)
 
             if not os.path.exists(merged_path):
                 raise Exception("Audio-merged video file was not created")
 
-            logger.info(f"Successfully merged audio with video")
+            logger.info(f"Successfully merged audio with video using complex mixing")
             return merged_path
 
         except Exception as e:
             logger.error(f"Failed to merge audio with video: {e}")
+            raise
+
+    def _merge_audio_with_video_simple(self, video_path: str, audio_path: str, task_id: str) -> str:
+        """Fallback method for merging audio with video using a simpler approach."""
+        try:
+            # Create temporary directory for merged video
+            temp_dir = tempfile.mkdtemp()
+            merged_path = os.path.join(temp_dir, "video_with_audio_simple.mp4")
+
+            # Simpler approach: mix audio streams using amix with volume adjustments
+            cmd = [
+                'ffmpeg', '-y',
+                '-i', video_path,      # Input 0: video with sound effects
+                '-i', audio_path,      # Input 1: voice script audio
+                '-c:v', 'copy',        # Copy video codec
+                '-filter_complex', '[0:a]volume=0.5[vid_audio];[1:a]volume=1.0[voice_audio];[vid_audio][voice_audio]amix=inputs=2[out]',  # Mix with volume adjustments
+                '-map', '0:v',         # Map video from first input
+                '-map', '[out]',       # Map the mixed audio output
+                '-c:a', 'aac',         # Convert mixed audio to AAC
+                merged_path
+            ]
+
+            result = subprocess.run(
+                cmd,
+                capture_output=True,
+                text=True,
+                timeout=300  # 5 minutes timeout
+            )
+
+            if result.returncode != 0:
+                # If even the simple approach fails, try the voice-priority method
+                logger.warning(f"Simple audio mixing failed, trying voice-priority approach: {result.stderr}")
+                return self._merge_audio_with_video_voice_priority(video_path, audio_path, task_id)
+
+            if not os.path.exists(merged_path):
+                raise Exception("Audio-merged video file was not created")
+
+            logger.info(f"Successfully merged audio with video using simple mixing")
+            return merged_path
+
+        except Exception as e:
+            logger.error(f"Failed to merge audio with video (simple): {e}")
+            raise
+
+    def _merge_audio_with_video_basic(self, video_path: str, audio_path: str, task_id: str) -> str:
+        """Most basic fallback method for merging audio with video."""
+        try:
+            # Create temporary directory for merged video
+            temp_dir = tempfile.mkdtemp()
+            merged_path = os.path.join(temp_dir, "video_with_audio_basic.mp4")
+
+            # Most basic approach: just replace video audio with voice script
+            # This is the original behavior but with better error handling
+            cmd = [
+                'ffmpeg', '-y',
+                '-i', video_path,
+                '-i', audio_path,
+                '-c:v', 'copy',        # Copy video codec
+                '-c:a', 'aac',         # Convert audio to AAC
+                '-map', '0:v',         # Map video from first input
+                '-map', '1:a',         # Map audio from second input (voice script)
+                '-shortest',           # End when shortest input ends
+                merged_path
+            ]
+
+            result = subprocess.run(
+                cmd,
+                capture_output=True,
+                text=True,
+                timeout=300  # 5 minutes timeout
+            )
+
+            if result.returncode != 0:
+                raise Exception(f"FFmpeg audio merge failed (basic): {result.stderr}")
+
+            if not os.path.exists(merged_path):
+                raise Exception("Audio-merged video file was not created")
+
+            logger.info(f"Successfully merged audio with video using basic approach (voice only)")
+            return merged_path
+
+        except Exception as e:
+            logger.error(f"Failed to merge audio with video (basic): {e}")
             raise
 
     def _embed_subtitles(self, video_path: str, subtitles: List[Dict[str, Any]], task_id: str) -> str:
