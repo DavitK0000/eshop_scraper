@@ -29,13 +29,17 @@ class TestAudioService:
             'pt-BR': "O primeiro movimento é o que coloca tudo em movimento.",
             'fr': "Le premier mouvement est ce qui met tout en mouvement.",
             'de': "Der erste Zug ist es, der alles in Bewegung setzt.",
-            'nl': "De eerste zet is wat alles in beweging zet."
+            'nl': "De eerste zet is wat alles in beweging zet.",
+            'zh': "第一步是让一切开始运转的关键。",
+            'ja': "最初の一歩がすべてを動かすきっかけとなる。",
+            'ar': "الخطوة الأولى هي ما يضع كل شيء في حركة."
         }
         
         # Supported languages
         self.supported_languages = [
             'en-US', 'en-CA', 'en-GB', 'es', 'es-MX', 
-            'pt-BR', 'fr', 'de', 'nl'
+            'pt-BR', 'fr', 'de', 'nl', 'zh', 
+            'ja', 'ar'
         ]
     
     def _initialize_elevenlabs(self):
