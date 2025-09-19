@@ -410,6 +410,37 @@ class SessionService:
             logger.error(f"Failed to get sessions for short_id {short_id}: {e}")
             return []
     
+    def get_sessions_by_user_id(self, user_id: str) -> List[Session]:
+        """
+        Get all sessions for a user_id
+        
+        Args:
+            user_id: User ID to get sessions for
+            
+        Returns:
+            List of Session objects
+        """
+        try:
+            if not self.mongodb_available:
+                logger.warning("MongoDB not available, cannot get sessions")
+                return []
+                
+            # Ensure connection
+            if not self.session_manager.ensure_connection():
+                logger.error(f"Failed to ensure MongoDB connection for session retrieval")
+                return []
+            
+            # Get sessions
+            sessions_docs = self.session_manager.sessions_collection.find({"user_id": user_id})
+            sessions = []
+            for doc in sessions_docs:
+                sessions.append(Session.from_dict(doc))
+            return sessions
+                
+        except Exception as e:
+            logger.error(f"Failed to get sessions for user_id {user_id}: {e}")
+            return []
+    
     def cleanup_old_sessions(self, days_old: int = 7) -> int:
         """
         Clean up old completed/failed sessions

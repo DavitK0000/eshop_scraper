@@ -478,7 +478,7 @@ class ScrapingService:
             update_task_progress(task_id, 6, "Saving product to database and detecting category")
             
             # Update task with results
-            product_id, short_id = self._save_product_to_supabase(user_id, product_info, url, platform, target_language)
+            product_id, short_id = self._save_product_to_supabase(user_id, product_info, url, platform, target_language, task_id)
             
             # Complete the task in MongoDB with product_id and short_id
             complete_task(task_id, {
@@ -744,7 +744,7 @@ class ScrapingService:
             update_task_progress(actual_task_id, 6, "Saving product to database and detecting category")
             
             # Update task with results
-            product_id, short_id = self._save_product_to_supabase(default_user_id, product_info, url, platform, target_language)
+            product_id, short_id = self._save_product_to_supabase(default_user_id, product_info, url, platform, target_language, actual_task_id)
             
             # Complete the task in MongoDB with product_id and short_id
             complete_task(actual_task_id, {
@@ -1187,6 +1187,9 @@ class ScrapingService:
             if result:
                 product_id = result.get('id')
                 logger.info(f"Successfully saved product to Supabase for user {user_id}: {product_data['title']} (ID: {product_id}) linked to short {short_id}")
+                
+                # Session for scraping task was already created when task was created
+                # No need to create session here since it's created immediately
                 
                 return product_id, short_id
             else:

@@ -1154,6 +1154,40 @@ def remove_session(task_id: str):
         logger.error(f"Error removing session for task_id {task_id}: {e}", exc_info=True)
         raise HTTPException(status_code=500, detail=f"Failed to remove session: {str(e)}")
 
+@router.get("/sessions/user/{user_id}")
+def get_sessions_by_user_id(user_id: str):
+    """
+    Get all sessions for a specific user_id
+    
+    This endpoint returns all active and completed sessions associated with a user_id.
+    Useful for tracking all tasks for a specific user.
+    """
+    try:
+        sessions = session_service.get_sessions_by_user_id(user_id)
+        
+        # Convert sessions to response format
+        session_data = []
+        for session in sessions:
+            session_data.append({
+                "short_id": session.short_id,
+                "task_type": session.task_type,
+                "task_id": session.task_id,
+                "user_id": session.user_id,
+                "status": session.status,
+                "created_at": session.created_at.isoformat() if session.created_at else None,
+                "updated_at": session.updated_at.isoformat() if session.updated_at else None
+            })
+        
+        return {
+            "sessions": session_data,
+            "total_sessions": len(session_data),
+            "user_id": user_id
+        }
+        
+    except Exception as e:
+        logger.error(f"Error getting sessions for user_id {user_id}: {e}", exc_info=True)
+        raise HTTPException(status_code=500, detail=f"Failed to get sessions: {str(e)}")
+
 
 # ============================================================================
 # Test Audio Endpoints

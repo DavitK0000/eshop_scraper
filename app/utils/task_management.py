@@ -515,7 +515,7 @@ class TaskManager:
                 if task_created:
                     logger.info(f"Created {task_type} task {task_id} in MongoDB")
                     
-                    # Create session for the task if short_id is available and task is not scraping
+                    # Create session for the task
                     short_id = task_metadata.get('short_id')
                     if short_id and task_type != TaskType.SCRAPING:
                         logger.info(f"Creating session for task {task_id} with short_id {short_id}")
@@ -526,7 +526,14 @@ class TaskManager:
                             user_id=user_id
                         )
                     elif task_type == TaskType.SCRAPING:
-                        logger.info(f"Skipping session creation for scraping task {task_id}")
+                        # Create session for scraping task immediately without short_id
+                        logger.info(f"Creating session for scraping task {task_id} without short_id")
+                        session_service.create_session(
+                            short_id="",  # Empty short_id for scraping tasks
+                            task_type=task_type.value,
+                            task_id=task_id,
+                            user_id=user_id
+                        )
                     
                     return task_id
                 else:
@@ -666,8 +673,9 @@ class TaskManager:
                 if success:
                     logger.info(f"Completed task {task_id} in MongoDB")
                     
-                    # Remove session if task is not scenario_generation and not scraping
-                    if task and task.task_type != TaskType.SCENARIO_GENERATION and task.task_type != TaskType.SCRAPING:
+                    # Remove session if task is not scenario_generation
+                    # Scraping tasks now have sessions that should be cleaned up
+                    if task and task.task_type != TaskType.SCENARIO_GENERATION:
                         logger.info(f"Removing session for completed task {task_id} (type: {task.task_type})")
                         session_service.remove_session(task_id)
                     
@@ -694,8 +702,9 @@ class TaskManager:
                 task.updated_at = datetime.now(timezone.utc)
                 logger.info(f"Completed task {task_id} in fallback storage")
                 
-                # Remove session if task is not scenario_generation and not scraping
-                if task.task_type != TaskType.SCENARIO_GENERATION and task.task_type != TaskType.SCRAPING:
+                # Remove session if task is not scenario_generation
+                # Scraping tasks now have sessions that should be cleaned up
+                if task.task_type != TaskType.SCENARIO_GENERATION:
                     logger.info(f"Removing session for completed task {task_id} (type: {task.task_type})")
                     session_service.remove_session(task_id)
                 
@@ -757,8 +766,9 @@ class TaskManager:
                 if success:
                     logger.info(f"Failed task {task_id} in MongoDB: {error_message}")
                     
-                    # Remove session if task is not scenario_generation and not scraping
-                    if task and task.task_type != TaskType.SCENARIO_GENERATION and task.task_type != TaskType.SCRAPING:
+                    # Remove session if task is not scenario_generation
+                    # Scraping tasks now have sessions that should be cleaned up
+                    if task and task.task_type != TaskType.SCENARIO_GENERATION:
                         logger.info(f"Removing session for failed task {task_id} (type: {task.task_type})")
                         session_service.remove_session(task_id)
                     
@@ -787,8 +797,9 @@ class TaskManager:
                 task.updated_at = datetime.now(timezone.utc)
                 logger.info(f"Failed task {task_id} in fallback storage: {error_message}")
                 
-                # Remove session if task is not scenario_generation and not scraping
-                if task.task_type != TaskType.SCENARIO_GENERATION and task.task_type != TaskType.SCRAPING:
+                # Remove session if task is not scenario_generation
+                # Scraping tasks now have sessions that should be cleaned up
+                if task.task_type != TaskType.SCENARIO_GENERATION:
                     logger.info(f"Removing session for failed task {task_id} (type: {task.task_type})")
                     session_service.remove_session(task_id)
                 
@@ -820,8 +831,9 @@ class TaskManager:
             if success:
                 logger.info(f"Cancelled task {task_id}")
                 
-                # Remove session if task is not scenario_generation and not scraping
-                if task and task.task_type != TaskType.SCENARIO_GENERATION and task.task_type != TaskType.SCRAPING:
+                # Remove session if task is not scenario_generation
+                # Scraping tasks now have sessions that should be cleaned up
+                if task and task.task_type != TaskType.SCENARIO_GENERATION:
                     logger.info(f"Removing session for cancelled task {task_id} (type: {task.task_type})")
                     session_service.remove_session(task_id)
                 
