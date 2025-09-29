@@ -127,6 +127,9 @@ class BrowserManager:
             page.set_default_timeout(settings.PLAYWRIGHT_TIMEOUT)
             page.set_default_navigation_timeout(settings.PLAYWRIGHT_TIMEOUT)
             
+            # Apply image blocking by default
+            page.route("**/*", self._block_resources)
+            
             logger.info(f"Chrome browser setup completed - Headless: {settings.PLAYWRIGHT_HEADLESS}, Proxy: {proxy is not None}")
             return self.browser, self.context, page
             
@@ -155,13 +158,35 @@ class BrowserManager:
         # Block images and videos if requested
         if block_images:
             page.route("**/*", self._block_resources)
+        else:
+            # If not blocking images, remove any existing route handlers
+            page.unroute("**/*")
         
         return page
     
     def _block_resources(self, route):
-        """Block image and video resources"""
+        """Block image, video, and other non-essential resources"""
         resource_type = route.request.resource_type
-        if resource_type in ['image', 'media', 'font']:
+        url = route.request.url.lower()
+        
+        # Block images, media, fonts, and other non-essential resources
+        if resource_type in ['image', 'media', 'font', 'stylesheet']:
+            route.abort()
+        # Also block common image file extensions regardless of resource type
+        elif any(ext in url for ext in ['.jpg', '.jpeg', '.png', '.gif', '.webp', '.svg', '.bmp', '.ico', '.tiff']):
+            route.abort()
+        # Block common image CDN patterns (including protocol-relative URLs)
+        elif any(pattern in url for pattern in [
+            'cdn.shopify.com', 
+            'images.unsplash.com', 
+            'imgur.com', 
+            'cloudinary.com',
+            '/cdn/shop/files/',  # Shopify file CDN pattern
+            '//cyrus.nyc/cdn/shop/files/',  # Specific Cyrus.nyc pattern
+        ]):
+            route.abort()
+        # Block any URL containing image-related query parameters
+        elif any(param in url for param in ['width=', 'height=', 'crop=', 'v=', '&width=', '&height=', '&crop=']):
             route.abort()
         else:
             route.continue_()

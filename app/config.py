@@ -137,7 +137,7 @@ class Settings:
                 '--disable-features=VizDisplayCompositor',
             ],
             "viewport": {"width": 1920, "height": 1080},
-            "timeout": 30000,
+            "timeout": 60000,
         },
         "firefox": {
             "name": "firefox",
@@ -155,7 +155,7 @@ class Settings:
                 "geo.provider.use_mls": False,  # Disable Mozilla Location Service
             },
             "viewport": {"width": 1920, "height": 1080},
-            "timeout": 30000,
+            "timeout": 60000,
         },
         "safari": {
             "name": "webkit",
@@ -224,7 +224,7 @@ class Settings:
                 '--disable-features=VizDisplayCompositor',
             ],
             "viewport": {"width": 1920, "height": 1080},
-            "timeout": 30000,
+            "timeout": 60000,
         }
     }
     
@@ -245,7 +245,7 @@ class Settings:
     
     # Playwright Settings
     PLAYWRIGHT_HEADLESS: bool = os.getenv("PLAYWRIGHT_HEADLESS", "True").lower() == "true"
-    PLAYWRIGHT_TIMEOUT: int = int(os.getenv("PLAYWRIGHT_TIMEOUT", "30000"))
+    PLAYWRIGHT_TIMEOUT: int = int(os.getenv("PLAYWRIGHT_TIMEOUT", "60000"))
     PLAYWRIGHT_VIEWPORT_WIDTH: int = int(os.getenv("PLAYWRIGHT_VIEWPORT_WIDTH", "1920"))
     PLAYWRIGHT_VIEWPORT_HEIGHT: int = int(os.getenv("PLAYWRIGHT_VIEWPORT_HEIGHT", "1080"))
     
