@@ -36,12 +36,14 @@ class StructuredDataExtractor:
             # Method 1: Look for ProductJson script tags (common in e-commerce platforms)
             product_json_scripts = self.soup.find_all('script', id=re.compile(r'(ProductJson-.*|WH-ProductJson-.*)'))
             for script in product_json_scripts:
+                print(script.string)
                 if script.string:
                     try:
                         data = json.loads(script.string)
                         if isinstance(data, dict) and ('title' in data or 'variants' in data):
                             all_product_data.append(('ProductJson', data))
                     except json.JSONDecodeError:
+                        print("Error parsing json")
                         continue
             
             # Method 2: Look for JSON-LD structured data (application/ld+json)
@@ -562,7 +564,7 @@ class StructuredDataExtractor:
                     for variant in combined_data[key]:
                         if isinstance(variant, dict):
                             # Create a hashable representation of the variant
-                            variant_key = tuple(sorted(variant.items()))
+                            variant_key = self._create_hashable_key(variant)
                             if variant_key not in seen:
                                 seen.add(variant_key)
                                 unique_variants.append(variant)
@@ -574,6 +576,33 @@ class StructuredDataExtractor:
                     combined_data[key] = unique_variants
         
         return combined_data
+    
+    def _create_hashable_key(self, obj: Any) -> tuple:
+        """
+        Create a hashable key from a dictionary or other object.
+        Recursively handles nested dictionaries and lists.
+        
+        Args:
+            obj: Object to convert to hashable key
+            
+        Returns:
+            Hashable tuple representation
+        """
+        if isinstance(obj, dict):
+            # Sort items and recursively convert values
+            sorted_items = []
+            for key, value in sorted(obj.items()):
+                sorted_items.append((key, self._create_hashable_key(value)))
+            return tuple(sorted_items)
+        elif isinstance(obj, list):
+            # Convert list to tuple and recursively convert items
+            return tuple(self._create_hashable_key(item) for item in obj)
+        elif isinstance(obj, (str, int, float, bool, type(None))):
+            # These types are already hashable
+            return obj
+        else:
+            # For other types, convert to string
+            return str(obj)
     
     def _merge_rating_data(self, ratings: list) -> dict:
         """

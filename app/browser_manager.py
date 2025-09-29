@@ -208,7 +208,7 @@ class BrowserManager:
             
             # Navigate to URL
             logger.info(f"Navigating to: {url}")
-            response = page.goto(url, wait_until='domcontentloaded')
+            response = page.goto(url, wait_until='domcontentloaded', timeout=120000)
             
             if not response or response.status >= 400:
                 raise Exception(f"Failed to load page: {response.status if response else 'No response'}")
