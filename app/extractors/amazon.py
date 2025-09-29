@@ -26,7 +26,8 @@ class AmazonExtractor(BaseExtractor):
         price_fraction = self.find_element_text('.a-price-fraction')
         if price_whole:
             price_str = price_whole + (price_fraction or '0')
-            price = parse_price_with_regional_format(price_str, parse_url_domain(self.url))
+            # price = parse_price_with_regional_format(price_str, parse_url_domain(self.url))
+            price = float(price_str)
             if price:
                 return price
         
@@ -43,7 +44,13 @@ class AmazonExtractor(BaseExtractor):
     
     def extract_description(self) -> Optional[str]:
         """Extract product description from Amazon page"""
-        description = self.find_element_text('div#feature-bullets>ul.a-unordered-list')
+        # Try feature bullets first
+        description = self.find_element_text('div#feature-bullets ul.a-unordered-list')
+        if description:
+            return description
+        
+        # Try product facts desktop
+        description = self.find_element_text('div#productFactsDesktop_feature_div ul.a-unordered-list')
         if description:
             return description
         

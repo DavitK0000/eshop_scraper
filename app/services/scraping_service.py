@@ -1353,7 +1353,7 @@ Respond with only the sub-category name, nothing else."""
                     logger.info(f"Using fallback category: {fallback_category_name} (ID: {fallback_category_id})")
                     return fallback_category_id
             else:
-                print(response.choices[0].message.content)
+                print(response.choices)
                 logger.warning("OpenAI response did not contain valid category")
                 return None
 
