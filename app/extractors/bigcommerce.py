@@ -56,10 +56,10 @@ class BigcommerceExtractor(BaseExtractor):
                     except (json.JSONDecodeError, AttributeError):
                         continue
                 
-                if script.string and 'window.BCData' in script.string:
+                if script.string and ('window.BCData' in script.string or 'var BCData' in script.string):
                     try:
-                        # Extract BCData
-                        match = re.search(r'window\.BCData\s*=\s*({.*?});', script.string, re.DOTALL)
+                        # Extract BCData - handle both window.BCData and var BCData patterns
+                        match = re.search(r'(?:window\.BCData|var BCData)\s*=\s*({.*?});', script.string, re.DOTALL)
                         if match:
                             data = json.loads(match.group(1))
                             bc_data['bc_data'] = data
@@ -106,6 +106,9 @@ class BigcommerceExtractor(BaseExtractor):
                 return self.bc_data['product']['name']
             if self.bc_data.get('product_attributes') and self.bc_data['product_attributes'].get('name'):
                 return self.bc_data['product_attributes']['name']
+            if self.bc_data.get('bc_data') and self.bc_data['bc_data'].get('product_attributes'):
+                # BCData might have product info in product_attributes
+                pass  # Will be handled in other methods
         
         # Fallback to HTML extraction
         selectors = [
@@ -151,6 +154,19 @@ class BigcommerceExtractor(BaseExtractor):
                     return float(self.bc_data['product_attributes']['price'])
                 except (ValueError, TypeError):
                     pass
+            
+            # Handle BCData product_attributes price structure
+            if self.bc_data.get('bc_data') and self.bc_data['bc_data'].get('product_attributes'):
+                product_attrs = self.bc_data['bc_data']['product_attributes']
+                if product_attrs.get('price'):
+                    price_data = product_attrs['price']
+                    # Try different price fields in order of preference
+                    for price_field in ['with_tax', 'without_tax', 'sale_price_with_tax', 'non_sale_price_with_tax']:
+                        if price_data.get(price_field) and price_data[price_field].get('value'):
+                            try:
+                                return float(price_data[price_field]['value'])
+                            except (ValueError, TypeError):
+                                continue
         
         # Fallback to HTML extraction
         price_selectors = [
@@ -202,6 +218,10 @@ class BigcommerceExtractor(BaseExtractor):
             '[data-test-id="product-description"]',
             '.productView-info',
             '.product-info',
+            # Accordion-based description
+            '.accordion-item.product-description .tab-value.product-desc-content',
+            '.accordion-item.product-description .tab-content__wrap .tab-value',
+            '.accordion-item.product-description .accordion-content .tab-value',
         ]
         
         for selector in desc_selectors:
@@ -287,6 +307,16 @@ class BigcommerceExtractor(BaseExtractor):
                 return self.bc_data['meta_currency']
             if self.bc_data.get('product') and self.bc_data['product'].get('currency'):
                 return self.bc_data['product']['currency']
+            
+            # Handle BCData product_attributes currency
+            if self.bc_data.get('bc_data') and self.bc_data['bc_data'].get('product_attributes'):
+                product_attrs = self.bc_data['bc_data']['product_attributes']
+                if product_attrs.get('price'):
+                    price_data = product_attrs['price']
+                    # Try different price fields for currency
+                    for price_field in ['with_tax', 'without_tax', 'sale_price_with_tax', 'non_sale_price_with_tax']:
+                        if price_data.get(price_field) and price_data[price_field].get('currency'):
+                            return price_data[price_field]['currency']
         
         # Fallback to domain-based currency detection
         domain = parse_url_domain(self.url)
@@ -402,6 +432,24 @@ class BigcommerceExtractor(BaseExtractor):
                     specs['sku'] = attrs['sku']
                 if 'available' in attrs:
                     specs['available'] = attrs['available']
+            
+            # Handle BCData product_attributes
+            if self.bc_data.get('bc_data') and self.bc_data['bc_data'].get('product_attributes'):
+                attrs = self.bc_data['bc_data']['product_attributes']
+                if attrs.get('sku'):
+                    specs['sku'] = attrs['sku']
+                if 'instock' in attrs:
+                    specs['available'] = attrs['instock']
+                if 'purchasable' in attrs:
+                    specs['purchasable'] = attrs['purchasable']
+                if attrs.get('upc'):
+                    specs['upc'] = attrs['upc']
+                if attrs.get('mpn'):
+                    specs['mpn'] = attrs['mpn']
+                if attrs.get('gtin'):
+                    specs['gtin'] = attrs['gtin']
+                if attrs.get('weight'):
+                    specs['weight'] = attrs['weight']
         
         # Extract specifications from HTML
         spec_selectors = [
@@ -422,6 +470,19 @@ class BigcommerceExtractor(BaseExtractor):
                     value = element.get_text(strip=True)
                     if label and value:
                         specs[label] = value
+        
+        # Extract specifications from accordion format
+        accordion_specs = self.soup.select('.accordion-item.details .tab-content__wrap')
+        for spec_wrap in accordion_specs:
+            # Look for span (label) and div.tab-value (value) pairs
+            label_elem = spec_wrap.find('span')
+            value_elem = spec_wrap.find('div', class_='tab-value')
+            
+            if label_elem and value_elem:
+                label = label_elem.get_text(strip=True)
+                value = value_elem.get_text(strip=True)
+                if label and value:
+                    specs[label] = value
         
         return specs
     

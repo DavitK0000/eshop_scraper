@@ -511,8 +511,8 @@ class StructuredDataExtractor:
         
         # Sort by source priority (ProductJson first, then JSON-LD)
         source_priority = {
-            'ProductJson': 1,
-            'JSON-LD': 2,
+            'ProductJson': 2,
+            'JSON-LD': 1,
             'JSON-LD-Rating': 3
         }
         
