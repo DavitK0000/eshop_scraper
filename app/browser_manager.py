@@ -171,7 +171,7 @@ class BrowserManager:
         logger.debug(f"Checking request: {resource_type} - {url}")
         
         # Block images, media, fonts, and other non-essential resources
-        if resource_type in ['image', 'media', 'font', 'stylesheet']:
+        if resource_type in ['image', 'media']:
             logger.debug(f"Blocking {resource_type}: {url}")
             route.abort()
         # Also block common image file extensions regardless of resource type
