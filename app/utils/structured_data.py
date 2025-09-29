@@ -34,7 +34,7 @@ class StructuredDataExtractor:
             all_product_data = []
             
             # Method 1: Look for ProductJson script tags (common in e-commerce platforms)
-            product_json_scripts = self.soup.find_all('script', id=re.compile(r'ProductJson-.*'))
+            product_json_scripts = self.soup.find_all('script', id=re.compile(r'(ProductJson-.*|WH-ProductJson-.*)'))
             for script in product_json_scripts:
                 if script.string:
                     try:

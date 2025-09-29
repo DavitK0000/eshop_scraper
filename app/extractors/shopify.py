@@ -142,7 +142,7 @@ class ShopifyExtractor(BaseExtractor):
             self.fallback_sources = []  # Track which sources were used
             
             # Method 1: Look for Shopify's ProductJson script tags (most reliable)
-            product_json_scripts = soup.find_all('script', id=re.compile(r'ProductJson-.*'))
+            product_json_scripts = soup.find_all('script', id=re.compile(r'(ProductJson-.*|WH-ProductJson-.*)'))
             for script in product_json_scripts:
                 if script.string:
                     try:
