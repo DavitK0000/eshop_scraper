@@ -273,7 +273,27 @@ class ShopifyExtractor(BaseExtractor):
                         combined_data[key] = value
                     elif isinstance(combined_data[key], list) and isinstance(value, list):
                         # Merge lists and remove duplicates
-                        combined_data[key] = list(dict.fromkeys(combined_data[key] + value))
+                        merged_list = combined_data[key] + value
+                        if key == 'images':
+                            # For images (strings), use dict.fromkeys to remove duplicates
+                            combined_data[key] = list(dict.fromkeys(merged_list))
+                        else:
+                            # For other lists (potentially containing dicts), use a different approach
+                            seen = set()
+                            unique_items = []
+                            for item in merged_list:
+                                if isinstance(item, dict):
+                                    # Create a hashable representation of the dict
+                                    item_key = tuple(sorted(item.items()))
+                                    if item_key not in seen:
+                                        seen.add(item_key)
+                                        unique_items.append(item)
+                                else:
+                                    # For non-dict items, use the value itself
+                                    if item not in seen:
+                                        seen.add(item)
+                                        unique_items.append(item)
+                            combined_data[key] = unique_items
                     elif isinstance(combined_data[key], dict) and isinstance(value, dict):
                         # Merge dictionaries
                         combined_data[key].update(value)

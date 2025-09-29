@@ -552,7 +552,26 @@ class StructuredDataExtractor:
         # Clean up lists (remove duplicates)
         for key in ['images', 'variants']:
             if key in combined_data and isinstance(combined_data[key], list):
-                combined_data[key] = list(dict.fromkeys(combined_data[key]))
+                if key == 'images':
+                    # For images (strings), use dict.fromkeys to remove duplicates
+                    combined_data[key] = list(dict.fromkeys(combined_data[key]))
+                elif key == 'variants':
+                    # For variants (dicts), use a different approach to remove duplicates
+                    seen = set()
+                    unique_variants = []
+                    for variant in combined_data[key]:
+                        if isinstance(variant, dict):
+                            # Create a hashable representation of the variant
+                            variant_key = tuple(sorted(variant.items()))
+                            if variant_key not in seen:
+                                seen.add(variant_key)
+                                unique_variants.append(variant)
+                        else:
+                            # For non-dict variants, use the value itself
+                            if variant not in seen:
+                                seen.add(variant)
+                                unique_variants.append(variant)
+                    combined_data[key] = unique_variants
         
         return combined_data
     
