@@ -36,14 +36,12 @@ class StructuredDataExtractor:
             # Method 1: Look for ProductJson script tags (common in e-commerce platforms)
             product_json_scripts = self.soup.find_all('script', id=re.compile(r'(ProductJson-.*|WH-ProductJson-.*)'))
             for script in product_json_scripts:
-                print(script.string)
                 if script.string:
                     try:
                         data = json.loads(script.string)
                         if isinstance(data, dict) and ('title' in data or 'variants' in data):
                             all_product_data.append(('ProductJson', data))
                     except json.JSONDecodeError:
-                        print("Error parsing json")
                         continue
             
             # Method 2: Look for JSON-LD structured data (application/ld+json)
