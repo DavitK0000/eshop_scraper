@@ -88,7 +88,6 @@ def scrape_product(
             user_id=request.user_id,
             proxy=request.proxy,
             user_agent=request.user_agent,
-            block_images=request.block_images,
             target_language=request.target_language
         )
         

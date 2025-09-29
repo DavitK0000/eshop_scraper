@@ -129,6 +129,7 @@ class BrowserManager:
             
             # Apply image blocking by default
             page.route("**/*", self._block_resources)
+            logger.info("Image blocking enabled by default")
             
             logger.info(f"Chrome browser setup completed - Headless: {settings.PLAYWRIGHT_HEADLESS}, Proxy: {proxy is not None}")
             return self.browser, self.context, page
@@ -138,7 +139,7 @@ class BrowserManager:
             self.cleanup()
             raise
     
-    def create_page(self, user_agent: Optional[str] = None, block_images: bool = True) -> Page:
+    def create_page(self, user_agent: Optional[str] = None) -> Page:
         """
         Create a new page with configured settings
         
@@ -155,12 +156,9 @@ class BrowserManager:
         
         page = self.context.new_page()
         
-        # Block images and videos if requested
-        if block_images:
-            page.route("**/*", self._block_resources)
-        else:
-            # If not blocking images, remove any existing route handlers
-            page.unroute("**/*")
+        # Always block images and videos
+        page.route("**/*", self._block_resources)
+        logger.info("Image blocking enabled for new page")
         
         return page
     
@@ -169,29 +167,25 @@ class BrowserManager:
         resource_type = route.request.resource_type
         url = route.request.url.lower()
         
+        # Log blocked requests for debugging
+        logger.debug(f"Checking request: {resource_type} - {url}")
+        
         # Block images, media, fonts, and other non-essential resources
         if resource_type in ['image', 'media', 'font', 'stylesheet']:
+            logger.debug(f"Blocking {resource_type}: {url}")
             route.abort()
         # Also block common image file extensions regardless of resource type
         elif any(ext in url for ext in ['.jpg', '.jpeg', '.png', '.gif', '.webp', '.svg', '.bmp', '.ico', '.tiff']):
-            route.abort()
-        # Block common image CDN patterns (including protocol-relative URLs)
-        elif any(pattern in url for pattern in [
-            'cdn.shopify.com', 
-            'images.unsplash.com', 
-            'imgur.com', 
-            'cloudinary.com',
-            '/cdn/shop/files/',  # Shopify file CDN pattern
-            '//cyrus.nyc/cdn/shop/files/',  # Specific Cyrus.nyc pattern
-        ]):
+            logger.debug(f"Blocking image extension: {url}")
             route.abort()
         # Block any URL containing image-related query parameters
         elif any(param in url for param in ['width=', 'height=', 'crop=', 'v=', '&width=', '&height=', '&crop=']):
+            logger.debug(f"Blocking image params: {url}")
             route.abort()
         else:
             route.continue_()
     
-    def get_page_content(self, url: str, proxy: Optional[str] = None, user_agent: Optional[str] = None, block_images: bool = True) -> str:
+    def get_page_content(self, url: str, proxy: Optional[str] = None, user_agent: Optional[str] = None) -> str:
         """
         Get HTML content from a URL
         
@@ -199,7 +193,6 @@ class BrowserManager:
             url: URL to fetch
             proxy: Optional proxy
             user_agent: Optional user agent
-            block_images: Whether to block images
             
         Returns:
             HTML content as string
@@ -211,7 +204,7 @@ class BrowserManager:
                 self.setup_browser(proxy=proxy, user_agent=user_agent)
             
             # Create page
-            page = self.create_page(user_agent, block_images)
+            page = self.create_page(user_agent)
             
             # Navigate to URL
             logger.info(f"Navigating to: {url}")
@@ -397,7 +390,7 @@ class BrowserManager:
             self.browser = None
             self.playwright = None
 
-    def get_page_content_with_retry(self, url: str, proxy: Optional[str] = None, user_agent: Optional[str] = None, block_images: bool = True, max_retries: int = None) -> str:
+    def get_page_content_with_retry(self, url: str, proxy: Optional[str] = None, user_agent: Optional[str] = None, max_retries: int = None) -> str:
         """
         Get HTML content with retry logic for better reliability
         
@@ -405,7 +398,6 @@ class BrowserManager:
             url: URL to fetch
             proxy: Optional proxy
             user_agent: Optional user agent
-            block_images: Whether to block images
             max_retries: Maximum number of retry attempts (uses config default if None)
             
         Returns:
@@ -419,7 +411,7 @@ class BrowserManager:
         for attempt in range(max_retries + 1):
             try:
                 logger.info(f"Attempt {attempt + 1}/{max_retries + 1} to fetch content from {url}")
-                content = self.get_page_content(url, proxy, user_agent, block_images)
+                content = self.get_page_content(url, proxy, user_agent)
                 return content
                 
             except Exception as e:

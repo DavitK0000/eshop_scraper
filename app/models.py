@@ -26,7 +26,6 @@ class ScrapeRequest(BaseModel):
     user_id: str = Field(..., description="User ID associated with the task (required)")
     proxy: Optional[str] = Field(None, description="Custom proxy to use")
     user_agent: Optional[str] = Field(None, description="Custom user agent to use")
-    block_images: bool = Field(True, description="Block image downloads to save bandwidth")
     target_language: Optional[str] = Field(None, description="Target language for content extraction (e.g., 'en', 'es', 'fr')")
     priority: TaskPriority = Field(TaskPriority.NORMAL, description="Task priority level")
     session_id: Optional[str] = Field(None, description="Session ID for the task")

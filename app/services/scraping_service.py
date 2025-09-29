@@ -296,7 +296,6 @@ class ScrapingService:
         user_id: str,
         proxy: Optional[str] = None,
         user_agent: Optional[str] = None,
-        block_images: bool = True,
         target_language: Optional[str] = None
     ) -> TaskStatusResponse:
         """
@@ -307,7 +306,6 @@ class ScrapingService:
             user_id: User ID associated with the task (required)
             proxy: Custom proxy to use
             user_agent: Custom user agent to use
-            block_images: Whether to block images
             target_language: Target language for content extraction
             
         Returns:
@@ -321,7 +319,6 @@ class ScrapingService:
                 TaskType.SCRAPING,
                 url=url,
                 user_id=user_id,
-                block_images=block_images,
                 target_language=target_language,
                 proxy=proxy,
                 user_agent=user_agent
@@ -381,7 +378,7 @@ class ScrapingService:
         # Start scraping in a separate thread
         thread = threading.Thread(
             target=self._execute_scraping_task_thread,
-            args=(actual_task_id, url, user_id, proxy, user_agent, block_images, target_language),
+            args=(actual_task_id, url, user_id, proxy, user_agent, target_language),
             daemon=True
         )
         thread.start()
@@ -396,7 +393,6 @@ class ScrapingService:
         user_id: str,
         proxy: Optional[str] = None,
         user_agent: Optional[str] = None,
-        block_images: bool = True,
         target_language: Optional[str] = None
     ):
         """
@@ -408,7 +404,6 @@ class ScrapingService:
             user_id: User ID associated with the task
             proxy: Custom proxy to use
             user_agent: Custom user agent to use
-            block_images: Whether to block images
             target_language: Target language for content extraction
         """
         logger.info(f"Starting execute_scraping_task for task_id: {task_id}, url: {url}")
@@ -449,7 +444,7 @@ class ScrapingService:
             timeout_seconds = settings.BROWSER_PAGE_FETCH_TIMEOUT / 1000.0
             
             try:
-                html_content = browser_manager.get_page_content_with_retry(url, proxy, user_agent, block_images)
+                html_content = browser_manager.get_page_content_with_retry(url, proxy, user_agent, True)
                 
                 # Check if we exceeded timeout
                 if time.time() - start_time > timeout_seconds:
@@ -534,7 +529,6 @@ class ScrapingService:
         user_id: str,
         proxy: Optional[str] = None,
         user_agent: Optional[str] = None,
-        block_images: bool = True,
         target_language: Optional[str] = None,
         detail: Optional[Dict[str, Any]] = None
     ) -> TaskStatusResponse:
@@ -546,7 +540,6 @@ class ScrapingService:
             user_id: User ID associated with the task
             proxy: Custom proxy to use
             user_agent: Custom user agent to use
-            block_images: Whether to block images
             target_language: Target language for content extraction
             detail: Additional details for the task
             
@@ -561,7 +554,6 @@ class ScrapingService:
                 TaskType.SCRAPING,
                 url=url,
                 user_id=user_id,
-                block_images=block_images,
                 target_language=target_language,
                 proxy=proxy,
                 user_agent=user_agent
@@ -618,7 +610,7 @@ class ScrapingService:
         # Start scraping in a separate thread
         thread = threading.Thread(
             target=self._execute_scraping_task_thread,
-            args=(actual_task_id, url, user_id, proxy, user_agent, block_images, target_language),
+            args=(actual_task_id, url, user_id, proxy, user_agent, target_language),
             daemon=True
         )
         thread.start()
@@ -631,7 +623,6 @@ class ScrapingService:
         url: str,
         proxy: Optional[str] = None,
         user_agent: Optional[str] = None,
-        block_images: bool = True,
         target_language: Optional[str] = None
     ) -> TaskStatusResponse:
         """
@@ -641,7 +632,6 @@ class ScrapingService:
             url: Product URL to scrape
             proxy: Custom proxy to use
             user_agent: Custom user agent to use
-            block_images: Whether to block images
             target_language: Target language for content extraction
             
         Returns:
@@ -654,7 +644,6 @@ class ScrapingService:
             actual_task_id = create_task(
                 TaskType.SCRAPING,
                 url=url,
-                block_images=block_images,
                 proxy=proxy,
                 user_agent=user_agent
             )
@@ -725,7 +714,7 @@ class ScrapingService:
             # First, get HTML content using browser manager
             update_task_progress(actual_task_id, 2, "Fetching page content")
             from app.browser_manager import browser_manager
-            html_content = browser_manager.get_page_content_with_retry(url, proxy, user_agent, block_images)
+            html_content = browser_manager.get_page_content_with_retry(url, proxy, user_agent, True)
             
             # Detect platform based on URL and content
             update_task_progress(actual_task_id, 3, "Detecting e-commerce platform")
