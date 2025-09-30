@@ -509,23 +509,16 @@ class CDiscountExtractor(BaseExtractor):
                 '.altcha-footer'
             ]
             
-            # Log HTML content snippet for debugging
-            html_snippet = self.html_content[:2000] if self.html_content else "No HTML content"
-            logger.info(f"CDiscount HTML content snippet (first 2000 chars): {html_snippet}")
-            
             for selector in cdiscount_captcha_selectors:
                 elements = self.soup.select(selector)
                 if elements:
-                    logger.info(f"CDiscount captcha detected via selector '{selector}': found {len(elements)} elements")
-                    # Log the found elements for debugging
-                    for i, elem in enumerate(elements[:3]):  # Log first 3 elements
-                        logger.info(f"  CDiscount captcha element {i+1}: {elem}")
+                    logger.info(f"CDiscount captcha detected via selector: {selector}")
                     return True
             
             # Check for French "I'm not a robot" text
             french_text = self.soup.find(text=re.compile(r'Je ne suis pas un robot', re.IGNORECASE))
             if french_text:
-                logger.info(f"CDiscount captcha detected via French text: {french_text}")
+                logger.info("CDiscount captcha detected via French text")
                 return True
             
             # Additional check: look for any element containing "altcha" in class or id
@@ -534,11 +527,7 @@ class CDiscountExtractor(BaseExtractor):
             
             if altcha_elements:
                 logger.info(f"Found {len(altcha_elements)} elements with 'altcha' in class/id")
-                for elem in altcha_elements[:3]:
-                    logger.info(f"  Altcha element: {elem}")
                 return True
-            
-            logger.info("No CDiscount captcha detected")
             return False
             
         except Exception as e:

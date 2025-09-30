@@ -380,8 +380,6 @@ class BaseExtractor:
                 logger.info("No soup available for captcha detection")
                 return False
             
-            logger.info("Starting captcha detection...")
-            
             # Check for common captcha indicators
             captcha_indicators = [
                 # CDiscount specific captcha
@@ -411,26 +409,19 @@ class BaseExtractor:
                 'text*="Non sono un robot"',  # Italian
             ]
             
-            # Log HTML content snippet for debugging
-            html_snippet = self.html_content[:1000] if self.html_content else "No HTML content"
-            logger.info(f"HTML content snippet (first 1000 chars): {html_snippet}")
-            
             for indicator in captcha_indicators:
                 if indicator.startswith('text*='):
                     # Text-based search
                     text_pattern = indicator.split('text*=')[1].strip('"\'')
                     found_text = self.soup.find(text=re.compile(text_pattern, re.IGNORECASE))
                     if found_text:
-                        logger.info(f"Captcha detected via text pattern '{text_pattern}': {found_text}")
+                        logger.info(f"Captcha detected via text pattern: {text_pattern}")
                         return True
                 else:
                     # CSS selector search
                     elements = self.soup.select(indicator)
                     if elements:
-                        logger.info(f"Captcha detected via selector '{indicator}': found {len(elements)} elements")
-                        # Log the found elements for debugging
-                        for i, elem in enumerate(elements[:3]):  # Log first 3 elements
-                            logger.info(f"  Element {i+1}: {elem}")
+                        logger.info(f"Captcha detected via selector: {indicator}")
                         return True
             
             # Additional check: look for any element containing "captcha" in class or id
@@ -439,11 +430,7 @@ class BaseExtractor:
             
             if all_elements:
                 logger.info(f"Found {len(all_elements)} elements with 'captcha' in class/id")
-                for elem in all_elements[:3]:
-                    logger.info(f"  Captcha element: {elem}")
                 return True
-            
-            logger.info("No captcha detected")
             return False
             
         except Exception as e:
@@ -500,21 +487,16 @@ class BaseExtractor:
             True if solved successfully, False otherwise
         """
         try:
-            logger.info("Looking for altcha widget...")
             # Wait for altcha widget to be present
             page.wait_for_selector('altcha-widget', timeout=10000)
-            logger.info("Found altcha widget")
             
             # Find and click the checkbox
             checkbox_selector = '#altcha_checkbox'
-            logger.info(f"Looking for checkbox with selector: {checkbox_selector}")
             page.wait_for_selector(checkbox_selector, timeout=10000)
-            logger.info("Found altcha checkbox")
             
             # Click the checkbox
-            logger.info("Attempting to click altcha checkbox...")
             page.click(checkbox_selector)
-            logger.info("Successfully clicked altcha checkbox")
+            logger.info("Clicked altcha checkbox")
             
             # Wait a moment for the click to register
             page.wait_for_timeout(1000)
@@ -535,28 +517,20 @@ class BaseExtractor:
                 logger.info("Altcha captcha verified successfully")
                 
                 # Wait for page to potentially reload or redirect after captcha verification
-                logger.info("Waiting for page to process captcha verification...")
-                
                 # Wait for network idle to ensure all requests are complete
                 try:
                     page.wait_for_load_state('networkidle', timeout=15000)
-                    logger.info("Network idle reached after captcha solving")
                 except Exception:
-                    logger.info("Network idle timeout, continuing...")
+                    pass
                 
                 # Wait for DOM content to be ready
                 try:
                     page.wait_for_load_state('domcontentloaded', timeout=10000)
-                    logger.info("DOM content loaded after captcha solving")
                 except Exception:
-                    logger.info("DOM content load timeout, continuing...")
+                    pass
                 
                 # Additional wait for JavaScript execution
                 page.wait_for_timeout(3000)
-                
-                # Check if page has redirected or reloaded
-                current_url = page.url
-                logger.info(f"Current URL after captcha solving: {current_url}")
                 
                 # Wait for any potential page transitions
                 try:
@@ -577,9 +551,8 @@ class BaseExtractor:
                         """,
                         timeout=20000
                     )
-                    logger.info("Page is stable after captcha solving")
                 except Exception:
-                    logger.info("Page stability check timeout, continuing...")
+                    pass
                 
                 return True
                 

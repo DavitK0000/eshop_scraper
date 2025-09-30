@@ -467,30 +467,20 @@ class ScrapingService:
             extractor = ExtractorFactory.create_extractor(platform, html_content, url)
             
             logger.info(f"Extractor created successfully: {type(extractor).__name__}")
-            logger.info(f"About to start captcha detection for platform: {platform}")
             
             # Check for captcha and solve if needed
             update_task_progress(task_id, 5, "Checking for captcha")
-            logger.info("Starting captcha detection process...")
             
             # Use platform-specific captcha detection if available
             captcha_detected = False
-            
-            # Debug: Check extractor type and available methods
-            logger.info(f"Extractor type: {type(extractor).__name__}")
-            logger.info(f"Platform: {platform}")
-            logger.info(f"Has detect_cdiscount_captcha method: {hasattr(extractor, 'detect_cdiscount_captcha')}")
-            logger.info(f"Available methods: {[method for method in dir(extractor) if 'captcha' in method.lower()]}")
             
             # Use direct type checking instead of hasattr
             if isinstance(extractor, CDiscountExtractor) and platform == 'cdiscount':
                 logger.info("Using CDiscount-specific captcha detection")
                 captcha_detected = extractor.detect_cdiscount_captcha()
-                logger.info(f"CDiscount captcha detection result: {captcha_detected}")
             else:
                 logger.info("Using generic captcha detection")
                 captcha_detected = extractor.detect_captcha()
-                logger.info(f"Generic captcha detection result: {captcha_detected}")
             
             if captcha_detected:
                 logger.info(f"Captcha detected on {url}, attempting to solve...")
@@ -500,45 +490,35 @@ class ScrapingService:
                 page = browser_manager.create_page(user_agent)
                 try:
                     # Navigate to the URL again
-                    logger.info("Navigating to URL for captcha solving...")
                     page.goto(url, wait_until='domcontentloaded', timeout=120000)
                     
                     # Wait a bit for the page to fully load before solving captcha
-                    logger.info("Waiting for page to fully load before captcha solving...")
                     page.wait_for_timeout(3000)
                     
                     # Solve the captcha
-                    logger.info("Starting captcha solving process...")
                     captcha_solved = extractor.solve_captcha(page)
                     
                     if captcha_solved:
                         logger.info("Captcha solved successfully, waiting for page to stabilize...")
                         
                         # Wait longer for the page to process after captcha solving
-                        logger.info("Waiting for page to reload/redirect after captcha...")
                         page.wait_for_timeout(10000)  # Wait 10 seconds for page to process
                         
                         # Additional waiting for page to fully process after captcha solving
                         try:
                             # Wait for network idle to ensure all requests are complete
                             page.wait_for_load_state('networkidle', timeout=30000)
-                            logger.info("Network idle reached after captcha solving")
                         except Exception:
-                            logger.info("Network idle timeout after captcha solving, continuing...")
+                            pass
                         
                         # Wait for DOM content to be ready
                         try:
                             page.wait_for_load_state('domcontentloaded', timeout=20000)
-                            logger.info("DOM content loaded after captcha solving")
                         except Exception:
-                            logger.info("DOM content load timeout after captcha solving, continuing...")
+                            pass
                         
                         # Additional wait for JavaScript execution
                         page.wait_for_timeout(5000)
-                        
-                        # Check if page has redirected or reloaded
-                        current_url = page.url
-                        logger.info(f"Current URL after captcha solving: {current_url}")
                         
                         # Wait for page stability
                         try:
@@ -559,19 +539,14 @@ class ScrapingService:
                                 """,
                                 timeout=30000
                             )
-                            logger.info("Page is stable after captcha solving")
                         except Exception:
-                            logger.info("Page stability check timeout after captcha solving, continuing...")
+                            pass
                         
                         # Get updated HTML content after captcha solving and page stabilization
-                        logger.info("Re-fetching HTML content after captcha solving...")
                         html_content = page.content()
-                        logger.info(f"New HTML content length: {len(html_content)}")
                         
                         # Recreate extractor with updated content
-                        logger.info("Recreating extractor with updated content...")
                         extractor = ExtractorFactory.create_extractor(platform, html_content, url)
-                        logger.info("Extractor recreated successfully")
                         
                         # Keep the page open for a bit longer to ensure everything is processed
                         page.wait_for_timeout(2000)
