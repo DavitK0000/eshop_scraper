@@ -500,16 +500,24 @@ class BaseExtractor:
             True if solved successfully, False otherwise
         """
         try:
+            logger.info("Looking for altcha widget...")
             # Wait for altcha widget to be present
             page.wait_for_selector('altcha-widget', timeout=10000)
+            logger.info("Found altcha widget")
             
             # Find and click the checkbox
             checkbox_selector = '#altcha_checkbox'
+            logger.info(f"Looking for checkbox with selector: {checkbox_selector}")
             page.wait_for_selector(checkbox_selector, timeout=10000)
+            logger.info("Found altcha checkbox")
             
             # Click the checkbox
+            logger.info("Attempting to click altcha checkbox...")
             page.click(checkbox_selector)
-            logger.info("Clicked altcha checkbox")
+            logger.info("Successfully clicked altcha checkbox")
+            
+            # Wait a moment for the click to register
+            page.wait_for_timeout(1000)
             
             # Wait for captcha to be solved (state changes from unverified to verified)
             try:

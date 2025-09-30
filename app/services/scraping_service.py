@@ -503,6 +503,10 @@ class ScrapingService:
                     logger.info("Navigating to URL for captcha solving...")
                     page.goto(url, wait_until='domcontentloaded', timeout=120000)
                     
+                    # Wait a bit for the page to fully load before solving captcha
+                    logger.info("Waiting for page to fully load before captcha solving...")
+                    page.wait_for_timeout(3000)
+                    
                     # Solve the captcha
                     logger.info("Starting captcha solving process...")
                     captcha_solved = extractor.solve_captcha(page)
@@ -510,17 +514,21 @@ class ScrapingService:
                     if captcha_solved:
                         logger.info("Captcha solved successfully, waiting for page to stabilize...")
                         
+                        # Wait longer for the page to process after captcha solving
+                        logger.info("Waiting for page to reload/redirect after captcha...")
+                        page.wait_for_timeout(10000)  # Wait 10 seconds for page to process
+                        
                         # Additional waiting for page to fully process after captcha solving
                         try:
                             # Wait for network idle to ensure all requests are complete
-                            page.wait_for_load_state('networkidle', timeout=20000)
+                            page.wait_for_load_state('networkidle', timeout=30000)
                             logger.info("Network idle reached after captcha solving")
                         except Exception:
                             logger.info("Network idle timeout after captcha solving, continuing...")
                         
                         # Wait for DOM content to be ready
                         try:
-                            page.wait_for_load_state('domcontentloaded', timeout=15000)
+                            page.wait_for_load_state('domcontentloaded', timeout=20000)
                             logger.info("DOM content loaded after captcha solving")
                         except Exception:
                             logger.info("DOM content load timeout after captcha solving, continuing...")
@@ -549,7 +557,7 @@ class ScrapingService:
                                     });
                                 }
                                 """,
-                                timeout=25000
+                                timeout=30000
                             )
                             logger.info("Page is stable after captcha solving")
                         except Exception:
@@ -564,6 +572,10 @@ class ScrapingService:
                         logger.info("Recreating extractor with updated content...")
                         extractor = ExtractorFactory.create_extractor(platform, html_content, url)
                         logger.info("Extractor recreated successfully")
+                        
+                        # Keep the page open for a bit longer to ensure everything is processed
+                        page.wait_for_timeout(2000)
+                        
                     else:
                         logger.warning("Failed to solve captcha, proceeding with original content")
                 except Exception as captcha_error:
