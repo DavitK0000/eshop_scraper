@@ -7,6 +7,7 @@ CREATE TABLE IF NOT EXISTS public.categories (
     name TEXT NOT NULL UNIQUE,
     parent_id UUID REFERENCES public.categories(id) ON DELETE CASCADE,
     description TEXT,
+    environments TEXT[] DEFAULT '{}', -- Array of environment names (e.g., Indoor, Outdoor, City, Mountain)
     is_active BOOLEAN DEFAULT true,
     sort_order INTEGER DEFAULT 0,
     created_at TIMESTAMP WITH TIME ZONE DEFAULT NOW(),
@@ -17,6 +18,7 @@ CREATE TABLE IF NOT EXISTS public.categories (
 CREATE INDEX IF NOT EXISTS idx_categories_parent_id ON public.categories(parent_id);
 CREATE INDEX IF NOT EXISTS idx_categories_is_active ON public.categories(is_active);
 CREATE INDEX IF NOT EXISTS idx_categories_sort_order ON public.categories(sort_order);
+CREATE INDEX IF NOT EXISTS idx_categories_environments ON public.categories USING GIN (environments);
 
 -- Trigger for updated_at column
 CREATE TRIGGER update_categories_updated_at 
@@ -47,7 +49,8 @@ CREATE TABLE IF NOT EXISTS public.products (
     images JSONB DEFAULT '{}'::jsonb, -- Object where keys are image URLs and values are analysis data
     original_url TEXT, -- Original product URL
     platform TEXT, -- amazon, aliexpress, etc.
-    category TEXT,
+    category TEXT, -- DEPRECATED: Use category_id instead. This column will be removed in a future migration.
+    category_id UUID REFERENCES public.categories(id) ON DELETE SET NULL,
     rating DECIMAL(3,2),
     review_count INTEGER,
     availability TEXT,
@@ -99,6 +102,7 @@ CREATE TABLE IF NOT EXISTS public.video_scenarios (
             '768:1280'    -- 9:16 portrait HD
         )
     ),
+    environment TEXT, -- Environment context for the video scenario (e.g., indoor, outdoor, studio, home, office, etc.)
     metadata JSONB DEFAULT '{}',
     created_at TIMESTAMP WITH TIME ZONE DEFAULT NOW()
 );
@@ -120,9 +124,6 @@ CREATE TABLE IF NOT EXISTS public.video_scenes (
     generated_video_url TEXT, -- URL of the generated video for this scene
     visual_prompt TEXT, -- AI prompt used to generate the scene image
     image_prompt TEXT, -- AI prompt used to generate the first frame image for this scene
-    visual_elements JSONB DEFAULT '[]'::jsonb, -- Array of visual elements for the scene
-    camera_movement TEXT, -- Camera movement description for the scene
-    transition TEXT, -- Transition effect for the scene
     product_reference_image_url TEXT, -- URL of the product reference image used for this specific scene generation
     metadata JSONB DEFAULT '{}',
     created_at TIMESTAMP WITH TIME ZONE DEFAULT NOW(),
@@ -136,6 +137,8 @@ CREATE INDEX IF NOT EXISTS idx_user_activities_action ON public.user_activities(
 
 CREATE INDEX IF NOT EXISTS idx_products_user_id ON public.products(user_id);
 CREATE INDEX IF NOT EXISTS idx_products_short_id ON public.products(short_id);
+CREATE INDEX IF NOT EXISTS idx_products_category_id ON public.products(category_id);
+CREATE INDEX IF NOT EXISTS idx_products_images_gin ON public.products USING GIN (images);
 CREATE INDEX IF NOT EXISTS idx_products_created_at ON public.products(created_at);
 
 CREATE INDEX IF NOT EXISTS idx_shorts_user_id ON public.shorts(user_id);
@@ -145,6 +148,7 @@ CREATE INDEX IF NOT EXISTS idx_shorts_target_language ON public.shorts(target_la
 
 CREATE INDEX IF NOT EXISTS idx_video_scenarios_short_id ON public.video_scenarios(short_id);
 CREATE INDEX IF NOT EXISTS idx_video_scenarios_resolution ON public.video_scenarios(resolution);
+CREATE INDEX IF NOT EXISTS idx_video_scenarios_environment ON public.video_scenarios(environment) WHERE environment IS NOT NULL;
 
 CREATE INDEX IF NOT EXISTS idx_video_scenes_scenario_id ON public.video_scenes(scenario_id);
 CREATE INDEX IF NOT EXISTS idx_video_scenes_status ON public.video_scenes(status);
@@ -170,15 +174,17 @@ CREATE TRIGGER update_video_scenes_updated_at
     FOR EACH ROW 
     EXECUTE FUNCTION update_updated_at_column();
 
--- Add comments to document the new fields
+-- Add comments to document the fields
+COMMENT ON COLUMN public.categories.environments IS 'Array of environment names (e.g., Indoor, Outdoor, City, Mountain)';
+COMMENT ON COLUMN public.products.images IS 'Object where keys are image URLs and values are image analysis data (empty object {} if no analysis)';
+COMMENT ON COLUMN public.products.category IS 'DEPRECATED: Use category_id instead. This column will be removed in a future migration.';
+COMMENT ON COLUMN public.products.category_id IS 'Foreign key reference to the categories table';
 COMMENT ON COLUMN public.shorts.target_language IS 'Target market language for content generation (audio scripts, subtitles, cultural adaptations). Supported: English (US/CA/UK), Spanish (Spain/Latin America/Mexico), Portuguese (Brazil), French, German, Dutch';
 COMMENT ON COLUMN public.video_scenarios.resolution IS 'Video resolution for content generation (e.g., "1280:720", "720:1280")';
+COMMENT ON COLUMN public.video_scenarios.environment IS 'Environment context for the video scenario (e.g., indoor, outdoor, studio, home, office, etc.)';
 COMMENT ON COLUMN public.video_scenes.image_url IS 'URL of the generated AI image for this scene';
 COMMENT ON COLUMN public.video_scenes.generated_video_url IS 'URL of the generated video for this scene';
 COMMENT ON COLUMN public.video_scenes.visual_prompt IS 'AI prompt used to generate the scene image';
 COMMENT ON COLUMN public.video_scenes.image_prompt IS 'AI prompt used to generate the first frame image for this scene';
-COMMENT ON COLUMN public.video_scenes.visual_elements IS 'Array of visual elements for the scene';
-COMMENT ON COLUMN public.video_scenes.camera_movement IS 'Camera movement description for the scene';
-COMMENT ON COLUMN public.video_scenes.transition IS 'Transition effect for the scene';
 COMMENT ON COLUMN public.video_scenes.user_id IS 'User who owns this scene';
 COMMENT ON COLUMN public.video_scenes.product_reference_image_url IS 'URL of the product reference image used for this specific scene generation'; 

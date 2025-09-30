@@ -424,13 +424,6 @@ class BaseExtractor:
                         logger.info(f"Captcha detected via selector: {indicator}")
                         return True
             
-            # Additional check: look for any element containing "captcha" in class or id
-            all_elements = self.soup.find_all(attrs={'class': re.compile(r'captcha', re.IGNORECASE)})
-            all_elements.extend(self.soup.find_all(attrs={'id': re.compile(r'captcha', re.IGNORECASE)}))
-            
-            if all_elements:
-                logger.info(f"Found {len(all_elements)} elements with 'captcha' in class/id")
-                return True
             return False
             
         except Exception as e:
