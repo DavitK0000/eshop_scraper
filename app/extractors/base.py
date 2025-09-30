@@ -366,4 +366,191 @@ class BaseExtractor:
             return None
             
         except Exception as e:
-            return None 
+            return None
+    
+    def detect_captcha(self) -> bool:
+        """
+        Detect if a captcha is present on the page
+        
+        Returns:
+            True if captcha is detected, False otherwise
+        """
+        try:
+            if not self.soup:
+                return False
+            
+            # Check for common captcha indicators
+            captcha_indicators = [
+                # CDiscount specific captcha
+                'div.captcha-container',
+                'altcha-widget',
+                'altcha-checkbox',
+                '#altcha_checkbox',
+                'form#altcha-form',
+                
+                # Generic captcha indicators
+                'div[class*="captcha"]',
+                'div[id*="captcha"]',
+                'iframe[src*="captcha"]',
+                'iframe[src*="recaptcha"]',
+                'div[class*="recaptcha"]',
+                'div[id*="recaptcha"]',
+                'div[class*="hcaptcha"]',
+                'div[id*="hcaptcha"]',
+                'div[class*="turnstile"]',
+                'div[id*="turnstile"]',
+                
+                # Text indicators
+                'text*="Je ne suis pas un robot"',  # French "I'm not a robot"
+                'text*="I\'m not a robot"',
+                'text*="Ich bin kein Roboter"',  # German
+                'text*="No soy un robot"',  # Spanish
+                'text*="Non sono un robot"',  # Italian
+            ]
+            
+            for indicator in captcha_indicators:
+                if indicator.startswith('text*='):
+                    # Text-based search
+                    text_pattern = indicator.split('text*=')[1].strip('"\'')
+                    if self.soup.find(text=re.compile(text_pattern, re.IGNORECASE)):
+                        logger.info(f"Captcha detected via text pattern: {text_pattern}")
+                        return True
+                else:
+                    # CSS selector search
+                    elements = self.soup.select(indicator)
+                    if elements:
+                        logger.info(f"Captcha detected via selector: {indicator}")
+                        return True
+            
+            return False
+            
+        except Exception as e:
+            logger.warning(f"Error detecting captcha: {e}")
+            return False
+    
+    def solve_captcha(self, page=None) -> bool:
+        """
+        Solve captcha by interacting with the browser
+        
+        Args:
+            page: Playwright page object (optional, will be created if not provided)
+            
+        Returns:
+            True if captcha was solved successfully, False otherwise
+        """
+        try:
+            if not self.detect_captcha():
+                logger.info("No captcha detected, skipping captcha solving")
+                return True
+            
+            logger.info("Captcha detected, attempting to solve...")
+            
+            # If no page provided, we can't solve captcha
+            if not page:
+                logger.warning("No browser page provided for captcha solving")
+                return False
+            
+            # Try to solve CDiscount specific captcha (altcha)
+            if self._solve_altcha_captcha(page):
+                logger.info("Successfully solved altcha captcha")
+                return True
+            
+            # Try to solve generic checkbox captcha
+            if self._solve_checkbox_captcha(page):
+                logger.info("Successfully solved checkbox captcha")
+                return True
+            
+            logger.warning("Could not solve captcha")
+            return False
+            
+        except Exception as e:
+            logger.error(f"Error solving captcha: {e}")
+            return False
+    
+    def _solve_altcha_captcha(self, page) -> bool:
+        """
+        Solve altcha captcha specifically
+        
+        Args:
+            page: Playwright page object
+            
+        Returns:
+            True if solved successfully, False otherwise
+        """
+        try:
+            # Wait for altcha widget to be present
+            page.wait_for_selector('altcha-widget', timeout=10000)
+            
+            # Find and click the checkbox
+            checkbox_selector = '#altcha_checkbox'
+            page.wait_for_selector(checkbox_selector, timeout=10000)
+            
+            # Click the checkbox
+            page.click(checkbox_selector)
+            logger.info("Clicked altcha checkbox")
+            
+            # Wait for captcha to be solved (state changes from unverified to verified)
+            try:
+                page.wait_for_function(
+                    """
+                    () => {
+                        const widget = document.querySelector('altcha-widget');
+                        if (!widget) return false;
+                        const altchaDiv = widget.querySelector('.altcha');
+                        return altchaDiv && altchaDiv.getAttribute('data-state') === 'verified';
+                    }
+                    """,
+                    timeout=30000
+                )
+                logger.info("Altcha captcha verified successfully")
+                return True
+            except Exception as e:
+                logger.warning(f"Altcha verification timeout: {e}")
+                # Sometimes the state doesn't change immediately, wait a bit more
+                page.wait_for_timeout(3000)
+                return True
+            
+        except Exception as e:
+            logger.warning(f"Error solving altcha captcha: {e}")
+            return False
+    
+    def _solve_checkbox_captcha(self, page) -> bool:
+        """
+        Solve generic checkbox captcha
+        
+        Args:
+            page: Playwright page object
+            
+        Returns:
+            True if solved successfully, False otherwise
+        """
+        try:
+            # Common checkbox captcha selectors
+            checkbox_selectors = [
+                'input[type="checkbox"][id*="captcha"]',
+                'input[type="checkbox"][class*="captcha"]',
+                'input[type="checkbox"][name*="captcha"]',
+                'div[class*="captcha"] input[type="checkbox"]',
+                'div[id*="captcha"] input[type="checkbox"]',
+                '.recaptcha-checkbox',
+                '.hcaptcha-checkbox',
+                '.turnstile-checkbox',
+            ]
+            
+            for selector in checkbox_selectors:
+                try:
+                    if page.locator(selector).count() > 0:
+                        page.click(selector)
+                        logger.info(f"Clicked checkbox captcha: {selector}")
+                        
+                        # Wait a bit for the captcha to process
+                        page.wait_for_timeout(3000)
+                        return True
+                except Exception:
+                    continue
+            
+            return False
+            
+        except Exception as e:
+            logger.warning(f"Error solving checkbox captcha: {e}")
+            return False 

@@ -482,6 +482,48 @@ class CDiscountExtractor(BaseExtractor):
         
         return specs 
     
+    def detect_cdiscount_captcha(self) -> bool:
+        """
+        Detect CDiscount specific captcha (altcha)
+        
+        Returns:
+            True if CDiscount captcha is detected, False otherwise
+        """
+        try:
+            if not self.soup:
+                return False
+            
+            # Check for CDiscount specific captcha indicators
+            cdiscount_captcha_selectors = [
+                'div.captcha-container',
+                'altcha-widget',
+                'form#altcha-form',
+                '#altcha_checkbox',
+                '.altcha-checkbox',
+                '.altcha-main',
+                '.altcha-footer'
+            ]
+            
+            for selector in cdiscount_captcha_selectors:
+                elements = self.soup.select(selector)
+                if elements:
+                    logger = get_logger(__name__)
+                    logger.info(f"CDiscount captcha detected via selector: {selector}")
+                    return True
+            
+            # Check for French "I'm not a robot" text
+            french_text = self.soup.find(text=re.compile(r'Je ne suis pas un robot', re.IGNORECASE))
+            if french_text:
+                logger = get_logger(__name__)
+                logger.info("CDiscount captcha detected via French text")
+                return True
+            
+            return False
+            
+        except Exception as e:
+            logger = get_logger(__name__)
+            logger.warning(f"Error detecting CDiscount captcha: {e}")
+            return False
 
     
  
