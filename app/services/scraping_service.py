@@ -463,14 +463,69 @@ class ScrapingService:
             # Create appropriate extractor based on detected platform
             update_task_progress(task_id, 4, "Creating platform-specific extractor")
             from app.extractors.factory import ExtractorFactory
+            from app.extractors.cdiscount import CDiscountExtractor
             extractor = ExtractorFactory.create_extractor(platform, html_content, url)
             
+            logger.info(f"Extractor created successfully: {type(extractor).__name__}")
+            logger.info(f"About to start captcha detection for platform: {platform}")
+            
+            # Check for captcha and solve if needed
+            update_task_progress(task_id, 5, "Checking for captcha")
+            logger.info("Starting captcha detection process...")
+            
+            # Use platform-specific captcha detection if available
+            captcha_detected = False
+            
+            # Debug: Check extractor type and available methods
+            logger.info(f"Extractor type: {type(extractor).__name__}")
+            logger.info(f"Platform: {platform}")
+            logger.info(f"Has detect_cdiscount_captcha method: {hasattr(extractor, 'detect_cdiscount_captcha')}")
+            logger.info(f"Available methods: {[method for method in dir(extractor) if 'captcha' in method.lower()]}")
+            
+            # Use direct type checking instead of hasattr
+            if isinstance(extractor, CDiscountExtractor) and platform == 'cdiscount':
+                logger.info("Using CDiscount-specific captcha detection")
+                captcha_detected = extractor.detect_cdiscount_captcha()
+                logger.info(f"CDiscount captcha detection result: {captcha_detected}")
+            else:
+                logger.info("Using generic captcha detection")
+                captcha_detected = extractor.detect_captcha()
+                logger.info(f"Generic captcha detection result: {captcha_detected}")
+            
+            if captcha_detected:
+                logger.info(f"Captcha detected on {url}, attempting to solve...")
+                update_task_progress(task_id, 6, "Solving captcha")
+                
+                # Get a fresh page for captcha solving
+                page = browser_manager.create_page(user_agent)
+                try:
+                    # Navigate to the URL again
+                    page.goto(url, wait_until='domcontentloaded', timeout=120000)
+                    
+                    # Solve the captcha
+                    captcha_solved = extractor.solve_captcha(page)
+                    if captcha_solved:
+                        logger.info("Captcha solved successfully, re-fetching content")
+                        # Get updated HTML content after captcha solving
+                        html_content = page.content()
+                        
+                        # Recreate extractor with updated content
+                        extractor = ExtractorFactory.create_extractor(platform, html_content, url)
+                    else:
+                        logger.warning("Failed to solve captcha, proceeding with original content")
+                except Exception as captcha_error:
+                    logger.error(f"Error during captcha solving: {captcha_error}")
+                finally:
+                    page.close()
+            else:
+                logger.info("No captcha detected, proceeding with normal extraction")
+            
             # Extract product information using the platform-specific extractor
-            update_task_progress(task_id, 5, "Extracting product information")
+            update_task_progress(task_id, 7, "Extracting product information")
             product_info = extractor.extract_product_info()
             
             # Update task progress before saving to database
-            update_task_progress(task_id, 6, "Saving product to database and detecting category")
+            update_task_progress(task_id, 8, "Saving product to database and detecting category")
             
             # Update task with results
             product_id, short_id = self._save_product_to_supabase(user_id, product_info, url, platform, target_language, task_id)
