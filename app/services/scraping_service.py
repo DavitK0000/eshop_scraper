@@ -726,8 +726,12 @@ class ScrapingService:
             from app.extractors.cdiscount import CDiscountExtractor
             extractor = ExtractorFactory.create_extractor(platform, html_content, url)
             
+            logger.info(f"Extractor created successfully: {type(extractor).__name__}")
+            logger.info(f"About to start captcha detection for platform: {platform}")
+            
             # Check for captcha and solve if needed
             update_task_progress(actual_task_id, 5, "Checking for captcha")
+            logger.info("Starting captcha detection process...")
             
             # Use platform-specific captcha detection if available
             captcha_detected = False
@@ -742,9 +746,11 @@ class ScrapingService:
             if isinstance(extractor, CDiscountExtractor) and platform == 'cdiscount':
                 logger.info("Using CDiscount-specific captcha detection")
                 captcha_detected = extractor.detect_cdiscount_captcha()
+                logger.info(f"CDiscount captcha detection result: {captcha_detected}")
             else:
                 logger.info("Using generic captcha detection")
                 captcha_detected = extractor.detect_captcha()
+                logger.info(f"Generic captcha detection result: {captcha_detected}")
             
             if captcha_detected:
                 logger.info(f"Captcha detected on {url}, attempting to solve...")
