@@ -723,6 +723,7 @@ class ScrapingService:
             # Create appropriate extractor based on detected platform
             update_task_progress(actual_task_id, 4, "Creating platform-specific extractor")
             from app.extractors.factory import ExtractorFactory
+            from app.extractors.cdiscount import CDiscountExtractor
             extractor = ExtractorFactory.create_extractor(platform, html_content, url)
             
             # Check for captcha and solve if needed
@@ -737,7 +738,8 @@ class ScrapingService:
             logger.info(f"Has detect_cdiscount_captcha method: {hasattr(extractor, 'detect_cdiscount_captcha')}")
             logger.info(f"Available methods: {[method for method in dir(extractor) if 'captcha' in method.lower()]}")
             
-            if hasattr(extractor, 'detect_cdiscount_captcha') and platform == 'cdiscount':
+            # Use direct type checking instead of hasattr
+            if isinstance(extractor, CDiscountExtractor) and platform == 'cdiscount':
                 logger.info("Using CDiscount-specific captcha detection")
                 captcha_detected = extractor.detect_cdiscount_captcha()
             else:
