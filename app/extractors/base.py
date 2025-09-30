@@ -525,11 +525,67 @@ class BaseExtractor:
                     timeout=30000
                 )
                 logger.info("Altcha captcha verified successfully")
+                
+                # Wait for page to potentially reload or redirect after captcha verification
+                logger.info("Waiting for page to process captcha verification...")
+                
+                # Wait for network idle to ensure all requests are complete
+                try:
+                    page.wait_for_load_state('networkidle', timeout=15000)
+                    logger.info("Network idle reached after captcha solving")
+                except Exception:
+                    logger.info("Network idle timeout, continuing...")
+                
+                # Wait for DOM content to be ready
+                try:
+                    page.wait_for_load_state('domcontentloaded', timeout=10000)
+                    logger.info("DOM content loaded after captcha solving")
+                except Exception:
+                    logger.info("DOM content load timeout, continuing...")
+                
+                # Additional wait for JavaScript execution
+                page.wait_for_timeout(3000)
+                
+                # Check if page has redirected or reloaded
+                current_url = page.url
+                logger.info(f"Current URL after captcha solving: {current_url}")
+                
+                # Wait for any potential page transitions
+                try:
+                    page.wait_for_function(
+                        """
+                        () => {
+                            return new Promise((resolve) => {
+                                setTimeout(() => {
+                                    // Check if page is stable and no loading indicators
+                                    const isStable = !document.querySelector('[style*="animation"]') && 
+                                                   !document.querySelector('[class*="loading"]') &&
+                                                   !document.querySelector('[class*="spinner"]') &&
+                                                   document.readyState === 'complete';
+                                    resolve(isStable);
+                                }, 2000);
+                            });
+                        }
+                        """,
+                        timeout=20000
+                    )
+                    logger.info("Page is stable after captcha solving")
+                except Exception:
+                    logger.info("Page stability check timeout, continuing...")
+                
                 return True
+                
             except Exception as e:
                 logger.warning(f"Altcha verification timeout: {e}")
                 # Sometimes the state doesn't change immediately, wait a bit more
-                page.wait_for_timeout(3000)
+                page.wait_for_timeout(5000)
+                
+                # Still try to wait for page stability
+                try:
+                    page.wait_for_load_state('networkidle', timeout=10000)
+                except Exception:
+                    pass
+                
                 return True
             
         except Exception as e:

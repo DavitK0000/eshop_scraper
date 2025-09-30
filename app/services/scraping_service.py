@@ -500,17 +500,70 @@ class ScrapingService:
                 page = browser_manager.create_page(user_agent)
                 try:
                     # Navigate to the URL again
+                    logger.info("Navigating to URL for captcha solving...")
                     page.goto(url, wait_until='domcontentloaded', timeout=120000)
                     
                     # Solve the captcha
+                    logger.info("Starting captcha solving process...")
                     captcha_solved = extractor.solve_captcha(page)
+                    
                     if captcha_solved:
-                        logger.info("Captcha solved successfully, re-fetching content")
-                        # Get updated HTML content after captcha solving
+                        logger.info("Captcha solved successfully, waiting for page to stabilize...")
+                        
+                        # Additional waiting for page to fully process after captcha solving
+                        try:
+                            # Wait for network idle to ensure all requests are complete
+                            page.wait_for_load_state('networkidle', timeout=20000)
+                            logger.info("Network idle reached after captcha solving")
+                        except Exception:
+                            logger.info("Network idle timeout after captcha solving, continuing...")
+                        
+                        # Wait for DOM content to be ready
+                        try:
+                            page.wait_for_load_state('domcontentloaded', timeout=15000)
+                            logger.info("DOM content loaded after captcha solving")
+                        except Exception:
+                            logger.info("DOM content load timeout after captcha solving, continuing...")
+                        
+                        # Additional wait for JavaScript execution
+                        page.wait_for_timeout(5000)
+                        
+                        # Check if page has redirected or reloaded
+                        current_url = page.url
+                        logger.info(f"Current URL after captcha solving: {current_url}")
+                        
+                        # Wait for page stability
+                        try:
+                            page.wait_for_function(
+                                """
+                                () => {
+                                    return new Promise((resolve) => {
+                                        setTimeout(() => {
+                                            // Check if page is stable and no loading indicators
+                                            const isStable = !document.querySelector('[style*="animation"]') && 
+                                                           !document.querySelector('[class*="loading"]') &&
+                                                           !document.querySelector('[class*="spinner"]') &&
+                                                           document.readyState === 'complete';
+                                            resolve(isStable);
+                                        }, 3000);
+                                    });
+                                }
+                                """,
+                                timeout=25000
+                            )
+                            logger.info("Page is stable after captcha solving")
+                        except Exception:
+                            logger.info("Page stability check timeout after captcha solving, continuing...")
+                        
+                        # Get updated HTML content after captcha solving and page stabilization
+                        logger.info("Re-fetching HTML content after captcha solving...")
                         html_content = page.content()
+                        logger.info(f"New HTML content length: {len(html_content)}")
                         
                         # Recreate extractor with updated content
+                        logger.info("Recreating extractor with updated content...")
                         extractor = ExtractorFactory.create_extractor(platform, html_content, url)
+                        logger.info("Extractor recreated successfully")
                     else:
                         logger.warning("Failed to solve captcha, proceeding with original content")
                 except Exception as captcha_error:
