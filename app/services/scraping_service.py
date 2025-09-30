@@ -727,7 +727,17 @@ class ScrapingService:
             
             # Check for captcha and solve if needed
             update_task_progress(actual_task_id, 5, "Checking for captcha")
-            if extractor.detect_captcha():
+            
+            # Use platform-specific captcha detection if available
+            captcha_detected = False
+            if hasattr(extractor, 'detect_cdiscount_captcha') and platform == 'cdiscount':
+                logger.info("Using CDiscount-specific captcha detection")
+                captcha_detected = extractor.detect_cdiscount_captcha()
+            else:
+                logger.info("Using generic captcha detection")
+                captcha_detected = extractor.detect_captcha()
+            
+            if captcha_detected:
                 logger.info(f"Captcha detected on {url}, attempting to solve...")
                 update_task_progress(actual_task_id, 6, "Solving captcha")
                 
@@ -752,6 +762,8 @@ class ScrapingService:
                     logger.error(f"Error during captcha solving: {captcha_error}")
                 finally:
                     page.close()
+            else:
+                logger.info("No captcha detected, proceeding with normal extraction")
             
             # Extract product information using the platform-specific extractor
             update_task_progress(actual_task_id, 7, "Extracting product information")

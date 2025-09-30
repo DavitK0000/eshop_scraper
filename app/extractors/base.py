@@ -377,7 +377,10 @@ class BaseExtractor:
         """
         try:
             if not self.soup:
+                logger.info("No soup available for captcha detection")
                 return False
+            
+            logger.info("Starting captcha detection...")
             
             # Check for common captcha indicators
             captcha_indicators = [
@@ -408,20 +411,39 @@ class BaseExtractor:
                 'text*="Non sono un robot"',  # Italian
             ]
             
+            # Log HTML content snippet for debugging
+            html_snippet = self.html_content[:1000] if self.html_content else "No HTML content"
+            logger.info(f"HTML content snippet (first 1000 chars): {html_snippet}")
+            
             for indicator in captcha_indicators:
                 if indicator.startswith('text*='):
                     # Text-based search
                     text_pattern = indicator.split('text*=')[1].strip('"\'')
-                    if self.soup.find(text=re.compile(text_pattern, re.IGNORECASE)):
-                        logger.info(f"Captcha detected via text pattern: {text_pattern}")
+                    found_text = self.soup.find(text=re.compile(text_pattern, re.IGNORECASE))
+                    if found_text:
+                        logger.info(f"Captcha detected via text pattern '{text_pattern}': {found_text}")
                         return True
                 else:
                     # CSS selector search
                     elements = self.soup.select(indicator)
                     if elements:
-                        logger.info(f"Captcha detected via selector: {indicator}")
+                        logger.info(f"Captcha detected via selector '{indicator}': found {len(elements)} elements")
+                        # Log the found elements for debugging
+                        for i, elem in enumerate(elements[:3]):  # Log first 3 elements
+                            logger.info(f"  Element {i+1}: {elem}")
                         return True
             
+            # Additional check: look for any element containing "captcha" in class or id
+            all_elements = self.soup.find_all(attrs={'class': re.compile(r'captcha', re.IGNORECASE)})
+            all_elements.extend(self.soup.find_all(attrs={'id': re.compile(r'captcha', re.IGNORECASE)}))
+            
+            if all_elements:
+                logger.info(f"Found {len(all_elements)} elements with 'captcha' in class/id")
+                for elem in all_elements[:3]:
+                    logger.info(f"  Captcha element: {elem}")
+                return True
+            
+            logger.info("No captcha detected")
             return False
             
         except Exception as e:
