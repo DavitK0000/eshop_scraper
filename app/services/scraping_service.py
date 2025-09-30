@@ -730,6 +730,13 @@ class ScrapingService:
             
             # Use platform-specific captcha detection if available
             captcha_detected = False
+            
+            # Debug: Check extractor type and available methods
+            logger.info(f"Extractor type: {type(extractor).__name__}")
+            logger.info(f"Platform: {platform}")
+            logger.info(f"Has detect_cdiscount_captcha method: {hasattr(extractor, 'detect_cdiscount_captcha')}")
+            logger.info(f"Available methods: {[method for method in dir(extractor) if 'captcha' in method.lower()]}")
+            
             if hasattr(extractor, 'detect_cdiscount_captcha') and platform == 'cdiscount':
                 logger.info("Using CDiscount-specific captcha detection")
                 captcha_detected = extractor.detect_cdiscount_captcha()
