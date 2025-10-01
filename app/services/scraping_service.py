@@ -1456,8 +1456,7 @@ class ScrapingService:
             prompt = f"""Analyze the following product information and determine the most appropriate sub-category from this predefined list:
 
 Product Title: {product_info_text['title']}
-Product Description: {product_info_text['description']}
-Product Specifications: {', '.join([f"{k}: {v}" for k, v in product_info_text['specifications'].items()])}
+Product Description: {product_info_text['description'][:500]}
 
 Available Sub-Categories:
 {chr(10).join(category_list)}
