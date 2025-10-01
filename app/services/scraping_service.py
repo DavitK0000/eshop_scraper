@@ -1441,17 +1441,15 @@ class ScrapingService:
             
             # Create category list for the prompt with ID mapping
             category_list = []
-            category_id_map = {}  # Maps "Parent > Sub-category" to category ID
+            category_id_map = {}  # Maps sub-category name to category ID
             
             for sub_cat in sub_categories:
-                parent = next((cat for cat in categories if cat['id'] == sub_cat['parent_id']), None)
-                if parent:
-                    category_name = f"{parent['name']} > {sub_cat['name']}"
-                    category_list.append(category_name)
-                    category_id_map[category_name] = sub_cat['id']  # Store the sub-category ID
+                category_name = sub_cat['name']
+                category_list.append(category_name)
+                category_id_map[category_name] = sub_cat['id']  # Store the sub-category ID
             
             if not category_list:
-                logger.warning("No valid category combinations found, skipping category detection")
+                logger.warning("No valid sub-categories found, skipping category detection")
                 return None
             
             # Create prompt for category detection
@@ -1464,7 +1462,7 @@ Product Specifications: {', '.join([f"{k}: {v}" for k, v in product_info_text['s
 Available Sub-Categories:
 {chr(10).join(category_list)}
 
-Please provide the exact sub-category name from the list above that best describes this product. Use the format "Parent > Sub-category".
+Please provide the exact sub-category name from the list above that best describes this product.
 
 Respond with only the sub-category name, nothing else."""
             
@@ -1477,7 +1475,7 @@ Respond with only the sub-category name, nothing else."""
                 messages=[
                     {
                         "role": "system",
-                        "content": "You are a product categorization expert. You must choose from the provided category list. Provide only the exact category name from the list, nothing else."
+                        "content": "You are a product categorization expert. You must choose from the provided sub-category list. Provide only the exact sub-category name from the list, nothing else."
                     },
                     {
                         "role": "user",
@@ -1493,18 +1491,18 @@ Respond with only the sub-category name, nothing else."""
                 # Validate that the detected category exists in our predefined list
                 if detected_category_name in category_list:
                     category_id = category_id_map[detected_category_name]
-                    logger.info(f"Successfully detected category: {detected_category_name} (ID: {category_id})")
+                    logger.info(f"Successfully detected sub-category: {detected_category_name} (ID: {category_id})")
                     return category_id
                 else:
-                    logger.warning(f"OpenAI returned invalid category: {detected_category_name}")
+                    logger.warning(f"OpenAI returned invalid sub-category: {detected_category_name}")
                     # Use the first available sub-category as fallback
                     fallback_category_name = category_list[0]
                     fallback_category_id = category_id_map[fallback_category_name]
-                    logger.info(f"Using fallback category: {fallback_category_name} (ID: {fallback_category_id})")
+                    logger.info(f"Using fallback sub-category: {fallback_category_name} (ID: {fallback_category_id})")
                     return fallback_category_id
             else:
                 print(response.choices)
-                logger.warning("OpenAI response did not contain valid category")
+                logger.warning("OpenAI response did not contain valid sub-category")
                 return None
 
         except ImportError:
