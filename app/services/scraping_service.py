@@ -1439,69 +1439,110 @@ class ScrapingService:
                 'specifications': getattr(product_info, 'specifications', {}) or {}
             }
             
-            # Create category list for the prompt with ID mapping
-            category_list = []
-            category_id_map = {}  # Maps sub-category name to category ID
-            
-            for sub_cat in sub_categories:
-                category_name = sub_cat['name']
-                category_list.append(category_name)
-                category_id_map[category_name] = sub_cat['id']  # Store the sub-category ID
-            
-            if not category_list:
+            if not sub_categories:
                 logger.warning("No valid sub-categories found, skipping category detection")
                 return None
             
             # Create prompt for category detection
-            prompt = f"""Analyze the following product information and determine the most appropriate sub-category from this predefined list:
+            prompt = f"""Analyze the following product information and determine the most appropriate sub-category:
 
 Product Title: {product_info_text['title']}
 Product Description: {product_info_text['description'][:500]}
+Product Specifications: {', '.join([f"{k}: {v}" for k, v in product_info_text['specifications'].items()])}
 
-Available Sub-Categories:
-{chr(10).join(category_list)}
-
-Please provide the exact sub-category name from the list above that best describes this product.
-
-Respond with only the sub-category name, nothing else."""
+Use the detect_product_category function to return your selection."""
             
             # Initialize OpenAI client
             client = openai.OpenAI(api_key=settings.OPENAI_API_KEY)
             
-            # Call OpenAI for category detection
+            # Define the function schema for category detection
+            functions = [
+                {
+                    "name": "detect_product_category",
+                    "description": "Detect the most appropriate sub-category for a product based on its information",
+                    "parameters": {
+                        "type": "object",
+                        "properties": {
+                            "category_id": {
+                                "type": "string",
+                                "description": "The UUID of the detected sub-category"
+                            },
+                            "category_name": {
+                                "type": "string", 
+                                "description": "The name of the detected sub-category"
+                            },
+                            "confidence": {
+                                "type": "number",
+                                "description": "Confidence score between 0 and 1 for the detection",
+                                "minimum": 0,
+                                "maximum": 1
+                            }
+                        },
+                        "required": ["category_id", "category_name", "confidence"]
+                    }
+                }
+            ]
+            
+            # Call OpenAI for category detection with function calling
             response = client.chat.completions.create(
                 model=settings.OPENAI_MODEL,
                 messages=[
                     {
                         "role": "system",
-                        "content": "You are a product categorization expert. You must choose from the provided sub-category list. Provide only the exact sub-category name from the list, nothing else."
+                        "content": f"""You are a product categorization expert. You must choose the most appropriate sub-category from the provided list.
+
+Available sub-categories with their IDs:
+{chr(10).join([f"- {cat['name']} (ID: {cat['id']})" for cat in sub_categories])}
+
+Use the detect_product_category function to return your selection with a confidence score."""
                     },
                     {
                         "role": "user",
                         "content": prompt
                     }
                 ],
+                functions=functions,
+                function_call={"name": "detect_product_category"},
                 max_completion_tokens=100,  # Hard-coded for category detection
             )
             
-            if response.choices and response.choices[0].message.content:
-                detected_category_name = response.choices[0].message.content.strip()
+            # Process the function call response
+            if response.choices and response.choices[0].message.function_call:
+                function_call = response.choices[0].message.function_call
                 
-                # Validate that the detected category exists in our predefined list
-                if detected_category_name in category_list:
-                    category_id = category_id_map[detected_category_name]
-                    logger.info(f"Successfully detected sub-category: {detected_category_name} (ID: {category_id})")
-                    return category_id
+                if function_call.name == "detect_product_category":
+                    import json
+                    try:
+                        function_args = json.loads(function_call.arguments)
+                        detected_category_id = function_args.get("category_id")
+                        detected_category_name = function_args.get("category_name")
+                        confidence = function_args.get("confidence", 0.0)
+                        
+                        # Validate that the detected category ID exists in our sub-categories
+                        valid_category_ids = [cat['id'] for cat in sub_categories]
+                        if detected_category_id in valid_category_ids:
+                            logger.info(f"Successfully detected sub-category: {detected_category_name} (ID: {detected_category_id}) with confidence: {confidence}")
+                            return detected_category_id
+                        else:
+                            logger.warning(f"OpenAI returned invalid category ID: {detected_category_id}")
+                            # Use the first available sub-category as fallback
+                            fallback_category_id = sub_categories[0]['id']
+                            fallback_category_name = sub_categories[0]['name']
+                            logger.info(f"Using fallback sub-category: {fallback_category_name} (ID: {fallback_category_id})")
+                            return fallback_category_id
+                            
+                    except json.JSONDecodeError as e:
+                        logger.error(f"Failed to parse function call arguments: {e}")
+                        # Use the first available sub-category as fallback
+                        fallback_category_id = sub_categories[0]['id']
+                        fallback_category_name = sub_categories[0]['name']
+                        logger.info(f"Using fallback sub-category: {fallback_category_name} (ID: {fallback_category_id})")
+                        return fallback_category_id
                 else:
-                    logger.warning(f"OpenAI returned invalid sub-category: {detected_category_name}")
-                    # Use the first available sub-category as fallback
-                    fallback_category_name = category_list[0]
-                    fallback_category_id = category_id_map[fallback_category_name]
-                    logger.info(f"Using fallback sub-category: {fallback_category_name} (ID: {fallback_category_id})")
-                    return fallback_category_id
+                    logger.warning(f"Unexpected function call: {function_call.name}")
+                    return None
             else:
-                print(response.choices)
-                logger.warning("OpenAI response did not contain valid sub-category")
+                logger.warning("OpenAI response did not contain valid function call")
                 return None
 
         except ImportError:
