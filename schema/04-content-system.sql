@@ -99,7 +99,10 @@ CREATE TABLE IF NOT EXISTS public.video_scenarios (
             '960:960',    -- 1:1 square
             '1584:672',   -- 21:9 ultra-wide
             '1280:768',   -- 16:9 landscape HD+
-            '768:1280'    -- 9:16 portrait HD
+            '768:1280',   -- 9:16 portrait HD
+            '1920:1080',  -- Full HD landscape
+            '1080:1920',  -- Full HD portrait
+            '1440:1440'   -- Square HD
         )
     ),
     environment TEXT, -- Environment context for the video scenario (e.g., indoor, outdoor, studio, home, office, etc.)

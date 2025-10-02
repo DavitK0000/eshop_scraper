@@ -76,6 +76,12 @@ class VideoGenerationService:
             "1280:768": {"video_ratio": "16:9", "image_ratio": "16:9"},
             # 9:16 portrait HD -> 9:16
             "768:1280": {"video_ratio": "9:16", "image_ratio": "9:16"},
+            # Full HD landscape
+            "1920:1080": {"video_ratio": "16:9", "image_ratio": "16:9"},
+            # Full HD portrait
+            "1080:1920": {"video_ratio": "9:16", "image_ratio": "9:16"},
+            # Square HD
+            "1440:1440": {"video_ratio": "1:1", "image_ratio": "1:1"},
         }
 
         return mapping.get(video_resolution, {"video_ratio": "9:16", "image_ratio": "9:16"})
