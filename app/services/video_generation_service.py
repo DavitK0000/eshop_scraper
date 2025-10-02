@@ -20,7 +20,7 @@ from typing import Dict, Any, Optional, List
 from pathlib import Path
 
 from app.logging_config import get_logger
-from app.utils.vertex_utils import generate_video_with_prompt_and_image
+from app.utils.vertex_utils import generate_video_with_prompt_and_image, generate_image_with_recontext_and_upscale, vertex_manager
 from app.utils.flux_utils import flux_manager
 from app.utils.runwayml_utils import runwayml_manager, generate_image_from_text, create_reference_image
 from app.utils.supabase_utils import supabase_manager
@@ -499,86 +499,84 @@ class VideoGenerationService:
         update_task_progress(task_id, 2, 'Generating scene image with AI', 35.0)
         
         local_image_path = None
-        flux_success = False
-        flux_errors = []
+        vertex_success = False
+        vertex_errors = []
         
-        # Try Flux API (flux_utils already has its own retry logic)
+        # Try Vertex AI image generation first
         try:
-            logger.info("Attempting image generation with Flux API")
-            # Use Flux API for image generation with both text and reference image
-            result = flux_manager.generate_image_with_prompt_and_image(
-                prompt=image_prompt,
-                input_image=product_reference_image_url if product_reference_image_url else None,
-                model=settings.BFL_DEFAULT_MODEL,
-                output_path=f"temp_image_{uuid.uuid4()}.png"
-            )
+            logger.info("Attempting image generation with Vertex AI")
+            
+            # Convert image ratio to target dimensions
+            target_width, target_height = self._convert_ratio_to_dimensions(image_ratio)
+            
+            # Use Vertex AI for image generation with recontext and upscale
+            if product_reference_image_url:
+                temp_dir = self._get_temp_dir()
+                temp_image_path = str(temp_dir / f"temp_image_{uuid.uuid4()}.png")
+                result = generate_image_with_recontext_and_upscale(
+                    prompt=image_prompt,
+                    product_image_url=product_reference_image_url,
+                    target_width=target_width,
+                    target_height=target_height,
+                    output_path=temp_image_path
+                )
+            else:
+                # If no product reference image, skip Vertex AI and go to Flux
+                raise Exception("No product reference image provided for Vertex AI recontext generation")
             
             if not result or not result.get('success'):
                 error_msg = result.get('error', 'Unknown error') if result else 'No result returned'
-                raise Exception(f"Failed to generate image with Flux API: {error_msg}")
+                raise Exception(f"Failed to generate image with Vertex AI: {error_msg}")
             
             # Check if image was saved locally
-            if not result.get('image_saved') or not result.get('output_path'):
+            if not result.get('image_saved') or not result.get('image_path'):
                 raise Exception("Image was not saved to local storage")
             
             # Get the local image path
-            local_image_path = result['output_path']
+            local_image_path = result['image_path']
             if not os.path.exists(local_image_path):
                 raise Exception(f"Generated image file not found at {local_image_path}")
             
-            logger.info(f"Successfully generated image with Flux API for scene {scene_data['id']}")
-            flux_success = True
+            logger.info(f"Successfully generated image with Vertex AI for scene {scene_data['id']}")
+            vertex_success = True
             
-        except Exception as flux_error:
-            flux_errors.append(str(flux_error))
-            logger.warning(f"Flux API failed: {flux_error}")
+        except Exception as vertex_error:
+            vertex_errors.append(str(vertex_error))
+            logger.warning(f"Vertex AI failed: {vertex_error}")
         
-        # If Flux failed, try RunwayML as fallback
-        if not flux_success:
+        # If Vertex AI failed, try Flux API as fallback
+        if not vertex_success:
             try:
-                logger.info("Flux API failed after all attempts, trying RunwayML as fallback")
-                
-                # Convert image ratio to RunwayML format
-                runwayml_ratio = self._convert_to_runwayml_ratio(image_ratio)
-                
-                # Prepare reference images if available
-                reference_images = None
-                if product_reference_image_url:
-                    try:
-                        reference_images = [create_reference_image(product_reference_image_url, "product_ref")]
-                        # Update prompt to reference the image
-                        image_prompt = f"{image_prompt} @product_ref"
-                    except Exception as ref_error:
-                        logger.warning(f"Failed to create reference image for RunwayML: {ref_error}")
-                        # Continue without reference image
-                
-                # Generate image using RunwayML
-                import asyncio
-                runwayml_result = await generate_image_from_text(
-                    prompt_text=image_prompt,
-                    ratio=runwayml_ratio,
-                    model="gen4_image",
-                    reference_images=reference_images
+                logger.info("Vertex AI failed, trying Flux API as fallback")
+                temp_dir = self._get_temp_dir()
+                temp_image_path = str(temp_dir / f"temp_image_{uuid.uuid4()}.png")
+                # Use Flux API for image generation with both text and reference image
+                result = flux_manager.generate_image_with_prompt_and_image(
+                    prompt=image_prompt,
+                    input_image=product_reference_image_url if product_reference_image_url else None,
+                    model=settings.BFL_DEFAULT_MODEL,
+                    output_path=temp_image_path
                 )
                 
-                if not runwayml_result or not runwayml_result.get('success'):
-                    error_msg = runwayml_result.get('error', 'Unknown error') if runwayml_result else 'No result returned'
-                    raise Exception(f"Failed to generate image with RunwayML: {error_msg}")
+                if not result or not result.get('success'):
+                    error_msg = result.get('error', 'Unknown error') if result else 'No result returned'
+                    raise Exception(f"Failed to generate image with Flux API: {error_msg}")
                 
-                # Download the generated image
-                image_url = runwayml_result['output']
-                if isinstance(image_url, list) and len(image_url) > 0:
-                    image_url = image_url[0]  # Take the first URL if it's a list
+                # Check if image was saved locally
+                if not result.get('image_saved') or not result.get('output_path'):
+                    raise Exception("Image was not saved to local storage")
                 
-                # Download image to local file
-                local_image_path = self._download_image_from_url(image_url, f"temp_image_{uuid.uuid4()}.png")
+                # Get the local image path
+                local_image_path = result['output_path']
+                if not os.path.exists(local_image_path):
+                    raise Exception(f"Generated image file not found at {local_image_path}")
                 
-                logger.info(f"Successfully generated image with RunwayML for scene {scene_data['id']}")
+                logger.info(f"Successfully generated image with Flux API for scene {scene_data['id']}")
                 
-            except Exception as runwayml_error:
-                all_flux_errors = "; ".join(flux_errors)
-                logger.error(f"Both Flux API and RunwayML failed. Flux errors: {all_flux_errors}, RunwayML error: {runwayml_error}")
-                raise Exception(f"Image generation failed with both Flux API and RunwayML. Flux errors: {all_flux_errors}, RunwayML error: {runwayml_error}")
+            except Exception as flux_error:
+                all_vertex_errors = "; ".join(vertex_errors)
+                logger.error(f"Both Vertex AI and Flux API failed. Vertex errors: {all_vertex_errors}, Flux error: {flux_error}")
+                raise Exception(f"Image generation failed with both Vertex AI and Flux API. Vertex errors: {all_vertex_errors}, Flux error: {flux_error}")
         
         # Update progress - uploading image to Supabase
         update_task_progress(task_id, 2, 'Storing generated image', 40.0)
@@ -607,6 +605,28 @@ class VideoGenerationService:
         
         return image_url
     
+    def _get_temp_dir(self) -> Path:
+        """Get or create the temp directory for temporary files."""
+        project_root = Path(__file__).parent.parent.parent
+        temp_dir = project_root / "temp"
+        temp_dir.mkdir(exist_ok=True)
+        return temp_dir
+    
+    def _convert_ratio_to_dimensions(self, image_ratio: str) -> tuple:
+        """Convert image ratio to target width and height dimensions."""
+        # Mapping from common ratios to target dimensions
+        ratio_mapping = {
+            "16:9": (1920, 1080),
+            "9:16": (1080, 1920), 
+            "1:1": (1024, 1024),
+            "4:3": (1440, 1080),
+            "3:4": (1080, 1440),
+            "21:9": (1920, 1080),  # Fallback to 16:9 for ultra-wide
+        }
+        
+        # Return mapped dimensions or default to 1920x1080
+        return ratio_mapping.get(image_ratio, (1920, 1080))
+    
     def _convert_to_runwayml_ratio(self, flux_ratio: str) -> str:
         """Convert Flux ratio format to RunwayML ratio format."""
         # Mapping from common Flux ratios to RunwayML ratios
@@ -626,6 +646,11 @@ class VideoGenerationService:
         """Download image from URL to local file."""
         try:
             logger.info(f"Downloading image from URL: {image_url}")
+            
+            # If filename doesn't have a path, put it in temp directory
+            if not os.path.dirname(filename):
+                temp_dir = self._get_temp_dir()
+                filename = str(temp_dir / filename)
             
             with httpx.Client(timeout=DOWNLOAD_TIMEOUT) as client:
                 response = client.get(image_url)

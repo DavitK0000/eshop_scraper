@@ -1,21 +1,24 @@
 """
 Scenario Generation Service for creating AI-powered video scenarios.
-Handles OpenAI API calls for scenario generation and Flux API for image generation.
+Handles OpenAI API calls for scenario generation and Google Vertex AI for image generation.
 """
 
 import threading
 import time
 import json
 import logging
+import os
+import uuid
 import openai
 from typing import Dict, List, Optional, Any
 from datetime import datetime, timezone
+from pathlib import Path
 from app.models import (
     ScenarioGenerationRequest, ScenarioGenerationResponse, GeneratedScenario,
     Scene, AudioScript, DetectedDemographics, TaskStatus
 )
 
-from app.utils.flux_utils import flux_manager
+from app.utils.vertex_utils import generate_image_with_recontext_and_upscale, vertex_manager
 from app.utils.task_management import (
     create_task, start_task, update_task_progress,
     complete_task, fail_task, TaskType, TaskStatus as TMStatus
@@ -312,7 +315,8 @@ CRITICAL - FIXED PARAMETERS (DO NOT MODIFY):
 - Style: "{request.style}"
 - Mood: "{request.mood}"  
 - Video Length: {request.video_length} seconds
-- Target Language: "{request.target_language}" {environment_context if environment_context else ""}
+- Target Language: "{request.target_language}" 
+{environment_context if environment_context else ""}
 
 DEMOGRAPHIC DETECTION REQUIREMENTS:
 - You MUST analyze the product information and automatically detect the target demographics
@@ -329,25 +333,33 @@ DEMOGRAPHIC DETECTION REQUIREMENTS:
  REQUIREMENTS:
  1. Generate EXACTLY 1 scenario with {expected_scene_count} scenes, each exactly 8 seconds
  2. Each scene needs TWO prompts:
-    - imagePrompt: Detailed, descriptive prompt for first frame following RunwayML Gen-4 best practices
+    - imagePrompt: Detailed, descriptive prompt for first frame following Google Vertex Image generation best practices
     - visualPrompt: Safe video prompt for video generation
- 3. Generate a compelling thumbnailPrompt for the video thumbnail that:
+ 3. PROMPT ENHANCEMENT REQUIREMENTS:
+    - Include camera proximity/position descriptions (e.g., "close-up shot", "wide angle", "medium shot", "overhead view", "low angle", "eye level")
+    - Specify lighting conditions (e.g., "soft natural lighting", "dramatic shadows", "studio lighting", "golden hour", "backlit", "side lighting")
+    - Include camera settings and effects (e.g., "shallow depth of field", "motion blur", "soft focus", "sharp focus", "cinematic bokeh", "slow motion")
+    - Wrap ALL text content that appears in images/videos with double quotes ("") or single quotes ('')
+    - Example: "Close-up shot with soft natural lighting, shallow depth of field, featuring text overlay 'Amazing Product'"
+ 4. Generate a compelling thumbnailPrompt for the video thumbnail that:
     - Captures the essence of the video content and product
     - Is optimized for social media (eye-catching, high contrast)
     - Includes style and mood elements from the video
     - Targets the detected demographic audience
     - Follows RunwayML Gen-4 image generation best practices
- 4. Content must be family-friendly, professional, and pass content moderation
- 5. Maintain consistent characters, settings, and visual style throughout
- 6. Base content on actual product capabilities - no unrealistic scenarios
- 7. Generate content suitable for TikTok vertical format (9:16)
- 8. Audio script timing: Hook (20-25%), Main (50-60%), CTA (15-20%) of total duration
- 9. LANGUAGE REQUIREMENTS:
+    - Includes camera positioning, lighting, and text wrapping requirements
+ 5. Content must be family-friendly, professional, and pass content moderation
+ 6. Maintain consistent characters, settings, and visual style throughout
+ 7. Base content on actual product capabilities - no unrealistic scenarios
+ 8. Generate content suitable for TikTok vertical format (9:16)
+ 9. Audio script timing: Hook (20-25%), Main (50-60%), CTA (15-20%) of total duration
+ 10. LANGUAGE REQUIREMENTS:
     - Generate ALL audio script content (hook, main, cta, hashtags) in target language: "{request.target_language}"
     - Generate ALL text content that appears in images/videos in target language: "{request.target_language}"
     - This includes any text overlays, captions, product names, descriptions, or visual text elements
     - Ensure all visual prompts specify text content in the target language
     - Make sure image prompts include text elements in the target language when relevant
+    - Wrap all text content with quotes as specified in prompt enhancement requirements
  """
     
     async def _build_user_message(self, request: ScenarioGenerationRequest) -> str:
@@ -503,13 +515,17 @@ Ensure all content is family-friendly, professional, and passes content moderati
                 else:
                     logger.warning("No available images found for product")
                 
+                # Enhance the image prompt with style and mood
+                base_image_prompt = scene_data.get('imagePrompt', f'Generate image for scene {i+1}')
+                enhanced_image_prompt = self._enhance_image_prompt(base_image_prompt, request.style, request.mood)
+                
                 # Create scene with fallback values for missing fields
                 scene = Scene(
                     scene_id=scene_data.get('sceneId', f"scene-{i}"),
                     scene_number=i+1,
                     description=scene_data.get('description', f'Scene {i+1}'),
                     duration=scene_data.get('duration', 8),
-                    image_prompt=scene_data.get('imagePrompt', f'Generate image for scene {i+1}'),
+                    image_prompt=enhanced_image_prompt,  # Use enhanced prompt
                     visual_prompt=scene_data.get('visualPrompt', f'Video content for scene {i+1}'),
                     product_reference_image_url=product_reference_image_url,  # Use AI-selected image
                     image_reasoning=scene_data.get('imageReasoning', f'Selected image {selected_image_index} for scene {i+1}'),
@@ -522,12 +538,15 @@ Ensure all content is family-friendly, professional, and passes content moderati
             if not scenes:
                 logger.warning("No valid scenes found, creating default scene")
                 default_image_url = available_images[0].get('imageUrl', '') if available_images else ""
+                # Enhance the default image prompt as well
+                default_base_prompt = "Generate a compelling product image"
+                enhanced_default_prompt = self._enhance_image_prompt(default_base_prompt, request.style, request.mood)
                 default_scene = Scene(
                     scene_id="scene-default",
                     scene_number=1,
                     description="Default scene for video",
                     duration=8,
-                    image_prompt="Generate a compelling product image",
+                    image_prompt=enhanced_default_prompt,  # Use enhanced prompt
                     visual_prompt="Show the product in an engaging way",
                     product_reference_image_url=default_image_url,
                     image_reasoning="Using first available product image",
@@ -585,10 +604,10 @@ Ensure all content is family-friendly, professional, and passes content moderati
             raise
 
     async def _generate_thumbnail_image(self, request: ScenarioGenerationRequest, scenario: GeneratedScenario) -> Optional[str]:
-        """Generate thumbnail image for the scenario using Flux API"""
+        """Generate thumbnail image for the scenario using Google Vertex AI"""
         try:
-            if not flux_manager.is_available():
-                logger.warning("Flux API not available, skipping thumbnail generation")
+            if not vertex_manager.is_available():
+                logger.warning("Vertex AI not available, skipping thumbnail generation")
                 return None
             
             # Use the AI-generated thumbnail prompt from the scenario
@@ -608,31 +627,36 @@ Ensure all content is family-friendly, professional, and passes content moderati
                     reference_image_url = first_scene.product_reference_image_url
                     logger.info(f"Using product reference image for thumbnail: {reference_image_url}")
             
-            logger.info("Calling Flux API for thumbnail generation...")
+            logger.info("Calling Vertex AI for thumbnail generation...")
             
-            # Generate image using Flux API
-            result = flux_manager.generate_image_with_prompt_and_image(
+            # Generate unique filename using UUID and save in temp directory
+            thumbnail_uuid = uuid.uuid4()
+            temp_dir = self._get_temp_dir()
+            temp_thumbnail_path = str(temp_dir / f"temp_thumbnail_{thumbnail_uuid}.png")
+            
+            # Generate image using Vertex AI recontext and upscale
+            result = generate_image_with_recontext_and_upscale(
                 prompt=enhanced_prompt,
-                input_image=reference_image_url,
-                model=settings.BFL_DEFAULT_MODEL,
-                output_path=f"temp_thumbnail_{scenario.title.replace(' ', '_')}.png"
+                product_image_url=reference_image_url or "",
+                target_width=1920,
+                target_height=1080,
+                output_path=temp_thumbnail_path
             )
             
-            logger.info(f"Flux API thumbnail result: {result}")
+            logger.info(f"Vertex AI thumbnail result: {result}")
             
             if result and result.get('success'):
-                if result.get('image_saved') and result.get('output_path'):
+                if result.get('image_saved') and result.get('image_path'):
                     # Upload the generated image to Supabase and return the URL
                     try:
-                        import uuid
-                        from app.utils.supabase_utils import supabase_manager
                         
-                        # Read the generated image file
-                        with open(result['output_path'], 'rb') as f:
+                        # Read the generated image file using the correct path
+                        image_path = result['image_path']
+                        with open(image_path, 'rb') as f:
                             image_data = f.read()
                         
-                        # Generate unique filename
-                        filename = f"thumbnails/{uuid.uuid4()}.png"
+                        # Generate unique filename using the same UUID
+                        filename = f"thumbnails/{thumbnail_uuid}.png"
                         
                         # Upload to Supabase storage
                         if supabase_manager.is_connected():
@@ -648,8 +672,7 @@ Ensure all content is family-friendly, professional, and passes content moderati
                                 public_url = supabase_manager.client.storage.from_('generated-content').get_public_url(filename)
                                 
                                 # Clean up local file
-                                import os
-                                os.unlink(result['output_path'])
+                                os.unlink(image_path)
                                 
                                 logger.info(f"Successfully generated and uploaded thumbnail: {public_url}")
                                 return public_url
@@ -657,21 +680,18 @@ Ensure all content is family-friendly, professional, and passes content moderati
                             except Exception as upload_error:
                                 logger.error(f"Failed to upload thumbnail to Supabase: {upload_error}")
                                 # Clean up local file
-                                import os
-                                if os.path.exists(result['output_path']):
-                                    os.unlink(result['output_path'])
+                                if os.path.exists(image_path):
+                                    os.unlink(image_path)
                         else:
                             logger.error("Supabase not connected, cannot upload thumbnail")
                             # Clean up local file
-                            import os
-                            if os.path.exists(result['output_path']):
-                                os.unlink(result['output_path'])
+                            if os.path.exists(image_path):
+                                os.unlink(image_path)
                     except Exception as upload_error:
                         logger.error(f"Failed to process generated thumbnail: {upload_error}")
                         # Clean up local file
-                        import os
-                        if os.path.exists(result['output_path']):
-                            os.unlink(result['output_path'])
+                        if os.path.exists(image_path):
+                            os.unlink(image_path)
                 else:
                     logger.warning("Thumbnail generation succeeded but image was not saved locally")
             else:
@@ -713,16 +733,49 @@ Ensure all content is family-friendly, professional, and passes content moderati
             'futuristic': 'modern tech aesthetic, sleek lines, contemporary lighting, cutting-edge composition'
         }
         
+        # Camera positioning and technical enhancements
+        camera_enhancements = {
+            'trendy-influencer-vlog': 'medium shot, eye level, shallow depth of field, cinematic bokeh',
+            'cinematic-storytelling': 'wide angle establishing shot, low angle, deep focus, motion blur',
+            'product-showcase': 'close-up shot, overhead view, sharp focus, studio lighting setup',
+            'lifestyle-content': 'medium shot, natural eye level, soft focus, handheld camera feel',
+            'educational-tutorial': 'medium shot, eye level, clear focus, stable composition',
+            'behind-the-scenes': 'handheld camera, natural angles, documentary style, authentic framing',
+            'fashion-beauty': 'close-up shot, professional angles, soft focus, editorial lighting',
+            'food-cooking': 'overhead view, close-up details, warm lighting, appetizing composition',
+            'fitness-wellness': 'dynamic angles, medium shot, energetic framing, motivational composition',
+            'tech-review': 'medium shot, clean angles, sharp focus, modern composition'
+        }
+        
+        # Lighting enhancements based on style and mood
+        lighting_enhancements = {
+            'energetic': 'bright natural lighting, high contrast, dynamic shadows',
+            'calm': 'soft diffused lighting, gentle shadows, warm tones',
+            'professional': 'even studio lighting, minimal shadows, clean illumination',
+            'fun': 'bright colorful lighting, playful shadows, vibrant atmosphere',
+            'luxury': 'premium lighting, sophisticated shadows, elegant illumination',
+            'casual': 'natural ambient lighting, comfortable shadows, relaxed atmosphere',
+            'dramatic': 'theatrical lighting, strong shadows, dramatic contrast',
+            'minimalist': 'clean lighting, minimal shadows, simple illumination',
+            'vintage': 'warm nostalgic lighting, classic shadows, period-appropriate atmosphere',
+            'futuristic': 'modern LED lighting, sleek shadows, contemporary illumination'
+        }
+        
         style_enhancement = style_enhancements.get(style, style_enhancements['trendy-influencer-vlog'])
         mood_enhancement = mood_enhancements.get(mood, mood_enhancements['energetic'])
+        camera_enhancement = camera_enhancements.get(style, camera_enhancements['trendy-influencer-vlog'])
+        lighting_enhancement = lighting_enhancements.get(mood, lighting_enhancements['energetic'])
+        
         base_enhancement = "professional lighting, sharp focus, high quality, perfect composition, studio lighting, commercial grade"
         
-        return f"{base_prompt}. {base_enhancement}, {style_enhancement}, {mood_enhancement}."
+        return f"{base_prompt}. {base_enhancement}, {style_enhancement}, {mood_enhancement}, {camera_enhancement}, {lighting_enhancement}."
     
-
-    
-
-
+    def _get_temp_dir(self) -> Path:
+        """Get or create the temp directory for temporary files."""
+        project_root = Path(__file__).parent.parent.parent
+        temp_dir = project_root / "temp"
+        temp_dir.mkdir(exist_ok=True)
+        return temp_dir
 
 # Global service instance
 scenario_generation_service = ScenarioGenerationService()

@@ -10,12 +10,13 @@ import logging
 import tempfile
 import requests
 import time
+import uuid
 from typing import Dict, List, Any, Optional, Union, Tuple
 from pathlib import Path
 from io import BytesIO
 
 try:
-    from PIL import Image
+    from PIL import Image as PILImage
     PIL_AVAILABLE = True
 except ImportError:
     PIL_AVAILABLE = False
@@ -24,6 +25,11 @@ except ImportError:
 try:
     from google import genai
     from google.genai import types
+    from google.genai.types import (
+        EditImageConfig, GenerateImagesConfig, RecontextImageConfig,
+        RecontextImageSource, ProductImage, Image, RawReferenceImage, 
+        MaskReferenceImage, MaskReferenceConfig
+    )
     from google.oauth2 import service_account
     VERTEX_AVAILABLE = True
 except ImportError:
@@ -94,6 +100,14 @@ class VertexManager:
     def is_pillow_available(self) -> bool:
         """Check if Pillow is available for image processing."""
         return PIL_AVAILABLE
+    
+    def _get_temp_dir(self) -> Path:
+        """Get or create the temp directory for temporary files."""
+        # Get the project root directory (parent of app directory)
+        project_root = Path(__file__).parent.parent.parent
+        temp_dir = project_root / "temp"
+        temp_dir.mkdir(exist_ok=True)
+        return temp_dir
     
     def _get_image_as_data_uri(self, image_path: Union[str, Path]) -> str:
         """Convert an image file to a data URI."""
@@ -321,11 +335,11 @@ class VertexManager:
                 return image_path
             
             # Open the image
-            with Image.open(image_path) as img:
+            with PILImage.open(image_path) as img:
                 # Convert to RGB if necessary (JPEG doesn't support RGBA)
                 if img.mode in ('RGBA', 'LA', 'P'):
                     # Create white background for transparent images
-                    background = Image.new('RGB', img.size, (255, 255, 255))
+                    background = PILImage.new('RGB', img.size, (255, 255, 255))
                     if img.mode == 'P':
                         img = img.convert('RGBA')
                     background.paste(img, mask=img.split()[-1] if img.mode == 'RGBA' else None)
@@ -363,7 +377,194 @@ class VertexManager:
             logger.error(f"Failed to compress image {image_path}: {e}")
             return image_path
     
-    
+    def create_centered_image_with_black_background(self, source_image: Image, target_width: int = 1920, target_height: int = 1080) -> Image:
+        """
+        Create an image with the source image centered and black background.
+        
+        Args:
+            source_image: Google GenAI Image object
+            target_width: Desired width of the output image
+            target_height: Desired height of the output image
+        
+        Returns:
+            PIL Image object
+        """
+        if not PIL_AVAILABLE:
+            raise RuntimeError("PIL is required for image processing")
+        
+        # Load the source image from bytes
+        source_img = PILImage.open(BytesIO(source_image.image_bytes))
+        
+        # Create a black background image
+        background = PILImage.new('RGB', (target_width, target_height), (0, 0, 0))
+        
+        # Calculate position to center the source image
+        x = (target_width - source_img.width) // 2
+        y = (target_height - source_img.height) // 2
+        
+        # Paste the source image onto the black background
+        background.paste(source_img, (x, y))
+        
+        return background
+
+    def create_mask_image_with_black_area(self, source_image: Image, target_width: int = 1920, target_height: int = 1080) -> Image:
+        """
+        Create an image with black area where the source image was positioned.
+        
+        Args:
+            source_image: Google GenAI Image object
+            target_width: Desired width of the output image
+            target_height: Desired height of the output image
+        
+        Returns:
+            PIL Image object
+        """
+        if not PIL_AVAILABLE:
+            raise RuntimeError("PIL is required for image processing")
+        
+        # Load the source image to get its dimensions
+        source_img = PILImage.open(BytesIO(source_image.image_bytes))
+        
+        # Create a white background image
+        background = PILImage.new('RGB', (target_width, target_height), (255, 255, 255))
+        
+        # Calculate position where the source image would be centered
+        x = (target_width - source_img.width) // 2
+        y = (target_height - source_img.height) // 2
+        
+        # Create a black rectangle where the source image would be
+        black_area = PILImage.new('RGB', (source_img.width, source_img.height), (0, 0, 0))
+        
+        # Paste the black area onto the white background
+        background.paste(black_area, (x, y))
+        
+        return background
+
+    def generate_image_with_recontext_and_upscale(
+        self,
+        prompt: str,
+        product_image_url: str,
+        target_width: int = 1920,
+        target_height: int = 1080,
+        output_path: Optional[str] = None
+    ) -> Dict[str, Any]:
+        """
+        Generate an image using Google Vertex AI recontext model and upscale it.
+        
+        Args:
+            prompt: Text prompt for image generation
+            product_image_url: URL of the product reference image
+            target_width: Desired width for the final image
+            target_height: Desired height for the final image
+            output_path: Optional path to save the final image
+            
+        Returns:
+            Dictionary containing generation results and image path
+        """
+        if not self.is_available():
+            raise RuntimeError("Vertex AI is not available or properly configured")
+        
+        if not PIL_AVAILABLE:
+            raise RuntimeError("PIL is required for image processing")
+        
+        try:
+            logger.info(f"Starting image generation with recontext model")
+            
+            # Get temp directory and create output path if not provided
+            temp_dir = self._get_temp_dir()
+            if not output_path:
+                output_path = str(temp_dir / f"temp_image_{uuid.uuid4()}.png")
+            
+            # Download product image
+            product_image_bytes, mime_type = self._get_image_bytes_from_url(product_image_url)
+            source_image = Image(image_bytes=product_image_bytes, mime_type=mime_type)
+            
+            # Generate the recontext image (1024x1024)
+            logger.info("Generating recontext image...")
+            recontext_result = self.client.models.recontext_image(
+                model="imagen-product-recontext-preview-06-30",
+                source=RecontextImageSource(
+                    prompt=prompt,
+                    product_images=[
+                        ProductImage(product_image=source_image)
+                    ],
+                ),
+                config=RecontextImageConfig(
+                    person_generation="ALLOW_ALL",
+                )
+            )
+            
+            recontext_image = recontext_result.generated_images[0].image
+            
+            # Create the two required images for upscaling
+            logger.info("Creating centered image with black background...")
+            centered_image = self.create_centered_image_with_black_background(
+                recontext_image, target_width, target_height
+            )
+            
+            logger.info("Creating mask image with black area...")
+            mask_image = self.create_mask_image_with_black_area(
+                recontext_image, target_width, target_height
+            )
+            
+            # Convert PIL images to bytes
+            centered_image_bytes = BytesIO()
+            centered_image.save(centered_image_bytes, format='PNG')
+            centered_image_bytes = centered_image_bytes.getvalue()
+            
+            mask_image_bytes = BytesIO()
+            mask_image.save(mask_image_bytes, format='PNG')
+            mask_image_bytes = mask_image_bytes.getvalue()
+            
+            # Create reference images for upscaling
+            raw_ref = RawReferenceImage(
+                reference_image=Image(image_bytes=centered_image_bytes, mime_type="image/png"),
+                reference_id=0,
+            )
+            mask_ref = MaskReferenceImage(
+                reference_id=1,
+                reference_image=Image(image_bytes=mask_image_bytes, mime_type="image/png"),
+                config=MaskReferenceConfig(
+                    mask_mode="MASK_MODE_USER_PROVIDED",
+                    mask_dilation=0.03,
+                ),
+            )
+            
+            # Generate the upscaled image using edit_image
+            logger.info("Generating upscaled image...")
+            upscaled_result = self.client.models.edit_image(
+                model="imagen-3.0-capability-001",
+                prompt=prompt,
+                reference_images=[raw_ref, mask_ref],
+                config=EditImageConfig(
+                    edit_mode="EDIT_MODE_OUTPAINT",
+                ),
+            )
+            
+            upscaled_image = upscaled_result.generated_images[0].image
+            
+            # Save the final image if output path is provided
+            if output_path:
+                upscaled_image.save(output_path)
+                logger.info(f"Saved upscaled image to: {output_path}")
+            
+            return {
+                'success': True,
+                'image_path': output_path,
+                'image_saved': bool(output_path),
+                'recontext_image': recontext_image,
+                'upscaled_image': upscaled_image,
+                'target_dimensions': f"{target_width}x{target_height}"
+            }
+            
+        except Exception as e:
+            logger.error(f"Failed to generate image with recontext and upscale: {e}")
+            return {
+                'success': False,
+                'error': str(e),
+                'image_path': None,
+                'image_saved': False
+            }
     
     def generate_video_with_prompt_and_image(
         self,
@@ -512,6 +713,19 @@ def generate_video_with_prompt_and_image(
     """Convenience function to generate video with prompt and image URL."""
     return vertex_manager.generate_video_with_prompt_and_image(
         prompt, image_url, model, file_path, aspect_ratio, number_of_videos, negative_prompt
+    )
+
+
+def generate_image_with_recontext_and_upscale(
+    prompt: str,
+    product_image_url: str,
+    target_width: int = 1920,
+    target_height: int = 1080,
+    output_path: Optional[str] = None
+) -> Dict[str, Any]:
+    """Convenience function to generate image with recontext and upscale."""
+    return vertex_manager.generate_image_with_recontext_and_upscale(
+        prompt, product_image_url, target_width, target_height, output_path
     )
 
 
