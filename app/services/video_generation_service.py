@@ -60,22 +60,6 @@ class VideoGenerationService:
             Dict with 'video_ratio' and 'image_ratio' keys
         """
         mapping = {
-            # 16:9 landscape
-            "1280:720": {"video_ratio": "16:9", "image_ratio": "16:9"},
-            # 9:16 portrait
-            "720:1280": {"video_ratio": "9:16", "image_ratio": "9:16"},
-            # 4:3 landscape
-            "1104:832": {"video_ratio": "4:3", "image_ratio": "4:3"},
-            # 3:4 portrait
-            "832:1104": {"video_ratio": "3:4", "image_ratio": "3:4"},
-            # 1:1 square
-            "960:960": {"video_ratio": "1:1", "image_ratio": "1:1"},
-            # 21:9 ultra-wide -> 16:9
-            "1584:672": {"video_ratio": "16:9", "image_ratio": "16:9"},
-            # 16:9 landscape HD+ -> 16:9
-            "1280:768": {"video_ratio": "16:9", "image_ratio": "16:9"},
-            # 9:16 portrait HD -> 9:16
-            "768:1280": {"video_ratio": "9:16", "image_ratio": "9:16"},
             # Full HD landscape
             "1920:1080": {"video_ratio": "16:9", "image_ratio": "16:9"},
             # Full HD portrait
@@ -666,9 +650,6 @@ class VideoGenerationService:
             "16:9": (1920, 1080),
             "9:16": (1080, 1920), 
             "1:1": (1024, 1024),
-            "4:3": (1440, 1080),
-            "3:4": (1080, 1440),
-            "21:9": (1920, 1080),  # Fallback to 16:9 for ultra-wide
         }
         
         # Return mapped dimensions or default to 1920x1080
