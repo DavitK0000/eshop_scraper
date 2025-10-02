@@ -334,7 +334,14 @@ DEMOGRAPHIC DETECTION REQUIREMENTS:
  1. Generate EXACTLY 1 scenario with {expected_scene_count} scenes, each exactly 8 seconds
  2. Each scene needs TWO prompts:
     - imagePrompt: Detailed, descriptive prompt for first frame following Google Vertex Image generation best practices
-    - visualPrompt: Safe video prompt for video generation
+    - visualPrompt: Video prompt following Veo3 best practices with these required elements:
+      * Subject: The object, person, animal, or scenery in the video
+      * Context: The background or context where the subject is placed
+      * Action: What the subject is doing (walking, running, turning head, etc.)
+      * Style: Film style keywords (horror film, film noir, cartoon style render, etc.)
+      * Camera motion: What the camera is doing (aerial view, eye-level, top-down shot, low-angle shot)
+      * Composition: How the shot is framed (wide shot, close-up, extreme close-up)
+      * Ambiance: Color and light contribution (blue tones, night, warm tones)
  3. PROMPT ENHANCEMENT REQUIREMENTS:
     - Include camera proximity/position descriptions (e.g., "close-up shot", "wide angle", "medium shot", "overhead view", "low angle", "eye level")
     - Specify lighting conditions (e.g., "soft natural lighting", "dramatic shadows", "studio lighting", "golden hour", "backlit", "side lighting")
@@ -515,17 +522,13 @@ Ensure all content is family-friendly, professional, and passes content moderati
                 else:
                     logger.warning("No available images found for product")
                 
-                # Enhance the image prompt with style and mood
-                base_image_prompt = scene_data.get('imagePrompt', f'Generate image for scene {i+1}')
-                enhanced_image_prompt = self._enhance_image_prompt(base_image_prompt, request.style, request.mood)
-                
                 # Create scene with fallback values for missing fields
                 scene = Scene(
                     scene_id=scene_data.get('sceneId', f"scene-{i}"),
                     scene_number=i+1,
                     description=scene_data.get('description', f'Scene {i+1}'),
                     duration=scene_data.get('duration', 8),
-                    image_prompt=enhanced_image_prompt,  # Use enhanced prompt
+                    image_prompt=scene_data.get('imagePrompt', f'Generate image for scene {i+1}'),
                     visual_prompt=scene_data.get('visualPrompt', f'Video content for scene {i+1}'),
                     product_reference_image_url=product_reference_image_url,  # Use AI-selected image
                     image_reasoning=scene_data.get('imageReasoning', f'Selected image {selected_image_index} for scene {i+1}'),
@@ -538,15 +541,12 @@ Ensure all content is family-friendly, professional, and passes content moderati
             if not scenes:
                 logger.warning("No valid scenes found, creating default scene")
                 default_image_url = available_images[0].get('imageUrl', '') if available_images else ""
-                # Enhance the default image prompt as well
-                default_base_prompt = "Generate a compelling product image"
-                enhanced_default_prompt = self._enhance_image_prompt(default_base_prompt, request.style, request.mood)
                 default_scene = Scene(
                     scene_id="scene-default",
                     scene_number=1,
                     description="Default scene for video",
                     duration=8,
-                    image_prompt=enhanced_default_prompt,  # Use enhanced prompt
+                    image_prompt="Generate a compelling product image",
                     visual_prompt="Show the product in an engaging way",
                     product_reference_image_url=default_image_url,
                     image_reasoning="Using first available product image",

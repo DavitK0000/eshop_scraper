@@ -121,6 +121,47 @@ class VideoGenerationService:
             # Return default resolution if there's an error
             return "720:1280"
 
+    def _get_scenario_style_and_mood(self, scene_id: str) -> tuple[str, str]:
+        """
+        Get style and mood from video_scenarios table based on scenario_id from video_scenes.
+
+        Args:
+            scene_id: The UUID of the scene
+
+        Returns:
+            Tuple of (style, mood) strings
+        """
+        try:
+            if not supabase_manager.is_connected():
+                raise Exception("Supabase connection not available")
+
+            # First get the scenario_id from the scene
+            scene_result = supabase_manager.client.table('video_scenes').select(
+                'scenario_id').eq('id', scene_id).execute()
+
+            if not scene_result.data:
+                raise Exception(f"Scene {scene_id} not found")
+
+            scenario_id = scene_result.data[0]['scenario_id']
+
+            # Then get the style and mood from the scenario
+            scenario_result = supabase_manager.client.table('video_scenarios').select(
+                'style, mood').eq('id', scenario_id).execute()
+
+            if not scenario_result.data:
+                raise Exception(f"Scenario {scenario_id} not found")
+
+            style = scenario_result.data[0].get('style', 'trendy-influencer-vlog')
+            mood = scenario_result.data[0].get('mood', 'energetic')
+            
+            logger.info(f"Retrieved style '{style}' and mood '{mood}' for scene {scene_id}")
+            return style, mood
+
+        except Exception as e:
+            logger.error(f"Failed to get scenario style and mood for scene {scene_id}: {e}")
+            # Return default values if there's an error
+            return 'trendy-influencer-vlog', 'energetic'
+
     def _create_signed_video_url(self, video_url: str, expires_in: int = 3600) -> str:
         """
         Convert a Supabase storage URL to a signed URL or refresh existing signed URL.
