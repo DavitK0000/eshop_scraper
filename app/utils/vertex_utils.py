@@ -617,6 +617,7 @@ class VertexManager:
                         else "16:9"
                     ),
                     # aspect_ratio="16:9",
+                    resolution="1080p",
                     number_of_videos=number_of_videos,
                     negative_prompt=negative_prompt,
                 ),
