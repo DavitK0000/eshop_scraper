@@ -619,7 +619,10 @@ class VertexManager:
                     # aspect_ratio="16:9",
                     resolution="1080p",
                     number_of_videos=number_of_videos,
-                    negative_prompt=negative_prompt + "\nperson voice, human speech, dialogue, talking",
+                    negative_prompt=(
+                        "person voice, human speech, dialogue, talking" if negative_prompt is None
+                        else negative_prompt + "\nperson voice, human speech, dialogue, talking"
+                    ),
                 ),
             )
             
