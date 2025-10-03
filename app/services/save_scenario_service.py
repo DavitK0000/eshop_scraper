@@ -1,6 +1,6 @@
 """
 Save Scenario Service for saving AI-generated scenarios and generating images for scenes.
-Handles database operations and RunwayML image generation for video scenes.
+Handles database operations and Vertex AI image generation for video scenes.
 """
 
 import threading

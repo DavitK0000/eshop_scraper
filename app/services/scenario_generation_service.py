@@ -126,7 +126,7 @@ class ScenarioGenerationService:
             update_task_progress(
                 task_id, 60, "Generating thumbnail image", 90.0)
 
-            # Step 2: Generate thumbnail image using RunwayML
+            # Step 2: Generate thumbnail image using Vertex AI
             thumbnail_url = await self._generate_thumbnail_image(request, scenario)
             if not thumbnail_url:
                 logger.warning(
@@ -353,7 +353,7 @@ DEMOGRAPHIC DETECTION REQUIREMENTS:
     - Is optimized for social media (eye-catching, high contrast)
     - Includes style and mood elements from the video
     - Targets the detected demographic audience
-    - Follows RunwayML Gen-4 image generation best practices
+    - Follows Vertex AI image generation best practices
     - Includes camera positioning, lighting, and text wrapping requirements
  5. Content must be family-friendly, professional, and pass content moderation
  6. Maintain consistent characters, settings, and visual style throughout

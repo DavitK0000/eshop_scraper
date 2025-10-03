@@ -24,7 +24,7 @@ A comprehensive, high-performance API for scraping product information from e-co
 The E-commerce Scraper API is a sophisticated system that provides:
 
 - **Intelligent Web Scraping**: Automatic platform detection and extraction
-- **AI-Powered Content Generation**: Image and video generation using RunwayML
+- **AI-Powered Content Generation**: Image and video generation using Vertex AI and Flux API
 - **Video Processing Pipeline**: Complete video creation and editing workflow
 - **Comprehensive Security**: Rate limiting, IP blocking, and API key authentication
 - **Real-time Task Management**: Asynchronous processing with progress tracking
@@ -49,14 +49,14 @@ The E-commerce Scraper API is a sophisticated system that provides:
 #### 3. Services (`app/services/`)
 - **ScrapingService**: Orchestrates the scraping process
 - **ImageAnalysisService**: AI-powered image analysis using OpenAI Vision
-- **VideoGenerationService**: AI video generation with RunwayML
+- **VideoGenerationService**: AI video generation with Vertex AI
 - **ScenarioGenerationService**: AI scenario creation for videos
 - **SaveScenarioService**: Scenario persistence and image generation
 - **SessionService**: Task session management
 - **SchedulerService**: Background task cleanup and maintenance
 
 #### 4. AI Generation Utilities (`app/utils/`)
-- **RunwayML Integration**: Image-to-video and text-to-image generation
+- **Vertex AI Integration**: Image-to-video and text-to-image generation
 - **Vertex AI Integration**: Advanced AI model access
 - **Supabase Utils**: Database and storage operations
 - **Task Management**: Background processing and status tracking
@@ -144,8 +144,6 @@ SUPABASE_SERVICE_ROLE_KEY=your_service_role_key
 
 # AI Services
 OPENAI_API_KEY=your_openai_api_key
-RUNWAYML_ENABLED=True
-RUNWAYML_API_SECRET=your_runwayml_api_secret
 ELEVENLABS_API_KEY=your_elevenlabs_api_key
 
 # Security (Optional)
@@ -314,15 +312,15 @@ All operations use a polling pattern for better scalability:
 
 ## 🤖 AI Generation
 
-### RunwayML Integration
+### Vertex AI Integration
 
 The system includes powerful AI generation capabilities:
 
 #### Image-to-Video Generation
    ```python
-   from app.utils.runwayml_utils import generate_video_from_image
+   from app.utils.vertex_utils import generate_video_with_prompt_and_image
    
-   result = await generate_video_from_image(
+   result = await generate_video_with_prompt_and_image(
        prompt_image="product.jpg",
        prompt_text="Show the product rotating with elegant lighting",
     duration=5,
@@ -332,9 +330,9 @@ The system includes powerful AI generation capabilities:
 
 #### Text-to-Image Generation
 ```python
-from app.utils.runwayml_utils import generate_image_from_text
+from app.utils.vertex_utils import generate_image_with_recontext_and_upscale
 
-result = await generate_image_from_text(
+result = await generate_image_with_recontext_and_upscale(
     prompt_text="A beautiful sunset over a mountain landscape",
     ratio="1920:1080"
 )
@@ -342,9 +340,9 @@ result = await generate_image_from_text(
 
 #### Styled Image Generation
 ```python
-from app.utils.runwayml_utils import generate_image_with_reference_style
+from app.utils.flux_utils import flux_manager
 
-result = await generate_image_with_reference_style(
+result = flux_manager.generate_image_with_prompt_and_image(
     prompt_text="@reference in the style of @style",
     reference_image="path/to/reference.jpg",
     style_image="path/to/style.jpg",
@@ -378,7 +376,7 @@ The video generation service automatically maps video resolutions to optimal ima
 ### Video Generation Pipeline
 
 1. **Scene Configuration**: Fetch scene data and prompts
-2. **Image Generation**: Generate AI images using RunwayML
+2. **Image Generation**: Generate AI images using Vertex AI and Flux API
 3. **Video Creation**: Create videos from generated images
 4. **Storage**: Secure storage with signed URLs for videos
 5. **Database Update**: Update scene records with generated URLs
@@ -654,7 +652,7 @@ curl -X POST "http://localhost:8000/api/v1/scrape" \
 - **Cause**: API key issues or service unavailability
 - **Solutions**:
   - Verify API keys are correct and active
-  - Check service status (RunwayML, OpenAI, ElevenLabs)
+  - Check service status (Vertex AI, OpenAI, ElevenLabs)
   - Monitor API quotas and billing status
   - Implement proper retry logic
 
@@ -795,14 +793,13 @@ app/
     ├── __init__.py
     ├── task_management.py      # Task management utilities
     ├── supabase_utils.py       # Supabase integration
-    ├── runwayml_utils.py       # RunwayML AI integration
+    ├── flux_utils.py           # Flux API integration
     ├── vertex_utils.py         # Vertex AI integration
     ├── proxy_management.py     # Proxy handling
     ├── user_agent_management.py # User agent rotation
     ├── currency_utils.py       # Currency conversion
     ├── credit_utils.py         # Credit management
-    ├── flux_utils.py           # Flux AI integration
-    ├── runwayml_utils.py       # RunwayML utilities
+    ├── flux_utils.py           # Flux API utilities
     ├── structured_data.py      # Data structuring
     ├── text_processing.py      # Text processing
     └── url_utils.py            # URL utilities

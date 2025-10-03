@@ -106,7 +106,6 @@ class VideoGenerationResponse(BaseModel):
 class FinalizeShortRequest(BaseModel):
     user_id: str = Field(..., description="User ID associated with the task")
     short_id: str = Field(..., description="Short ID to finalize")
-    upscale: bool = Field(False, description="Whether to upscale the final video")
 
 class FinalizeShortResponse(BaseModel):
     task_id: str
@@ -188,7 +187,7 @@ class Scene(BaseModel):
     visual_prompt: str = Field(..., description="Safe video prompt for video generation")
     product_reference_image_url: str = Field(..., description="Reference image URL from product")
     image_reasoning: str = Field(..., description="Why this image was chosen for this scene")
-    generated_image_url: Optional[str] = Field(None, description="Generated image URL from RunwayML")
+    generated_image_url: Optional[str] = Field(None, description="Generated image URL from Vertex AI or Flux API")
 
 
 class AudioScript(BaseModel):
@@ -210,7 +209,7 @@ class GeneratedScenario(BaseModel):
     resolution: str = Field(..., description="Resolution of the video")
     environment: Optional[str] = Field(None, description="Environment context for the video")
     thumbnail_prompt: Optional[str] = Field(None, description="AI-generated prompt for thumbnail image generation")
-    thumbnail_url: Optional[str] = Field(None, description="Generated thumbnail image URL from RunwayML")
+    thumbnail_url: Optional[str] = Field(None, description="Generated thumbnail image URL from Vertex AI")
 
 
 class ScenarioGenerationResponse(BaseModel):

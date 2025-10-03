@@ -296,8 +296,8 @@ def generate_video_from_scene(
     Returns immediately with a task ID for polling.
     
     The process includes:
-    1. Image generation (if no image exists) using RunwayML
-    2. Video generation from the image using RunwayML
+    1. Image generation (if no image exists) using Vertex AI or Flux API
+    2. Video generation from the image using Vertex AI
     3. Storage of both image and video in Supabase
     4. Credit deduction for each generation step
     
@@ -445,13 +445,12 @@ def finalize_short(
         # validate_request_security(http_request, api_key)
         # validate_scrape_request(str(request.url), api_key)
         
-        logger.info(f"Starting short finalization for user {request.user_id}, short {request.short_id}, upscale: {request.upscale}")
+        logger.info(f"Starting short finalization for user {request.user_id}, short {request.short_id}")
         
         # Start finalization using merging service
         response = merging_service.start_finalize_short_task(
             user_id=request.user_id,
-            short_id=request.short_id,
-            upscale=request.upscale
+            short_id=request.short_id
         )
         
         # Convert response to FinalizeShortResponse format
@@ -777,7 +776,7 @@ def generate_scenario(
     Generate AI-powered video scenario for a product
     
     This endpoint accepts product information and generates a complete video scenario
-    including scenes, audio script, and preview image using OpenAI and RunwayML.
+    including scenes, audio script, and preview image using OpenAI and Vertex AI.
     Returns immediately with a task ID for polling.
     
     Authentication: Optional API key via Bearer token

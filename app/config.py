@@ -280,15 +280,6 @@ class Settings:
     LOG_FILE_MAX_SIZE: int = int(os.getenv("LOG_FILE_MAX_SIZE", "10485760"))  # 10MB
     LOG_FILE_BACKUP_COUNT: int = int(os.getenv("LOG_FILE_BACKUP_COUNT", "5"))
     
-    # RunwayML Settings
-    RUNWAYML_API_SECRET: str = os.getenv("RUNWAYML_API_SECRET", "")
-    RUNWAYML_API_VERSION: str = os.getenv("RUNWAYML_API_VERSION", "2024-11-06")
-    RUNWAYML_ENABLED: bool = os.getenv("RUNWAYML_ENABLED", "False").lower() == "true"
-    RUNWAYML_DEFAULT_MODEL: str = os.getenv("RUNWAYML_DEFAULT_MODEL", "gen4_turbo")
-    RUNWAYML_DEFAULT_RATIO: str = os.getenv("RUNWAYML_DEFAULT_RATIO", "1280:720")
-    RUNWAYML_DEFAULT_DURATION: int = int(os.getenv("RUNWAYML_DEFAULT_DURATION", "5"))
-    RUNWAYML_MAX_RETRIES: int = int(os.getenv("RUNWAYML_MAX_RETRIES", "3"))
-    RUNWAYML_TIMEOUT: int = int(os.getenv("RUNWAYML_TIMEOUT", "300"))  # 5 minutes
     
     # Supabase Settings
     SUPABASE_URL: str = os.getenv("SUPABASE_URL", "")

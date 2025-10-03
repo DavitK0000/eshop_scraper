@@ -5,7 +5,6 @@ This module provides functionality for:
 - Merging generated video scenes into final videos
 - Merging audio with videos
 - Embedding subtitles into videos
-- Upscaling videos using RunwayML
 - Adding watermarks for free plan users
 - Managing the finalization process with task management
 """
@@ -23,7 +22,6 @@ from typing import Dict, Any, Optional, List
 from pathlib import Path
 
 from app.logging_config import get_logger
-from app.utils.runwayml_utils import runwayml_manager
 from app.utils.supabase_utils import supabase_manager
 from app.utils.credit_utils import credit_manager
 from app.utils.task_management import (
@@ -53,8 +51,7 @@ class MergingService:
     def start_finalize_short_task(
         self,
         user_id: str,
-        short_id: str,
-        upscale: bool = False
+        short_id: str
     ) -> Dict[str, Any]:
         """
         Start the finalization process for a short video.
@@ -62,7 +59,6 @@ class MergingService:
         Args:
             user_id: The user's UUID
             short_id: The short's UUID
-            upscale: Whether to upscale the final video
 
         Returns:
             Dict containing task information
@@ -72,7 +68,6 @@ class MergingService:
             task_metadata = {
                 "user_id": user_id,
                 "short_id": short_id,
-                "upscale": upscale,
                 "task_type": "finalize_short"
             }
 
@@ -85,7 +80,7 @@ class MergingService:
             # Start task in background thread
             thread = threading.Thread(
                 target=self._finalize_short_worker,
-                args=(task_id, user_id, short_id, upscale),
+                args=(task_id, user_id, short_id),
                 daemon=True
             )
 
@@ -111,8 +106,7 @@ class MergingService:
         self,
         task_id: str,
         user_id: str,
-        short_id: str,
-        upscale: bool
+        short_id: str
     ):
         """Background worker for finalizing shorts."""
         try:
@@ -163,14 +157,7 @@ class MergingService:
                 merged_video_path, user_id, task_id
             )
 
-            # Step 6: Upscale if requested (before subtitles for better quality)
-            if upscale:
-                update_task_progress(task_id, 0.6, "Upscaling video")
-                final_video_path = self._upscale_video(
-                    final_video_path, user_id, task_id, short_id
-                )
-
-            # Step 7: Add subtitles if available (after upscaling for better quality)
+            # Step 6: Add subtitles if available
             if audio_data and audio_data.get('subtitles'):
                 try:
                     final_video_path = self._embed_subtitles(
@@ -181,9 +168,9 @@ class MergingService:
                         f"Failed to embed subtitles, continuing without them: {subtitle_error}")
                     # Continue with the video without subtitles
 
-            update_task_progress(task_id, 0.8, "Adding subtitles and finalizing")
+            update_task_progress(task_id, 0.7, "Uploading final video")
 
-            # Step 8: Upload final video
+            # Step 7: Upload final video
             final_video_url = self._upload_final_video(
                 final_video_path, short_id, task_id)
             if not final_video_url:
@@ -299,7 +286,7 @@ class MergingService:
             return None
 
     # def _generate_thumbnail(self, user_id: str, product_info: Dict[str, Any], task_id: str, short_id: str) -> str:
-    #     """Generate thumbnail using RunwayML - REMOVED: No longer generating thumbnails."""
+    #     """Generate thumbnail using Vertex AI - REMOVED: No longer generating thumbnails."""
     #     # This method has been removed as thumbnail generation is no longer needed
     #     pass
 
@@ -823,108 +810,6 @@ class MergingService:
             logger.error(f"Failed to add watermark: {e}")
             raise
 
-    def _upscale_video(self, video_path: str, user_id: str, task_id: str, short_id: str) -> str:
-        """Upscale video using RunwayML."""
-        try:
-            # Get video duration for credit calculation
-            duration = self._get_video_duration(video_path)
-
-            # Calculate required credits (5 per second)
-            required_credits = duration * 5
-
-            # Check credits for upscaling with the calculated requirement
-            credit_check = credit_manager.can_perform_action(
-                user_id, "upscale_video")
-            if credit_check.get("error"):
-                raise Exception(
-                    f"Credit check failed: {credit_check['error']}")
-
-            if not credit_check.get("can_perform", False):
-                raise Exception(
-                    f"Insufficient credits for upscaling: {credit_check.get('reason', 'Unknown')}")
-
-            # Double-check available credits match the credit check
-            available_credits = credit_check.get("available_credits", credit_check.get("current_credits", 0))
-            if available_credits < required_credits:
-                raise Exception(
-                    f"Insufficient credits for upscaling. Required: {required_credits}, Available: {available_credits}")
-
-            # Upscale video using RunwayML
-            if not runwayml_manager.is_available():
-                raise Exception("RunwayML is not available for upscaling")
-
-            # Convert local video path to data URI for RunwayML
-            video_uri = self._convert_video_to_data_uri(video_path)
-            logger.info(f"Converted video to data URI for upscaling")
-
-            # Use RunwayML for video upscaling (synchronous)
-            upscale_result = runwayml_manager.upscale_video_sync(
-                video_path=video_uri
-            )
-
-            if not upscale_result.get("success", False):
-                raise Exception(
-                    f"RunwayML upscaling failed: {upscale_result.get('error', 'Unknown error')}")
-
-            # Download the upscaled video
-            # Handle case where output might be a list of URLs
-            video_url = upscale_result["output"]
-            logger.info(f"RunwayML upscale output type: {type(video_url)}, value: {video_url}")
-            
-            if isinstance(video_url, list):
-                if len(video_url) > 0:
-                    video_url = video_url[0]  # Take the first URL
-                    logger.info(f"Extracted first URL from list: {video_url}")
-                else:
-                    raise Exception("No video URLs returned from RunwayML")
-            
-            upscaled_video_path = self._download_upscaled_video(
-                video_url,
-                task_id
-            )
-
-            # Deduct credits
-            credit_manager.deduct_credits(
-                user_id=user_id,
-                action_name="upscale_video",
-                reference_id=short_id,  # Use short_id instead of task_id
-                reference_type="video_merge",  # Use video_merge instead of video_upscaling
-                description=f"Upscaled video for {duration} seconds"
-            )
-
-            logger.info(f"Successfully upscaled video for user {user_id}")
-            return upscaled_video_path
-
-        except Exception as e:
-            logger.error(f"Failed to upscale video: {e}")
-            raise
-
-    def _download_upscaled_video(self, video_url: str, task_id: str) -> str:
-        """Download upscaled video from RunwayML URL."""
-        try:
-            # Create temporary directory for upscaled video
-            temp_dir = tempfile.mkdtemp()
-            upscaled_video_path = os.path.join(temp_dir, "upscaled.mp4")
-
-            # Download the upscaled video (synchronous)
-            with httpx.Client(timeout=DOWNLOAD_TIMEOUT) as client:
-                response = client.get(video_url)
-                response.raise_for_status()
-
-                # Save the video to local file
-                with open(upscaled_video_path, 'wb') as f:
-                    f.write(response.content)
-
-            if not os.path.exists(upscaled_video_path):
-                raise Exception("Upscaled video file was not downloaded")
-
-            logger.info(
-                f"Successfully downloaded upscaled video to {upscaled_video_path}")
-            return upscaled_video_path
-
-        except Exception as e:
-            logger.error(f"Failed to download upscaled video: {e}")
-            raise
 
     def _get_video_duration(self, video_path: str) -> int:
         """Get video duration in seconds using FFmpeg."""
@@ -957,41 +842,6 @@ class MergingService:
                 f"Failed to get video duration: {e}, defaulting to 30 seconds")
             return 30
 
-    def _convert_video_to_data_uri(self, video_path: str) -> str:
-        """Convert local video file to data URI for RunwayML API."""
-        try:
-            # Check if file exists
-            if not os.path.exists(video_path):
-                raise Exception(f"Video file not found: {video_path}")
-            
-            # Read the video file and convert to base64
-            import base64
-            
-            with open(video_path, 'rb') as video_file:
-                video_data = video_file.read()
-            
-            # Encode to base64
-            video_base64 = base64.b64encode(video_data).decode('utf-8')
-            
-            # Create data URI
-            # Get MIME type based on file extension
-            file_ext = os.path.splitext(video_path)[1].lower()
-            mime_type = {
-                '.mp4': 'video/mp4',
-                '.avi': 'video/x-msvideo',
-                '.mov': 'video/quicktime',
-                '.mkv': 'video/x-matroska',
-                '.webm': 'video/webm'
-            }.get(file_ext, 'video/mp4')
-            
-            data_uri = f"data:{mime_type};base64,{video_base64}"
-            logger.info(f"Converted video to data URI with MIME type: {mime_type}")
-            
-            return data_uri
-            
-        except Exception as e:
-            logger.error(f"Failed to convert video to data URI: {e}")
-            raise
 
     def _merge_audio_with_video(self, video_path: str, audio_path: str, task_id: str) -> str:
         """Merge audio with video using FFmpeg, properly mixing video sound effects with voice script."""

@@ -22,7 +22,6 @@ from pathlib import Path
 from app.logging_config import get_logger
 from app.utils.vertex_utils import generate_video_with_prompt_and_image, generate_image_with_recontext_and_upscale, vertex_manager
 from app.utils.flux_utils import flux_manager
-from app.utils.runwayml_utils import runwayml_manager, generate_image_from_text, create_reference_image
 from app.utils.supabase_utils import supabase_manager
 from app.utils.credit_utils import credit_manager
 from app.utils.task_management import (
@@ -657,20 +656,6 @@ class VideoGenerationService:
         # Return mapped dimensions or default to 1920x1080
         return ratio_mapping.get(image_ratio, (1920, 1080))
     
-    def _convert_to_runwayml_ratio(self, flux_ratio: str) -> str:
-        """Convert Flux ratio format to RunwayML ratio format."""
-        # Mapping from common Flux ratios to RunwayML ratios
-        ratio_mapping = {
-            "16:9": "1920:1080",
-            "9:16": "1080:1920", 
-            "1:1": "1024:1024",
-            "4:3": "1440:1080",
-            "3:4": "1080:1440",
-            "21:9": "1920:1080",  # Fallback to 16:9 for ultra-wide
-        }
-        
-        # Return mapped ratio or default to 1920:1080
-        return ratio_mapping.get(flux_ratio, "1920:1080")
     
     def _download_image_from_url(self, image_url: str, filename: str) -> str:
         """Download image from URL to local file."""
