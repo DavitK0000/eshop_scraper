@@ -86,6 +86,7 @@ class HealthResponse(BaseModel):
 class VideoGenerationRequest(BaseModel):
     scene_id: str = Field(..., description="UUID of the scene to generate video for")
     user_id: str = Field(..., description="User ID who owns the scene")
+    force_regenerate_first_frame: bool = Field(False, description="Force regenerate the first frame image even if it already exists")
 class VideoGenerationResponse(BaseModel):
     task_id: str = Field(..., description="Unique task ID for tracking")
     status: TaskStatus = Field(..., description="Current status of the task")

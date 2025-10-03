@@ -314,7 +314,8 @@ def generate_video_from_scene(
         # Start video generation using threads
         response = video_generation_service.start_video_generation_task(
             scene_id=request.scene_id,
-            user_id=request.user_id
+            user_id=request.user_id,
+            force_regenerate_first_frame=request.force_regenerate_first_frame
         )
         
         # Convert response to VideoGenerationResponse format

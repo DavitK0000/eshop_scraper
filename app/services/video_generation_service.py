@@ -251,7 +251,8 @@ class VideoGenerationService:
     def start_video_generation_task(
         self,
         scene_id: str,
-        user_id: str
+        user_id: str,
+        force_regenerate_first_frame: bool = False
     ) -> Dict[str, Any]:
         """
         Start a video generation task for a specific scene.
@@ -259,6 +260,7 @@ class VideoGenerationService:
         Args:
             scene_id: The UUID of the scene to process
             user_id: The user ID who owns the scene
+            force_regenerate_first_frame: If True, force regenerate the first frame image even if it already exists
 
         Returns:
             Dict containing task information
@@ -293,7 +295,7 @@ class VideoGenerationService:
             # Start processing in background thread
             def run_async_task():
                 import asyncio
-                asyncio.run(self._process_video_generation_task(task_id, scene_id, user_id))
+                asyncio.run(self._process_video_generation_task(task_id, scene_id, user_id, force_regenerate_first_frame))
             
             thread = threading.Thread(
                 target=run_async_task,
@@ -397,7 +399,7 @@ class VideoGenerationService:
         except Exception as e:
             logger.error(f"Failed to update task {task_id}: {e}")
     
-    async def _process_video_generation_task(self, task_id: str, scene_id: str, user_id: str):
+    async def _process_video_generation_task(self, task_id: str, scene_id: str, user_id: str, force_regenerate_first_frame: bool = False):
         """Process the video generation task in a background thread."""
         max_retries = 2  # Maximum retry attempts for video generation
         retry_count = 0
@@ -415,7 +417,7 @@ class VideoGenerationService:
             
             # Step 2: Generate image if needed
             update_task_progress(task_id, 2, 'Generating scene image with AI', 45.0)
-            image_url = await self._generate_image_if_needed(scene_data, user_id, task_id)
+            image_url = await self._generate_image_if_needed(scene_data, user_id, task_id, force_regenerate_first_frame)
             
             # Step 3: Generate video with retry logic
             while retry_count <= max_retries:
