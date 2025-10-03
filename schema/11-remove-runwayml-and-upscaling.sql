@@ -22,11 +22,12 @@ WHERE action_id IN (
     SELECT id FROM public.credit_actions WHERE action_name = 'upscale_video'
 );
 
--- Remove any upscale_video related user credits (if they exist)
-DELETE FROM public.user_credits 
-WHERE action_id IN (
-    SELECT id FROM public.credit_actions WHERE action_name = 'upscale_video'
-);
+-- Remove any upscale_video related credit usage tracking (if they exist)
+-- Note: credit_usage_tracking table may not exist in all deployments
+-- DELETE FROM public.credit_usage_tracking 
+-- WHERE action_id IN (
+--     SELECT id FROM public.credit_actions WHERE action_name = 'upscale_video'
+-- );
 
 -- Remove any upscale_video related credit transactions (if they exist)
 DELETE FROM public.credit_transactions 
@@ -41,11 +42,12 @@ WHERE action_id NOT IN (
     SELECT id FROM public.credit_actions
 );
 
--- Clean up any orphaned user_credits
-DELETE FROM public.user_credits 
-WHERE action_id NOT IN (
-    SELECT id FROM public.credit_actions
-);
+-- Clean up any orphaned credit_usage_tracking
+-- Note: credit_usage_tracking table may not exist in all deployments
+-- DELETE FROM public.credit_usage_tracking 
+-- WHERE action_id NOT IN (
+--     SELECT id FROM public.credit_actions
+-- );
 
 -- Clean up any orphaned credit_transactions
 DELETE FROM public.credit_transactions 

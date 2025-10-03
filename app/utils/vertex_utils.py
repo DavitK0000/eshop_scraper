@@ -607,6 +607,7 @@ class VertexManager:
             operation = self.client.models.generate_videos(
                 model=model,
                 prompt=prompt,
+                negative_prompt="person voice, human speech, dialogue, talking",
                 image=image_obj,
                 config=types.GenerateVideosConfig(
                     # Split aspect_ratio and compare width/height to set 16:9 or 9:16
