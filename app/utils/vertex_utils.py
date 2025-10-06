@@ -443,7 +443,7 @@ class VertexManager:
     def generate_image_with_recontext_and_upscale(
         self,
         prompt: str,
-        product_image_url: str,
+        product_images: List[str],
         target_width: int = 1920,
         target_height: int = 1080,
         output_path: Optional[str] = None
@@ -453,7 +453,7 @@ class VertexManager:
         
         Args:
             prompt: Text prompt for image generation
-            product_image_url: URL of the product reference image
+            product_images: List of product image URLs
             target_width: Desired width for the final image
             target_height: Desired height for the final image
             output_path: Optional path to save the final image
@@ -468,16 +468,30 @@ class VertexManager:
             raise RuntimeError("PIL is required for image processing")
         
         try:
-            logger.info(f"Starting image generation with recontext model")
+            logger.info(f"Starting image generation with recontext model using {len(product_images)} product images")
             
             # Get temp directory and create output path if not provided
             temp_dir = self._get_temp_dir()
             if not output_path:
                 output_path = str(temp_dir / f"temp_image_{uuid.uuid4()}.png")
             
-            # Download product image
-            product_image_bytes, mime_type = self._get_image_bytes_from_url(product_image_url)
-            source_image = Image(image_bytes=product_image_bytes, mime_type=mime_type)
+            # Download and prepare product images (limit to 3)
+            product_image_objects = []
+            limited_images = product_images[:3]  # Limit to first 3 images
+            logger.info(f"Processing {len(limited_images)} product images (limited from {len(product_images)} total)")
+            
+            for i, image_url in enumerate(limited_images):
+                try:
+                    product_image_bytes, mime_type = self._get_image_bytes_from_url(image_url)
+                    source_image = Image(image_bytes=product_image_bytes, mime_type=mime_type)
+                    product_image_objects.append(ProductImage(product_image=source_image))
+                    logger.info(f"Successfully prepared product image {i+1}: {image_url}")
+                except Exception as e:
+                    logger.warning(f"Failed to prepare product image {i+1} ({image_url}): {e}")
+                    continue
+            
+            if not product_image_objects:
+                raise RuntimeError("No valid product images could be prepared")
             
             # Generate the recontext image (1024x1024)
             logger.info("Generating recontext image...")
@@ -485,9 +499,7 @@ class VertexManager:
                 model="imagen-product-recontext-preview-06-30",
                 source=RecontextImageSource(
                     prompt=prompt,
-                    product_images=[
-                        ProductImage(product_image=source_image)
-                    ],
+                    product_images=product_image_objects,
                 ),
                 config=RecontextImageConfig(
                     person_generation="ALLOW_ALL",
@@ -554,7 +566,8 @@ class VertexManager:
                 'image_saved': bool(output_path),
                 'recontext_image': recontext_image,
                 'upscaled_image': upscaled_image,
-                'target_dimensions': f"{target_width}x{target_height}"
+                'target_dimensions': f"{target_width}x{target_height}",
+                'product_images_used': len(product_image_objects)
             }
             
         except Exception as e:
@@ -720,14 +733,14 @@ def generate_video_with_prompt_and_image(
 
 def generate_image_with_recontext_and_upscale(
     prompt: str,
-    product_image_url: str,
+    product_images: List[str],
     target_width: int = 1920,
     target_height: int = 1080,
     output_path: Optional[str] = None
 ) -> Dict[str, Any]:
     """Convenience function to generate image with recontext and upscale."""
     return vertex_manager.generate_image_with_recontext_and_upscale(
-        prompt, product_image_url, target_width, target_height, output_path
+        prompt, product_images, target_width, target_height, output_path
     )
 
 

@@ -127,7 +127,6 @@ CREATE TABLE IF NOT EXISTS public.video_scenes (
     generated_video_url TEXT, -- URL of the generated video for this scene
     visual_prompt TEXT, -- AI prompt used to generate the scene image
     image_prompt TEXT, -- AI prompt used to generate the first frame image for this scene
-    product_reference_image_url TEXT, -- URL of the product reference image used for this specific scene generation
     metadata JSONB DEFAULT '{}',
     created_at TIMESTAMP WITH TIME ZONE DEFAULT NOW(),
     updated_at TIMESTAMP WITH TIME ZONE DEFAULT NOW()
@@ -159,7 +158,6 @@ CREATE INDEX IF NOT EXISTS idx_video_scenes_user_id ON public.video_scenes(user_
 CREATE INDEX IF NOT EXISTS idx_video_scenes_image_url ON public.video_scenes(image_url) WHERE image_url IS NOT NULL;
 CREATE INDEX IF NOT EXISTS idx_video_scenes_generated_video_url ON public.video_scenes(generated_video_url) WHERE generated_video_url IS NOT NULL;
 CREATE INDEX IF NOT EXISTS idx_video_scenes_image_prompt ON public.video_scenes(image_prompt) WHERE image_prompt IS NOT NULL;
-CREATE INDEX IF NOT EXISTS idx_video_scenes_product_reference_image_url ON public.video_scenes(product_reference_image_url) WHERE product_reference_image_url IS NOT NULL;
 
 -- Triggers for updated_at columns
 CREATE TRIGGER update_products_updated_at 
@@ -189,5 +187,4 @@ COMMENT ON COLUMN public.video_scenes.image_url IS 'URL of the generated AI imag
 COMMENT ON COLUMN public.video_scenes.generated_video_url IS 'URL of the generated video for this scene';
 COMMENT ON COLUMN public.video_scenes.visual_prompt IS 'AI prompt used to generate the scene image';
 COMMENT ON COLUMN public.video_scenes.image_prompt IS 'AI prompt used to generate the first frame image for this scene';
-COMMENT ON COLUMN public.video_scenes.user_id IS 'User who owns this scene';
-COMMENT ON COLUMN public.video_scenes.product_reference_image_url IS 'URL of the product reference image used for this specific scene generation'; 
+COMMENT ON COLUMN public.video_scenes.user_id IS 'User who owns this scene'; 

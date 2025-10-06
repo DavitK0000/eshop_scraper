@@ -163,18 +163,6 @@ class ScenarioGenerationService:
             if result.data and len(result.data) > 0:
                 product = result.data[0]
 
-                # Extract image analysis from the images JSONB field instead of querying non-existent table
-                image_analysis = []
-                images_data = product.get('images', {})
-                if isinstance(images_data, dict):
-                    for image_url, analysis_data in images_data.items():
-                        if isinstance(analysis_data, dict):
-                            image_analysis.append({
-                                "imageUrl": image_url,
-                                "description": analysis_data.get('description', ''),
-                                "details": analysis_data.get('details', {})
-                            })
-
                 return {
                     "title": product.get('title', ''),
                     "description": product.get('description', ''),
@@ -183,7 +171,7 @@ class ScenarioGenerationService:
                     "specifications": product.get('specifications', {}),
                     "rating": product.get('rating'),
                     "review_count": product.get('review_count'),
-                    "image_analysis": image_analysis
+                    "images": product.get('images', {})
                 }
 
             return None
@@ -288,24 +276,6 @@ class ScenarioGenerationService:
         """Build system message for OpenAI"""
         expected_scene_count = request.video_length // 8
         product_data = await self._get_product_by_id(request.product_id)
-        available_images = product_data.get(
-            'image_analysis', []) if product_data else []
-
-        image_selection_instructions = ""
-        if available_images:
-            image_selection_instructions = f"""
-IMAGE SELECTION REQUIREMENTS:
-- You have {len(available_images)} product images available
-- For each scene, analyze the scene content and choose the most appropriate product image
-- Use selectedImageIndex (0-based) to specify which product image to use
-- Consider:
-  * Hook scenes: Use most attention-grabbing product image
-  * Problem scenes: Use image that shows the problem or need
-  * Solution scenes: Use image that best showcases the product
-  * Demonstration scenes: Use image that shows product in use
-  * Benefits scenes: Use image that highlights key features
-  * CTA scenes: Use most compelling product image
-- Ensure image selection enhances the narrative flow and visual consistency"""
 
         environment_context = f"- Environment: \"{request.environment}\"" if request.environment else ""
 
@@ -327,8 +297,6 @@ DEMOGRAPHIC DETECTION REQUIREMENTS:
 - If product targets children, use ONLY child/young characters in ALL scenes
 - If product targets seniors, use ONLY mature/elderly characters in ALL scenes
 - NEVER mix different character demographics within the same scenario
-
-{image_selection_instructions}
 
  REQUIREMENTS:
  1. Generate EXACTLY 1 scenario with {expected_scene_count} scenes, each exactly 8 seconds
@@ -372,26 +340,6 @@ DEMOGRAPHIC DETECTION REQUIREMENTS:
     async def _build_user_message(self, request: ScenarioGenerationRequest) -> str:
         """Build user message for OpenAI"""
         product_data = await self._get_product_by_id(request.product_id)
-        available_images = product_data.get('image_analysis', []) if product_data else []
-        
-        image_details = ""
-        if available_images:
-            image_details = f"\nAVAILABLE PRODUCT IMAGES ({len(available_images)} total):\n"
-            for i, img in enumerate(available_images):
-                image_details += f"- Image {i}: {img.get('imageUrl', 'N/A')}\n"
-                if img.get('description'):
-                    image_details += f"  Description: {img.get('description', '')}\n"
-                if img.get('details'):
-                    details = img.get('details', {})
-                    if details.get('objects'):
-                        image_details += f"  Objects: {', '.join(details.get('objects', []))}\n"
-                    if details.get('colors'):
-                        image_details += f"  Colors: {', '.join(details.get('colors', []))}\n"
-                    if details.get('style'):
-                        image_details += f"  Style: {details.get('style', '')}\n"
-                    if details.get('mood'):
-                        image_details += f"  Mood: {details.get('mood', '')}\n"
-                image_details += "\n"
         
         return f"""Here's the product information:
 - Title: {product_data.get('title', 'N/A') if product_data else 'N/A'}
@@ -399,7 +347,7 @@ DEMOGRAPHIC DETECTION REQUIREMENTS:
 - Price: {product_data.get('price', 'N/A') if product_data else 'N/A'} {product_data.get('currency', 'USD') if product_data else 'USD'}
 - Specifications: {product_data.get('specifications', {}) if product_data else {}}
 - Rating: {product_data.get('rating', 'N/A') if product_data else 'N/A'}
-- Review Count: {product_data.get('review_count', 'N/A') if product_data else 'N/A'}{image_details}
+- Review Count: {product_data.get('review_count', 'N/A') if product_data else 'N/A'}
 
 IMPORTANT: Generate content using EXACTLY these parameters:
 - Style: "{request.style}"
@@ -409,18 +357,12 @@ IMPORTANT: Generate content using EXACTLY these parameters:
 - Environment: "{request.environment if request.environment else ""}"
 
 CRITICAL DEMOGRAPHIC CONSISTENCY:
-- Analyze the product information and available images to detect target demographics
+- Analyze the product information to detect target demographics
 - Maintain EXACTLY the same character type throughout ALL scenes
 - If men's product → ONLY male characters in ALL scenes
 - If women's product → ONLY female characters in ALL scenes
 - If children's product → ONLY child characters in ALL scenes
 - NEVER mix different character types within the same scenario
-
-IMAGE SELECTION STRATEGY:
-- Analyze each scene's purpose and content
-- Choose the most appropriate product image (selectedImageIndex) for each scene
-- Ensure the selected image enhances the scene's narrative and visual impact
-- Consider the image's content, style, and mood when making selections
 
 Ensure all content is family-friendly, professional, and passes content moderation checks."""
     
@@ -455,15 +397,14 @@ Ensure all content is family-friendly, professional, and passes content moderati
                                 "type": "array",
                                 "items": {
                                     "type": "object",
-                                    "required": ["sceneId", "description", "duration", "imagePrompt", "visualPrompt", "imageReasoning", "selectedImageIndex"],
+                                    "required": ["sceneId", "description", "duration", "imagePrompt", "visualPrompt", "imageReasoning"],
                                     "properties": {
                                         "sceneId": {"type": "string"},
                                         "description": {"type": "string"},
                                         "duration": {"type": "integer"},
                                         "imagePrompt": {"type": "string"},
                                         "visualPrompt": {"type": "string"},
-                                        "imageReasoning": {"type": "string"},
-                                        "selectedImageIndex": {"type": "integer", "description": "Index of the product image to use as reference (0-based, based on available product images)"}
+                                        "imageReasoning": {"type": "string"}
                                     }
                                 }
                             },
@@ -490,11 +431,6 @@ Ensure all content is family-friendly, professional, and passes content moderati
             if not isinstance(openai_scenario, dict):
                 raise Exception(f"Expected openai_scenario to be a dictionary, got {type(openai_scenario)}: {openai_scenario}")
             
-            # Get product data to access available images
-            product_data = await self._get_product_by_id(request.product_id)
-            available_images = product_data.get('image_analysis', []) if product_data else []
-            logger.info(f"Found {len(available_images)} available images")
-            
             scenes = []
             scenes_data = openai_scenario.get('scenes', [])
             if not isinstance(scenes_data, list):
@@ -506,22 +442,6 @@ Ensure all content is family-friendly, professional, and passes content moderati
                     logger.warning(f"Scene {i} is not a dictionary: {type(scene_data)}. Skipping.")
                     continue
                                     
-                # Use AI's selected image index to get the appropriate product image
-                selected_image_index = scene_data.get('selectedImageIndex', 0)
-                product_reference_image_url = ""
-                
-                if available_images and len(available_images) > 0:
-                    # Ensure the index is within bounds
-                    if 0 <= selected_image_index < len(available_images):
-                        product_reference_image_url = available_images[selected_image_index].get('imageUrl', '')
-                        logger.info(f"Selected image {selected_image_index}: {product_reference_image_url}")
-                    else:
-                        # Fallback to first image if index is out of bounds
-                        product_reference_image_url = available_images[0].get('imageUrl', '')
-                        logger.warning(f"AI selected image index {selected_image_index} is out of bounds, using first image")
-                else:
-                    logger.warning("No available images found for product")
-                
                 # Create scene with fallback values for missing fields
                 scene = Scene(
                     scene_id=scene_data.get('sceneId', f"scene-{i}"),
@@ -530,8 +450,7 @@ Ensure all content is family-friendly, professional, and passes content moderati
                     duration=scene_data.get('duration', 8),
                     image_prompt=scene_data.get('imagePrompt', f'Generate image for scene {i+1}'),
                     visual_prompt=scene_data.get('visualPrompt', f'Video content for scene {i+1}'),
-                    product_reference_image_url=product_reference_image_url,  # Use AI-selected image
-                    image_reasoning=scene_data.get('imageReasoning', f'Selected image {selected_image_index} for scene {i+1}'),
+                    image_reasoning=scene_data.get('imageReasoning', f'Generated for scene {i+1}'),
                     generated_image_url=None  # Will be populated after image generation
                 )
                 scenes.append(scene)
@@ -540,7 +459,6 @@ Ensure all content is family-friendly, professional, and passes content moderati
             # If no scenes were created, create a default scene
             if not scenes:
                 logger.warning("No valid scenes found, creating default scene")
-                default_image_url = available_images[0].get('imageUrl', '') if available_images else ""
                 default_scene = Scene(
                     scene_id="scene-default",
                     scene_number=1,
@@ -548,8 +466,7 @@ Ensure all content is family-friendly, professional, and passes content moderati
                     duration=8,
                     image_prompt="Generate a compelling product image",
                     visual_prompt="Show the product in an engaging way",
-                    product_reference_image_url=default_image_url,
-                    image_reasoning="Using first available product image",
+                    image_reasoning="Default scene generation",
                     generated_image_url=None
                 )
                 scenes.append(default_scene)
@@ -619,13 +536,17 @@ Ensure all content is family-friendly, professional, and passes content moderati
             # Enhance the prompt with style and mood
             enhanced_prompt = self._enhance_image_prompt(thumbnail_prompt, request.style, request.mood)
             
-            # Use the first available product image as reference if available
-            reference_image_url = None
-            if scenario.scenes and len(scenario.scenes) > 0:
-                first_scene = scenario.scenes[0]
-                if first_scene.product_reference_image_url:
-                    reference_image_url = first_scene.product_reference_image_url
-                    logger.info(f"Using product reference image for thumbnail: {reference_image_url}")
+            # Get all product images from database
+            product_data = await self._get_product_by_id(request.product_id)
+            product_images = []
+            if product_data and product_data.get('images'):
+                images_data = product_data.get('images', {})
+                if isinstance(images_data, dict):
+                    product_images = list(images_data.keys())
+                    logger.info(f"Found {len(product_images)} product images for thumbnail generation")
+            
+            if not product_images:
+                logger.warning("No product images found, generating thumbnail without product reference")
             
             logger.info("Calling Vertex AI for thumbnail generation...")
             
@@ -637,7 +558,7 @@ Ensure all content is family-friendly, professional, and passes content moderati
             # Generate image using Vertex AI recontext and upscale
             result = generate_image_with_recontext_and_upscale(
                 prompt=enhanced_prompt,
-                product_image_url=reference_image_url or "",
+                product_images=product_images,
                 target_width=1920,
                 target_height=1080,
                 output_path=temp_thumbnail_path

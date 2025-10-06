@@ -185,7 +185,6 @@ class Scene(BaseModel):
     duration: int = Field(..., description="Duration in seconds (must be exactly 5)")
     image_prompt: str = Field(..., description="Detailed prompt for first frame image generation")
     visual_prompt: str = Field(..., description="Safe video prompt for video generation")
-    product_reference_image_url: str = Field(..., description="Reference image URL from product")
     image_reasoning: str = Field(..., description="Why this image was chosen for this scene")
     generated_image_url: Optional[str] = Field(None, description="Generated image URL from Vertex AI or Flux API")
 
