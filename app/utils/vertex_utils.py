@@ -620,10 +620,7 @@ class VertexManager:
                     resolution="1080p",
                     generate_audio=False,
                     number_of_videos=number_of_videos,
-                    negative_prompt=(
-                        "person voice, human speech, dialogue, talking" if negative_prompt is None
-                        else negative_prompt + "\nperson voice, human speech, dialogue, talking"
-                    ),
+                    negative_prompt=negative_prompt,
                 ),
             )
             
