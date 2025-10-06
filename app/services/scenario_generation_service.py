@@ -310,19 +310,24 @@ DEMOGRAPHIC DETECTION REQUIREMENTS:
       * Camera motion: What the camera is doing (aerial view, eye-level, top-down shot, low-angle shot)
       * Composition: How the shot is framed (wide shot, close-up, extreme close-up)
       * Ambiance: Color and light contribution (blue tones, night, warm tones)
- 3. PROMPT ENHANCEMENT REQUIREMENTS:
+ 3. PROMPT REQUIREMENTS:
     - Include camera proximity/position descriptions (e.g., "close-up shot", "wide angle", "medium shot", "overhead view", "low angle", "eye level")
     - Specify lighting conditions (e.g., "soft natural lighting", "dramatic shadows", "studio lighting", "golden hour", "backlit", "side lighting")
     - Include camera settings and effects (e.g., "shallow depth of field", "motion blur", "soft focus", "sharp focus", "cinematic bokeh", "slow motion")
-    - Wrap ALL text content that appears in images/videos with double quotes ("") or single quotes ('')
-    - Example: "Close-up shot with soft natural lighting, shallow depth of field, featuring text overlay 'Amazing Product'"
+    - TEXT POSITIONING AND STYLING REQUIREMENTS:
+      * Clearly specify the exact position of text in the image
+      * Define text style and appearance
+      * Specify text size and prominence
+      * Wrap ALL text content that appears in images/videos with double quotes ("") or single quotes ('')
+      * Include text background and contrast requirements
  4. Generate a compelling thumbnailPrompt for the video thumbnail that:
     - Captures the essence of the video content and product
     - Is optimized for social media (eye-catching, high contrast)
     - Includes style and mood elements from the video
     - Targets the detected demographic audience
     - Follows Vertex AI image generation best practices
-    - Includes camera positioning, lighting, and text wrapping requirements
+    - Includes camera positioning, lighting, and text positioning requirements
+    - Clearly specifies text placement, style, and appearance with proper quoting
  5. Content must be family-friendly, professional, and pass content moderation
  6. Maintain consistent characters, settings, and visual style throughout
  7. Base content on actual product capabilities - no unrealistic scenarios
@@ -334,15 +339,11 @@ DEMOGRAPHIC DETECTION REQUIREMENTS:
     - This includes any text overlays, captions, product names, descriptions, or visual text elements
     - Ensure all visual prompts specify text content in the target language
     - Make sure image prompts include text elements in the target language when relevant
+    - Clearly specify text positioning, style, and appearance with proper quoting as specified in prompt requirements
+ns, product names, descriptions, or visual text elements
+    - Ensure all visual prompts specify text content in the target language
+    - Make sure image prompts include text elements in the target language when relevant
     - Wrap all text content with quotes as specified in prompt enhancement requirements
- """
-    
-    async def _build_user_message(self, request: ScenarioGenerationRequest) -> str:
-        """Build user message for OpenAI"""
-        product_data = await self._get_product_by_id(request.product_id)
-        
-        return f"""Here's the product information:
-- Title: {product_data.get('title', 'N/A') if product_data else 'N/A'}
 - Description: {product_data.get('description', 'N/A') if product_data else 'N/A'}
 - Price: {product_data.get('price', 'N/A') if product_data else 'N/A'} {product_data.get('currency', 'USD') if product_data else 'USD'}
 - Specifications: {product_data.get('specifications', {}) if product_data else {}}

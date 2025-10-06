@@ -88,22 +88,27 @@ client = genai.Client(
     )
 )
 
-source_image = Image(image_bytes=open("temp1.png", "rb").read(), mime_type="image/png")
+image_prompt = "Close-up of the same young woman pausing before a rocky trail, showcasing the durability and stylish design of New Balance WL 574 HB2 sneakers. Her focus is on her shoes, which rest confidently on a rock, surrounded by the rugged outdoor terrain. Text overlay: 'Adventure Awaits!'"
+
+source_image = Image(image_bytes=open("output.png", "rb").read(), mime_type="image/png")
 
 # Generate the recontext image
 print("Generating recontext image...")
 image = client.models.recontext_image(
     model="imagen-product-recontext-preview-06-30",
     source=RecontextImageSource(
-        prompt="A beautiful young woman wearing the jacket",
+        prompt=image_prompt,
         product_images=[
             ProductImage(product_image=source_image)
         ],
     ),
-    config=RecontextImageConfig()
+    config=RecontextImageConfig(
+        base_steps=2048
+    )
 )
 
 recontext_image = image.generated_images[0].image
+recontext_image.save("recontext_image.png")
 
 # # Set desired dimensions
 TARGET_WIDTH = 1920
@@ -142,10 +147,11 @@ mask_ref = MaskReferenceImage(
 
 image = client.models.edit_image(
     model="imagen-3.0-capability-001",
-    prompt="A beautiful young woman wearing the jacket",
+    prompt=image_prompt,
     reference_images=[raw_ref, mask_ref],
     config=EditImageConfig(
         edit_mode="EDIT_MODE_OUTPAINT",
+        base_steps=2048
     ),
 )
 
