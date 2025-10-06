@@ -305,29 +305,30 @@ DEMOGRAPHIC DETECTION REQUIREMENTS:
     - visualPrompt: Video prompt following Veo3 best practices with these required elements:
       * Subject: The object, person, animal, or scenery in the video
       * Context: The background or context where the subject is placed
-      * Action: What the subject is doing (walking, running, turning head, etc.)
-      * Style: Film style keywords (horror film, film noir, cartoon style render, etc.)
-      * Camera motion: What the camera is doing (aerial view, eye-level, top-down shot, low-angle shot)
-      * Composition: How the shot is framed (wide shot, close-up, extreme close-up)
-      * Ambiance: Color and light contribution (blue tones, night, warm tones)
- 3. PROMPT REQUIREMENTS:
-    - Include camera proximity/position descriptions (e.g., "close-up shot", "wide angle", "medium shot", "overhead view", "low angle", "eye level")
-    - Specify lighting conditions (e.g., "soft natural lighting", "dramatic shadows", "studio lighting", "golden hour", "backlit", "side lighting")
-    - Include camera settings and effects (e.g., "shallow depth of field", "motion blur", "soft focus", "sharp focus", "cinematic bokeh", "slow motion")
-    - TEXT POSITIONING AND STYLING REQUIREMENTS:
-      * Clearly specify the exact position of text in the image
+      * Action: What the subject is doing
+      * Style: Film style keywords
+      * Camera motion: What the camera is doing
+      * Composition: How the shot is framed
+      * Ambiance: Color and light contribution
+ 3. VISUAL PROMPT REQUIREMENTS:
+    - Include camera proximity/position descriptions
+    - Specify lighting conditions
+    - Include camera settings and effects
+    - TEXT CONTENT REQUIREMENTS:
+      * Clearly specify the exact position of text in the image/video
       * Define text style and appearance
-      * Specify text size and prominence
       * Wrap ALL text content that appears in images/videos with double quotes ("") or single quotes ('')
-      * Include text background and contrast requirements
+      * Specify text size relative to image
  4. Generate a compelling thumbnailPrompt for the video thumbnail that:
     - Captures the essence of the video content and product
     - Is optimized for social media (eye-catching, high contrast)
     - Includes style and mood elements from the video
     - Targets the detected demographic audience
     - Follows Vertex AI image generation best practices
-    - Includes camera positioning, lighting, and text positioning requirements
-    - Clearly specifies text placement, style, and appearance with proper quoting
+    - Includes camera positioning, lighting, and detailed text requirements:
+      * Specify exact text position
+      * Define text style and appearance
+      * Wrap all text content with quotes and specify text size relative to image
  5. Content must be family-friendly, professional, and pass content moderation
  6. Maintain consistent characters, settings, and visual style throughout
  7. Base content on actual product capabilities - no unrealistic scenarios
@@ -339,11 +340,15 @@ DEMOGRAPHIC DETECTION REQUIREMENTS:
     - This includes any text overlays, captions, product names, descriptions, or visual text elements
     - Ensure all visual prompts specify text content in the target language
     - Make sure image prompts include text elements in the target language when relevant
-    - Clearly specify text positioning, style, and appearance with proper quoting as specified in prompt requirements
-ns, product names, descriptions, or visual text elements
-    - Ensure all visual prompts specify text content in the target language
-    - Make sure image prompts include text elements in the target language when relevant
-    - Wrap all text content with quotes as specified in prompt enhancement requirements
+    - For all text content, specify exact position, style, and wrap with quotes as detailed in text content requirements above
+ """
+    
+    async def _build_user_message(self, request: ScenarioGenerationRequest) -> str:
+        """Build user message for OpenAI"""
+        product_data = await self._get_product_by_id(request.product_id)
+        
+        return f"""Here's the product information:
+- Title: {product_data.get('title', 'N/A') if product_data else 'N/A'}
 - Description: {product_data.get('description', 'N/A') if product_data else 'N/A'}
 - Price: {product_data.get('price', 'N/A') if product_data else 'N/A'} {product_data.get('currency', 'USD') if product_data else 'USD'}
 - Specifications: {product_data.get('specifications', {}) if product_data else {}}
